@@ -1,0 +1,194 @@
+diff -ruN orig/ISP-Mikrotik-Billing-main/.env.example mod/INTER-Flash-ISP/.env.example
+--- orig/ISP-Mikrotik-Billing-main/.env.example	2026-09-30 18:17:30.000000000 +0000
++++ mod/INTER-Flash-ISP/.env.example	2026-10-03 18:00:00.668445539 +0000
+@@ -1,9 +1,10 @@
+-APP_NAME="Code Pagol"
+-APP_ENV=local
++APP_NAME="INTER Flash"
++APP_ENV=production
+ APP_KEY=
+-APP_DEBUG=true
++APP_DEBUG=false
+ APP_URL=
+-APP_TIMEZONE=Asia/Dhaka
++APP_TIMEZONE=America/Santo_Domingo
++SINGLE_DOMAIN=true
+ 
+ APP_LOCALE=en
+ APP_FALLBACK_LOCALE=en
+@@ -24,7 +25,7 @@
+ DB_CONNECTION=mysql
+ DB_HOST=127.0.0.1
+ DB_PORT=3306
+-DB_DATABASE=mikrotik-api
++DB_DATABASE=interflash
+ DB_USERNAME=root
+ DB_PASSWORD=
+ 
+@@ -32,8 +33,8 @@
+ SESSION_LIFETIME=60
+ SESSION_ENCRYPT=false
+ SESSION_PATH=/
+-SESSION_DOMAIN=.mikrotik-api.test
+-SESSION_COOKIE=billing_session
++SESSION_DOMAIN=
++SESSION_COOKIE=interflash_session
+ BROADCAST_CONNECTION=log
+ FILESYSTEM_DISK=public
+ QUEUE_CONNECTION=database
+@@ -54,7 +55,7 @@
+ MAIL_PORT=2525
+ MAIL_USERNAME=null
+ MAIL_PASSWORD=null
+-MAIL_FROM_ADDRESS="hello@example.com"
++MAIL_FROM_ADDRESS="noreply@interflash.local"
+ MAIL_FROM_NAME="${APP_NAME}"
+ 
+ AWS_ACCESS_KEY_ID=
+@@ -66,5 +67,10 @@
+ VITE_APP_NAME="${APP_NAME}"
+ 
+ # MFS SMS Forwarder Webhook Security Token
+-MFS_SMS_TOKEN=mfs_webhook_secure_secret_token
++MFS_SMS_TOKEN=
+ 
++
++# Initial INTER Flash administrator (used only by database seeding)
++ADMIN_NAME="Manuel"
++ADMIN_EMAIL=
++ADMIN_PASSWORD=
+diff -ruN orig/ISP-Mikrotik-Billing-main/INTERFLASH_SETUP.md mod/INTER-Flash-ISP/INTERFLASH_SETUP.md
+--- orig/ISP-Mikrotik-Billing-main/INTERFLASH_SETUP.md	1970-01-01 00:00:00.000000000 +0000
++++ mod/INTER-Flash-ISP/INTERFLASH_SETUP.md	2026-10-03 17:51:43.000000000 +0000
+@@ -0,0 +1,71 @@
++# INTER Flash - preparación inicial
++
++Esta copia fue preparada como base de **INTER Flash** a partir del proyecto ISP-Mikrotik-Billing.
++
++## Cambios aplicados
++
++- Nombre por defecto: **INTER Flash**.
++- Zona horaria: `America/Santo_Domingo`.
++- Moneda visual por defecto: `RD$`.
++- Prefijo de factura: `IF-`.
++- Prefijo de cliente: `IF`.
++- Colores iniciales verde/azul para INTER Flash.
++- Se eliminó la creación automática del router de prueba `root / 1234`.
++- Se eliminó el usuario demo de prueba.
++- El Super Admin ya **no tiene credenciales públicas hardcodeadas**: se crea usando `ADMIN_NAME`, `ADMIN_EMAIL` y `ADMIN_PASSWORD`.
++- Se agregó `railway.toml` como base para despliegue web en Railway.
++
++## Variables mínimas
++
++Copia `.env.example` a `.env` y configura al menos:
++
++```env
++APP_NAME="INTER Flash"
++APP_URL=https://TU-DOMINIO
++APP_TIMEZONE=America/Santo_Domingo
++APP_KEY=
++
++DB_CONNECTION=mysql
++DB_HOST=...
++DB_PORT=3306
++DB_DATABASE=interflash
++DB_USERNAME=...
++DB_PASSWORD=...
++
++ADMIN_NAME="Manuel"
++ADMIN_EMAIL=TU_CORREO
++ADMIN_PASSWORD=UNA_CLAVE_FUERTE
++```
++
++Después:
++
++```bash
++composer install
++npm install
++npm run build
++php artisan key:generate
++php artisan migrate --seed
++php artisan storage:link
++```
++
++## Importante sobre dominios
++
++El proyecto original separa funciones por subdominio:
++
++- sitio principal: `tudominio.com`
++- portal del cliente: `portal.tudominio.com`
++- administración/facturación: `billing.tudominio.com`
++
++Para usar esa estructura tal cual en producción, debes configurar esos subdominios en DNS/Railway y poner `APP_URL=https://tudominio.com`.
++
++## Automatizaciones
++
++La facturación, cortes, sincronización y logs dependen del scheduler de Laravel (`php artisan schedule:run`) y algunas tareas usan colas. Para producción conviene crear servicios/cron separados para scheduler y queue worker; no conviene depender solo del servicio web.
++
++## MikroTik
++
++No se cargó ninguna credencial de tu CCR2116 en este ZIP. Primero se prueba la plataforma y después se agrega el router de manera controlada. No se deben subir contraseñas/API keys al repositorio.
++
++## Licencia
++
++El archivo `LICENSE` incluido por el proyecto original contiene **GNU AGPL v3**. Aunque algunos metadatos del repositorio mencionan MIT, esta copia conserva el `LICENSE` original sin alterarlo. Antes de ofrecer una versión modificada públicamente, trata el proyecto como AGPL-3.0 salvo aclaración del autor.
+diff -ruN orig/ISP-Mikrotik-Billing-main/INTERFLASH_VERSION.txt mod/INTER-Flash-ISP/INTERFLASH_VERSION.txt
+--- orig/ISP-Mikrotik-Billing-main/INTERFLASH_VERSION.txt	1970-01-01 00:00:00.000000000 +0000
++++ mod/INTER-Flash-ISP/INTERFLASH_VERSION.txt	2026-10-03 17:51:43.000000000 +0000
+@@ -0,0 +1,2 @@
++INTER Flash adaptation - 2026-10-03
++Original project: CodePagol/ISP-Mikrotik-Billing
+diff -ruN orig/ISP-Mikrotik-Billing-main/app/Http/Controllers/ScheduledTasksController.php mod/INTER-Flash-ISP/app/Http/Controllers/ScheduledTasksController.php
+--- orig/ISP-Mikrotik-Billing-main/app/Http/Controllers/ScheduledTasksController.php	2026-09-30 18:17:30.000000000 +0000
++++ mod/INTER-Flash-ISP/app/Http/Controllers/ScheduledTasksController.php	2026-10-03 17:51:43.000000000 +0000
+@@ -463,7 +463,7 @@
+ 
+     public function userDisable()
+     {
+-        $tz = config('app.timezone') ?: 'Asia/Dhaka';
++        $tz = config('app.timezone') ?: 'America/Santo_Domingo';
+         $today = Carbon::now($tz)->startOfDay();
+         $successfulIDs = [];
+         $errorIDs = [];
+diff -ruN orig/ISP-Mikrotik-Billing-main/app/Livewire/MainSiteSetup.php mod/INTER-Flash-ISP/app/Livewire/MainSiteSetup.php
+--- orig/ISP-Mikrotik-Billing-main/app/Livewire/MainSiteSetup.php	2026-09-30 18:17:30.000000000 +0000
++++ mod/INTER-Flash-ISP/app/Livewire/MainSiteSetup.php	2026-10-03 17:51:43.000000000 +0000
+@@ -55,7 +55,7 @@
+         $settings = [
+             // Identity & Status
+             'site_name' => MainSiteData::getValue('site_name', config('app.name')),
+-            'portal_name' => MainSiteData::getValue('portal_name', 'Code Pagol Ltd'),
++            'portal_name' => MainSiteData::getValue('portal_name', 'INTER Flash'),
+             'site_title' => MainSiteData::getValue('site_title'),
+             'site_status' => MainSiteData::getValue('site_status', 'active'),
+             'site_maintenance' => MainSiteData::getValue('site_maintenance', 0) ? 1 : 0,
+@@ -110,9 +110,9 @@
+             'site_whatsapp' => MainSiteData::getValue('site_whatsapp'),
+ 
+             // Billing & Invoicing
+-            'site_currency' => MainSiteData::getValue('site_currency', 'BDT'),
+-            'site_invoice_prefix' => MainSiteData::getValue('site_invoice_prefix', 'INV-'),
+-            'customer_id_prefix' => MainSiteData::getValue('customer_id_prefix', 'FCNET'),
++            'site_currency' => MainSiteData::getValue('site_currency', 'RD$'),
++            'site_invoice_prefix' => MainSiteData::getValue('site_invoice_prefix', 'IF-'),
++            'customer_id_prefix' => MainSiteData::getValue('customer_id_prefix', 'IF'),
+             'site_invoice_logo' => MainSiteData::getValue('site_invoice_logo'),
+             'site_invoice_color' => MainSiteData::getValue('site_invoice_color', '#000000'),
+             'site_invoice_footer' => MainSiteData::getValue('site_invoice_footer'),
+diff -ruN orig/ISP-Mikrotik-Billing-main/app/Providers/Filament/PortalPanelProvider.php mod/INTER-Flash-ISP/app/Providers/Filament/PortalPanelProvider.php
+--- orig/ISP-Mikrotik-Billing-main/app/Providers/Filament/PortalPanelProvider.php	2026-09-30 18:17:30.000000000 +0000
++++ mod/INTER-Flash-ISP/app/Providers/Filament/PortalPanelProvider.php	2026-10-03 18:00:00.667797250 +0000
+@@ -29,16 +29,17 @@
+     public function panel(Panel $panel): Panel
+     {
+         $baseDomain = parse_url(config('app.url'), PHP_URL_HOST) ?: config('app.url');
++        $singleDomain = filter_var(env('SINGLE_DOMAIN', false), FILTER_VALIDATE_BOOL);
+ 
+         return $panel
+             ->default()
+             ->spa(hasPrefetching: true)
+             ->id('portal')
+-            ->path('')
+-            ->domain('portal.'.$baseDomain)
++            ->path($singleDomain ? 'portal' : '')
++            ->domain($singleDomain ? $baseDomain : 'portal.'.

@@ -1,8 +1,11 @@
 from app import app
 from menu_structure import setup as setup_menu_structure
+from video_theme import setup as setup_video_theme
 
-# Apply the shared navigation/shell before importing modules that capture shell.
+# Build navigation first, then apply the visual theme before importing modules
+# that capture the shared shell function.
 setup_menu_structure(app)
+setup_video_theme(app)
 
 from public_site import setup as setup_public_site
 from push_agent import setup as setup_push_agent

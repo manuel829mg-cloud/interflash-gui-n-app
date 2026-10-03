@@ -5,6 +5,7 @@ from push_sync import setup as setup_push_sync
 import business_suite
 import ops_suite
 import finance_plus
+import command_queue_ui
 
 _original_audit = push_sync.base.audit
 
@@ -18,9 +19,10 @@ setup_push_sync(app)
 business_suite.setup(app)
 ops_suite.setup(app)
 finance_plus.setup(app)
+command_queue_ui.setup(app)
 
 def routers_secure():
     return redirect(url_for('router_push_view'))
 
 app.view_functions['routers'] = routers_secure
-print('INTERFLASH_ISP_MODULES_ENABLED', flush=True)
+print('INTERFLASH_FULL_ISP_SUITE_ENABLED', flush=True)

@@ -39,11 +39,12 @@ fi
 php artisan storage:link || true
 php artisan optimize:clear || true
 
-# Start Laravel and perform one local request so any startup-page exception is
-# written to Railway logs even before a browser visits the public domain.
+# Start Laravel and perform one local request with the real Railway Host header
+# so domain-scoped routes are tested and any exception lands in Railway logs.
 php artisan serve --host=0.0.0.0 --port="${PORT:-8080}" --no-reload &
 server_pid=$!
 sleep 2
-status="$(curl -sS -o /tmp/interflash-root.html -w '%{http_code}' "http://127.0.0.1:${PORT:-8080}/" || true)"
-echo "INTER Flash root self-test HTTP status: ${status:-request-failed}"
+host="${RAILWAY_PUBLIC_DOMAIN:-interflash-laravel-test-production.up.railway.app}"
+status="$(curl -sS -H "Host: $host" -o /tmp/interflash-root.html -w '%{http_code}' "http://127.0.0.1:${PORT:-8080}/" || true)"
+echo "INTER Flash root self-test for $host HTTP status: ${status:-request-failed}"
 wait "$server_pid"

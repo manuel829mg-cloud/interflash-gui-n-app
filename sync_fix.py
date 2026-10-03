@@ -1,7 +1,33 @@
+import os
+import json
+import urllib.request
 from datetime import datetime
 from flask import request, jsonify
 from app import con
 from push_agent import _authorized, _safe, _touch_agent
+
+RELAY_URL = 'https://interflash-isp-manager.up.railway.app/api/mikrotik/relay-sync'
+RELAY_TOKEN = os.getenv('MIKROTIK_RELAY_TOKEN','')
+
+
+def _relay(payload):
+    if not RELAY_TOKEN:
+        return
+    try:
+        data = json.dumps(payload, ensure_ascii=False).encode('utf-8')
+        req = urllib.request.Request(
+            RELAY_URL,
+            data=data,
+            method='POST',
+            headers={
+                'Content-Type': 'application/json',
+                'X-InterFlash-Relay': RELAY_TOKEN,
+            },
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            resp.read(64)
+    except Exception as ex:
+        print('MIKROTIK_RELAY_ERROR:', str(ex)[:300], flush=True)
 
 
 def sync_compat():
@@ -89,6 +115,8 @@ def sync_compat():
     finally:
         c.close()
 
+    # Forward a copy to the new ISP Manager. Failure here never breaks the existing page.
+    _relay(payload)
     return jsonify(ok=True, kind=kind, received=len(items))
 
 

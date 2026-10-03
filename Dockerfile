@@ -1,6 +1,7 @@
 FROM php:8.3-cli-bookworm
 
 ARG SOURCE_COMMIT=56c6e7347bf9291b7408a316d8302c021a05b27f
+ENV COMPOSER_ALLOW_SUPERUSER=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git unzip patch curl ca-certificates nodejs npm python3 \
@@ -32,10 +33,13 @@ s = s.replace(
 p.write_text(s)
 PY
 
+# Build frontend assets before Composer runs Laravel package discovery.
+# The app references @vite during package discovery, so public/build/manifest.json
+# must already exist at that point.
 RUN cp .env.example .env \
-    && composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader \
     && npm ci \
     && npm run build \
+    && composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader \
     && mkdir -p storage/app/public storage/framework/cache storage/framework/sessions storage/framework/views storage/logs bootstrap/cache \
     && chmod -R 775 storage bootstrap/cache
 

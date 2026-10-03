@@ -28,8 +28,6 @@ if [ -n "${ADMIN_EMAIL:-}" ]; then
   fi
 fi
 
-# Keep the configured INTER Flash administrator password usable after the
-# first seed as well. The User model hashes the assigned password automatically.
 if [ -n "${ADMIN_EMAIL:-}" ] && [ -n "${ADMIN_PASSWORD:-}" ]; then
   php artisan tinker --execute='$u=\App\Models\User::where("email", env("ADMIN_EMAIL"))->first(); if ($u) { $u->password = env("ADMIN_PASSWORD"); $u->save(); }' >/dev/null 2>&1 \
     && echo "INTER Flash administrator credentials synchronized." \
@@ -39,12 +37,12 @@ fi
 php artisan storage:link || true
 php artisan optimize:clear || true
 
-# Start Laravel and perform one local request with the real Railway Host header
-# so domain-scoped routes are tested and any exception lands in Railway logs.
 php artisan serve --host=0.0.0.0 --port="${PORT:-8080}" --no-reload &
 server_pid=$!
 sleep 2
 host="${RAILWAY_PUBLIC_DOMAIN:-interflash-laravel-test-production.up.railway.app}"
 status="$(curl -sS -H "Host: $host" -o /tmp/interflash-root.html -w '%{http_code}' "http://127.0.0.1:${PORT:-8080}/" || true)"
 echo "INTER Flash root self-test for $host HTTP status: ${status:-request-failed}"
+echo "INTER Flash rendered asset tags:"
+grep -Eo '<(link|script)[^>]+(href|src)="[^"]+"[^>]*>' /tmp/interflash-root.html | head -20 || true
 wait "$server_pid"

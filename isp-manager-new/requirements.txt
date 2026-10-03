@@ -1,2 +1,4 @@
 Flask==3.1.2
 gunicorn==23.0.0
+RouterOS-api>=0.17.0,<1
+cryptography>=42,<47

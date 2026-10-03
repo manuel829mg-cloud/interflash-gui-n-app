@@ -13,15 +13,6 @@ def _norm(value):
     )
 
 
-def _matches(query, values):
-    """Flexible search: every word typed must exist somewhere in the customer data."""
-    words = [w for w in _norm(query).split() if w]
-    if not words:
-        return True
-    haystack = _norm(' '.join(str(v or '') for v in values))
-    return all(word in haystack for word in words)
-
-
 def clients_sync_view():
     if not auth():
         return redirect(url_for('login'))
@@ -43,7 +34,6 @@ def clients_sync_view():
             ORDER BY COALESCE(NULLIF(cl.name,''),s.name) COLLATE NOCASE
         ''').fetchall()
     except Exception:
-        # Fallback in case an older database does not yet have local client records.
         try:
             rows = c.execute('''
                 SELECT s.router_name,s.name,s.profile,s.service,s.remote_address,s.caller_id,s.disabled,
@@ -59,8 +49,7 @@ def clients_sync_view():
     c.close()
 
     rendered = []
-    total = online = suspended = 0
-    matched = 0
+    total = online = suspended = visible_by_state = 0
 
     for r in rows:
         total += 1
@@ -78,6 +67,9 @@ def clients_sync_view():
             status = 'OFFLINE'
             cls = 'pending'
 
+        if state != 'TODOS' and status != state:
+            continue
+
         ip = r['active_address'] or r['remote_address'] or '-'
         caller = r['active_caller'] or r['caller_id'] or '-'
         profile = r['profile'] or '-'
@@ -86,16 +78,8 @@ def clients_sync_view():
         pppoe = r['name'] or ''
         customer_name = r['customer_name'] or ''
         customer_phone = r['customer_phone'] or ''
+        visible_by_state += 1
 
-        if not _matches(raw_q, (
-            customer_name, customer_phone, pppoe, ip, profile,
-            caller, router, service, status
-        )):
-            continue
-        if state != 'TODOS' and status != state:
-            continue
-
-        matched += 1
         display_name = customer_name or pppoe
         secondary = []
         if customer_name and _norm(customer_name) != _norm(pppoe):
@@ -106,8 +90,13 @@ def clients_sync_view():
             secondary.append(e(profile))
         subline = ' · '.join(secondary)
 
+        search_text = _norm(' '.join(str(x or '') for x in (
+            customer_name, customer_phone, pppoe, ip, profile,
+            caller, router, service, status
+        )))
+
         rendered.append(f'''
-        <tr data-search="{e(_norm(' '.join(str(x or '') for x in (customer_name, customer_phone, pppoe, ip, profile, caller, router, service, status))))}">
+        <tr class="client-row" data-search="{e(search_text)}">
           <td><input type="checkbox"></td>
           <td><b style="font-size:16px">{e(display_name)}</b><br><small>{subline}</small></td>
           <td>—</td>
@@ -130,35 +119,65 @@ def clients_sync_view():
     <div class="panel">
       <form method="get" id="client-search-form" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
         <input id="client-search" name="q" value="{e(raw_q)}" autocomplete="off"
-          placeholder="Buscar cliente, teléfono, PPPoE, IP, perfil o MAC"
+          placeholder="Empieza a escribir el nombre del cliente..."
           style="min-width:320px;flex:1;padding:11px;border:1px solid #d7dde5;border-radius:8px">
-        <select name="state" style="padding:11px;border:1px solid #d7dde5;border-radius:8px">{options}</select>
-        <button class="btn green" type="submit">Buscar</button>
+        <select id="client-state" name="state" style="padding:11px;border:1px solid #d7dde5;border-radius:8px">{options}</select>
         <a class="btn" href="{url_for('clients')}">Limpiar</a>
       </form>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
         <span class="tag">Total: {total}</span>
         <span class="tag ok">Online: {online}</span>
         <span class="tag bad">Suspendidos: {suspended}</span>
-        {f'<span class="tag">Resultados: {matched}</span>' if raw_q or state != 'TODOS' else ''}
+        <span class="tag" id="client-results">Resultados: {visible_by_state}</span>
       </div>
       <table>
         <tr><th></th><th>Cliente / PPPoE</th><th>F. Inst.</th><th>IP / Router</th><th>Estado</th><th>MAC / Perfil</th><th>Acción</th></tr>
-        {''.join(rendered) if rendered else '<tr><td colspan="7" class="empty">No hay clientes que coincidan con la búsqueda.</td></tr>'}
+        {''.join(rendered) if rendered else '<tr><td colspan="7" class="empty">No hay clientes.</td></tr>'}
+        <tr id="client-no-results" style="display:none"><td colspan="7" class="empty">No hay clientes que coincidan con la búsqueda.</td></tr>
       </table>
     </div>
     <script>
-      // Enter searches immediately; Escape clears the field and returns all clients.
       (function(){{
         const q=document.getElementById('client-search');
-        if(!q) return;
-        q.focus();
-        q.addEventListener('keydown',function(ev){{
-          if(ev.key==='Escape'){{
-            q.value='';
-            window.location='{url_for('clients')}';
-          }}
-        }});
+        const rows=[...document.querySelectorAll('.client-row')];
+        const result=document.getElementById('client-results');
+        const empty=document.getElementById('client-no-results');
+        const state=document.getElementById('client-state');
+
+        function normalizeText(v){{
+          return (v||'').toString().normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLowerCase().trim();
+        }}
+
+        function filterClients(){{
+          const words=normalizeText(q.value).split(/\\s+/).filter(Boolean);
+          let shown=0;
+          rows.forEach(row=>{{
+            const hay=normalizeText(row.dataset.search||'');
+            const ok=words.every(w=>hay.includes(w));
+            row.style.display=ok?'':'none';
+            if(ok) shown++;
+          }});
+          if(result) result.textContent='Resultados: '+shown;
+          if(empty) empty.style.display=shown===0?'':'none';
+        }}
+
+        if(q){{
+          q.focus();
+          q.addEventListener('input',filterClients);
+          q.addEventListener('keydown',function(ev){{
+            if(ev.key==='Escape'){{ q.value=''; filterClients(); }}
+          }});
+          filterClients();
+        }}
+
+        if(state){{
+          state.addEventListener('change',function(){{
+            const u=new URL(window.location.href);
+            u.searchParams.set('state',state.value);
+            u.searchParams.delete('q');
+            window.location=u.toString();
+          }});
+        }}
       }})();
     </script>
     '''

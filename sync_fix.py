@@ -8,17 +8,24 @@ def sync_compat():
     if not _authorized():
         return jsonify(ok=False, error='unauthorized'), 401
 
-    payload = request.get_json(silent=True) or {}
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        raw = request.get_data(as_text=True)[:500]
+        print('MIKROTIK_SYNC_SKIPPED invalid-json:', raw, flush=True)
+        return jsonify(ok=True, skipped=True, reason='invalid-json'), 200
+
     name = _safe(payload.get('router') or 'CCR2116', 80).strip()
     kind = _safe(payload.get('kind') or '', 20).lower()
-    items = payload.get('items') or []
+    items = payload.get('items')
+    if items is None:
+        items = []
 
-    # RouterOS can serialize a single-row slice as an object instead of an array.
-    # Accept both formats so the last partial batch does not fail with HTTP 400.
+    # RouterOS may serialize a one-row slice as an object instead of an array.
     if isinstance(items, dict):
         items = [items]
     elif not isinstance(items, list):
-        return jsonify(ok=False, error='items must be a list or object'), 400
+        print('MIKROTIK_SYNC_SKIPPED invalid-items kind=', kind, 'type=', type(items).__name__, flush=True)
+        return jsonify(ok=True, skipped=True, reason='invalid-items', kind=kind), 200
 
     c = con()
     try:
@@ -75,7 +82,8 @@ def sync_compat():
                          SET last_sync=?,pppoe_secrets=?,pppoe_active=?,ppp_profiles=?
                          WHERE name=?''', (now, secrets, active, profiles, name))
         else:
-            return jsonify(ok=False, error='unknown kind'), 400
+            print('MIKROTIK_SYNC_SKIPPED unknown-kind:', kind, flush=True)
+            return jsonify(ok=True, skipped=True, reason='unknown-kind', kind=kind), 200
 
         c.commit()
     finally:

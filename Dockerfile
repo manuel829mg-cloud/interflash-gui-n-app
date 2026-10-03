@@ -33,11 +33,11 @@ s = s.replace(
 p.write_text(s)
 PY
 
-# Build frontend assets before Composer runs Laravel package discovery.
-# The app references @vite during package discovery, so public/build/manifest.json
-# must already exist at that point.
+# Upstream imports livewire-sortable but omits it from package.json.
+# Install that missing runtime dependency before building the Vite manifest.
 RUN cp .env.example .env \
     && npm ci \
+    && npm install --no-save livewire-sortable@1.0.0 \
     && npm run build \
     && composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader \
     && mkdir -p storage/app/public storage/framework/cache storage/framework/sessions storage/framework/views storage/logs bootstrap/cache \

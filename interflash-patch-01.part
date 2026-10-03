@@ -1,0 +1,162 @@
+$baseDomain)
+             ->favicon(site_image(siteUrlSettings('site_favicon'), 'images/favicon.png'))
+             ->brandLogo(site_image(siteUrlSettings('site_logo'), 'images/favicon.png'))
+-            ->brandName(siteUrlSettings('site_name') ?? 'Code Pagol')
++            ->brandName(siteUrlSettings('site_name') ?? 'INTER Flash')
+             ->brandLogoHeight('3.5rem')
+             ->login(Login::class)
+             ->registration((siteUrlSettings('portal_registration_enabled') ?? 1) ? Register::class : null)
+diff -ruN orig/ISP-Mikrotik-Billing-main/database/seeders/DatabaseSeeder.php mod/INTER-Flash-ISP/database/seeders/DatabaseSeeder.php
+--- orig/ISP-Mikrotik-Billing-main/database/seeders/DatabaseSeeder.php	2026-09-30 18:17:30.000000000 +0000
++++ mod/INTER-Flash-ISP/database/seeders/DatabaseSeeder.php	2026-10-03 17:51:43.000000000 +0000
+@@ -4,8 +4,6 @@
+ 
+ use App\Models\MainSiteData;
+ // use Illuminate\Database\Console\Seeds\WithoutModelEvents;
+-use App\Models\RouterList;
+-use App\Models\User;
+ use Illuminate\Database\Seeder;
+ 
+ class DatabaseSeeder extends Seeder
+@@ -15,27 +13,26 @@
+      */
+     public function run(): void
+     {
+-        MainSiteData::setValue('site_name', 'Code Pagol');
+-        MainSiteData::setValue('site_title', 'Code Pagol');
+-        MainSiteData::setValue('theme_preset', 'neo');
+-        MainSiteData::setValue('theme_name', 'midnight_purple');
+-        MainSiteData::setValue('theme_primary_color', '#6366f1');
+-        MainSiteData::setValue('theme_accent_color', '#06b6d4');
++        // INTER Flash defaults. No demo router or public test account is created.
++        MainSiteData::setValue('site_name', 'INTER Flash');
++        MainSiteData::setValue('portal_name', 'INTER Flash');
++        MainSiteData::setValue('site_title', 'INTER Flash | Internet por Fibra Óptica');
++        MainSiteData::setValue('site_description', 'Planes de internet por fibra óptica de INTER Flash.');
++        MainSiteData::setValue('site_author', 'INTER Flash');
++        MainSiteData::setValue('site_currency', 'RD$');
++        MainSiteData::setValue('site_invoice_prefix', 'IF-');
++        MainSiteData::setValue('customer_id_prefix', 'IF');
++        MainSiteData::setValue('theme_preset', 'fintech');
++        MainSiteData::setValue('theme_name', 'ocean_blue');
++        MainSiteData::setValue('theme_primary_color', '#0F766E');
++        MainSiteData::setValue('theme_accent_color', '#0EA5E9');
+         MainSiteData::setValue('theme_card_style', 'glass');
+-        MainSiteData::setValue('theme_border_radius', '20px');
+-        // User::factory(10)->withPersonalTeam()->create();
+-        RouterList::create([
+-            'router_name' => 'Test Router',
+-            'ip_address' => '127.0.0.1',
+-            'username' => 'root',
+-            'password' => '1234',
+-            'action' => 'connected',
+-            'ssh_port' => '22',
+-        ]);
+-        User::factory()->withPersonalTeam()->create([
+-            'name' => 'Test User',
+-            'email' => 'test@example.com',
+-        ]);
++        MainSiteData::setValue('theme_border_radius', '16px');
++        MainSiteData::setValue('hero_title', 'Internet rápido y estable con INTER Flash');
++        MainSiteData::setValue('hero_subtitle', 'Conéctate con nuestros planes de fibra óptica para tu hogar o negocio.');
++        MainSiteData::setValue('hero_button_text', 'Ver planes');
++        MainSiteData::setValue('packages_section_title', 'Planes de Internet');
++        MainSiteData::setValue('footer_copyright', 'INTER Flash');
+ 
+         $this->call([
+             PermissionSeeder::class,
+diff -ruN orig/ISP-Mikrotik-Billing-main/database/seeders/PermissionSeeder.php mod/INTER-Flash-ISP/database/seeders/PermissionSeeder.php
+--- orig/ISP-Mikrotik-Billing-main/database/seeders/PermissionSeeder.php	2026-09-30 18:17:30.000000000 +0000
++++ mod/INTER-Flash-ISP/database/seeders/PermissionSeeder.php	2026-10-03 18:00:00.667275252 +0000
+@@ -80,7 +80,7 @@
+ 
+         // Looping and Inserting Array's Permissions into Permission Table
+         foreach ($permissions as $permission) {
+-            Permission::create(['name' => $permission]);
++            Permission::firstOrCreate(['name' => $permission]);
+         }
+     }
+ }
+diff -ruN orig/ISP-Mikrotik-Billing-main/database/seeders/ResellerModuleSeeder.php mod/INTER-Flash-ISP/database/seeders/ResellerModuleSeeder.php
+--- orig/ISP-Mikrotik-Billing-main/database/seeders/ResellerModuleSeeder.php	2026-09-30 18:17:30.000000000 +0000
++++ mod/INTER-Flash-ISP/database/seeders/ResellerModuleSeeder.php	2026-10-03 18:00:00.667638491 +0000
+@@ -15,42 +15,7 @@
+      */
+     public function run(): void
+     {
+-        // 1. Create the Reseller Role if it doesn't exist
+-        $resellerRole = Role::firstOrCreate(['name' => 'Reseller']);
+-
+-        // 2. Create the Test Reseller User
+-        $user = User::where('email', 'reseller@isp.com')->first();
+-        if (!$user) {
+-            $user = User::create([
+-                'name' => 'Test Reseller',
+-                'email' => 'reseller@isp.com',
+-                'mobile' => '01711122233',
+-                'password' => bcrypt('password'),
+-            ]);
+-        }
+-
+-        // Assign the role
+-        if (!$user->hasRole('Reseller')) {
+-            $user->assignRole($resellerRole);
+-        }
+-
+-        // 3. Create the Reseller Profile
+-        $reseller = Reseller::where('user_id', $user->id)->first();
+-        if (!$reseller) {
+-            $reseller = Reseller::create([
+-                'user_id' => $user->id,
+-                'company' => 'Reseller ISP Ventures',
+-                'commission_percentage' => 15.00, // 15% commission
+-                'balance' => 5000.00, // Initial wallet balance
+-                'status' => 'active',
+-                'phone' => '01711122233',
+-            ]);
+-        }
+-
+-        // 4. Map the first 3 admin packages to this reseller (if any packages exist)
+-        $packages = PackageList::whereNull('reseller_id')->take(3)->pluck('id')->toArray();
+-        if (!empty($packages)) {
+-            $reseller->assignedPackages()->sync($packages);
+-        }
++        // Keep only the Reseller role. Demo reseller accounts are not created in INTER Flash.
++        Role::firstOrCreate(['name' => 'Reseller']);
+     }
+ }
+diff -ruN orig/ISP-Mikrotik-Billing-main/database/seeders/RoleSeeder.php mod/INTER-Flash-ISP/database/seeders/RoleSeeder.php
+--- orig/ISP-Mikrotik-Billing-main/database/seeders/RoleSeeder.php	2026-09-30 18:17:30.000000000 +0000
++++ mod/INTER-Flash-ISP/database/seeders/RoleSeeder.php	2026-10-03 18:00:00.667480242 +0000
+@@ -12,9 +12,9 @@
+      */
+     public function run(): void
+     {
+-        Role::create(['name' => 'Super Admin']);
+-        $admin = Role::create(['name' => 'Admin']);
+-        $productManager = Role::create(['name' => 'Manager']);
++        Role::firstOrCreate(['name' => 'Super Admin']);
++        $admin = Role::firstOrCreate(['name' => 'Admin']);
++        $productManager = Role::firstOrCreate(['name' => 'Manager']);
+ 
+         $admin->givePermissionTo([
+             'create-user',
+diff -ruN orig/ISP-Mikrotik-Billing-main/database/seeders/SuperAdminSeeder.php mod/INTER-Flash-ISP/database/seeders/SuperAdminSeeder.php
+--- orig/ISP-Mikrotik-Billing-main/database/seeders/SuperAdminSeeder.php	2026-09-30 18:17:30.000000000 +0000
++++ mod/INTER-Flash-ISP/database/seeders/SuperAdminSeeder.php	2026-10-03 17:51:43.000000000 +0000
+@@ -13,12 +13,22 @@
+      */
+     public function run(): void
+     {
+-        // Creating Super Admin User
+-        $superAdmin = User::create([
+-            'name' => 'Rohan9222',
+-            'email' => 'rohan9222@gmail.com',
+-            'password' => Hash::make('rohan9222@gmail.com'),
+-        ]);
++        $name = env('ADMIN_NAME', 'Administrador INTER Flash');
++        $email = trim((string) env('ADMIN_EMAIL', ''));
++        $password = (string) env('ADMIN_PASSWORD', '');
++
++        if ($email === '' || $password === '') {
++            $this->com

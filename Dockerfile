@@ -24,6 +24,7 @@ RUN cat /tmp/interflash-patches/interflash-patch-*.part > /tmp/interflash.patch 
 
 RUN python3 - <<'PY'
 from pathlib import Path
+
 p = Path('database/seeders/SuperAdminSeeder.php')
 s = p.read_text()
 s = s.replace(
@@ -31,6 +32,16 @@ s = s.replace(
     "$password = (string) env('ADMIN_PASSWORD', '');\n        if ($password === '') {\n            $password = substr(hash('sha256', (string) config('app.key')), 0, 20);\n        }\n\n        if ($email === '') {\n            $this->command?->warn('ADMIN_EMAIL is empty. Super Admin was not created.');\n            return;\n        }"
 )
 p.write_text(s)
+
+# The single-domain route switch is referenced from inside the main-domain closure.
+r = Path('routes/web.php')
+rs = r.read_text()
+rs = rs.replace(
+    "Route::domain($baseDomain)->group(function () {",
+    "Route::domain($baseDomain)->group(function () use ($singleDomain) {",
+    1,
+)
+r.write_text(rs)
 PY
 
 # Upstream imports livewire-sortable but omits it from package.json.

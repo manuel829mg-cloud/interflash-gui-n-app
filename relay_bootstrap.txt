@@ -1,0 +1,1 @@
+Trigger a fresh deployment so the existing read-only MikroTik snapshot is relayed to the new ISP Manager.

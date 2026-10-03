@@ -20,7 +20,7 @@ until php artisan migrate --force; do
   sleep 3
 done
 
-if [ -n "${ADMIN_EMAIL:-}" ] && [ -n "${ADMIN_PASSWORD:-}" ]; then
+if [ -n "${ADMIN_EMAIL:-}" ]; then
   if php artisan tinker --execute='exit(\App\Models\User::where("email", env("ADMIN_EMAIL"))->exists() ? 0 : 1);' >/dev/null 2>&1; then
     echo "INTER Flash administrator already exists; skipping initial seed."
   else

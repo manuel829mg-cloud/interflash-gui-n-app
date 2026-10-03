@@ -42,6 +42,16 @@ rs = rs.replace(
     1,
 )
 r.write_text(rs)
+
+# Railway terminates HTTPS at its proxy. Trust forwarded headers so Laravel
+# generates HTTPS URLs for Vite CSS/JS and Livewire instead of mixed-content HTTP.
+b = Path('bootstrap/app.php')
+bs = b.read_text()
+needle = "    ->withMiddleware(function (Middleware $middleware) {\n"
+replacement = needle + "        $middleware->trustProxies(at: '*');\n"
+if "$middleware->trustProxies(at: '*');" not in bs:
+    bs = bs.replace(needle, replacement, 1)
+b.write_text(bs)
 PY
 
 # Upstream imports livewire-sortable but omits it from package.json.

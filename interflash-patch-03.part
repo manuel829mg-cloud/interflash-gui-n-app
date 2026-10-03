@@ -1,0 +1,117 @@
+ne-danger btn-sm rounded-pill px-2.5 py-0.5" style="font-size: 0.75rem; font-weight: 600;">
++                                            <button onclick="confirm('{{ __('Are you sure you want to cancel this voucher and refund :currency :value to your wallet?', ['currency' => siteUrlSettings('site_currency') ?? 'RD$', 'value' => number_format($voucher->value, 2)]) }}') || event.stopImmediatePropagation()" wire:click="cancelVoucher({{ $voucher->id }})" class="btn btn-outline-danger btn-sm rounded-pill px-2.5 py-0.5" style="font-size: 0.75rem; font-weight: 600;">
+                                                 <i class="bi bi-x-circle me-1"></i> {{ __('Cancel') }}
+                                             </button>
+                                         @else
+@@ -118,7 +118,7 @@
+                     <!-- Fixed Amount Group -->
+                     @if($type === 'fixed_amount')
+                         <div class="mb-3">
+-                            <label class="form-label fw-bold">{{ __('Voucher Value (BDT)') }}</label>
++                            <label class="form-label fw-bold">{{ __('Voucher Value') }} ({{ siteUrlSettings('site_currency') ?? 'RD$' }})</label>
+                             <input type="number" step="0.01" wire:model="value" class="form-control" placeholder="0.00" required>
+                             @error('value') <div class="text-danger small mt-1">{{ $message }}</div> @enderror
+                         </div>
+@@ -132,7 +132,7 @@
+                                 <option value="">{{ __('-- Choose Package --') }}</option>
+                                 @foreach($packages as $pkg)
+                                     <option value="{{ $pkg->id }}">
+-                                        {{ $pkg->package }} ({{ __('Price:') }} BDT {{ number_format($pkg->price, 0) }})
++                                        {{ $pkg->package }} ({{ __('Price:') }} {{ siteUrlSettings('site_currency') ?? 'RD$' }} {{ number_format($pkg->price, 0) }})
+                                     </option>
+                                 @endforeach
+                             </select>
+diff -ruN orig/ISP-Mikrotik-Billing-main/routes/console.php mod/INTER-Flash-ISP/routes/console.php
+--- orig/ISP-Mikrotik-Billing-main/routes/console.php	2026-09-30 18:17:30.000000000 +0000
++++ mod/INTER-Flash-ISP/routes/console.php	2026-10-03 17:51:43.000000000 +0000
+@@ -10,7 +10,7 @@
+ use Illuminate\Support\Facades\Log;
+ use Carbon\Carbon;
+ 
+-$timezone = config('app.timezone') ?: 'Asia/Dhaka';
++$timezone = config('app.timezone') ?: 'America/Santo_Domingo';
+ 
+ Schedule::call(function () {
+     app(ScheduledTasksController::class)->createMonthlyBill();
+diff -ruN orig/ISP-Mikrotik-Billing-main/routes/web.php mod/INTER-Flash-ISP/routes/web.php
+--- orig/ISP-Mikrotik-Billing-main/routes/web.php	2026-09-30 18:17:30.000000000 +0000
++++ mod/INTER-Flash-ISP/routes/web.php	2026-10-03 18:00:00.668277575 +0000
+@@ -59,10 +59,13 @@
+ 
+ // Extract domain host from APP_URL for consistent subdomain routing
+ $baseDomain = parse_url(config('app.url'), PHP_URL_HOST) ?: config('app.url');
++$singleDomain = filter_var(env('SINGLE_DOMAIN', false), FILTER_VALIDATE_BOOL);
++$billingDomain = $singleDomain ? $baseDomain : 'billing.'.$baseDomain;
++$portalDomain = $singleDomain ? $baseDomain : 'portal.'.$baseDomain;
+ 
+ // Catch-all redirect for external domains or direct IP requests (NAT Redirection for Expired Users)
+ $currentHost = request()->getHost();
+-if ($currentHost && !in_array($currentHost, [$baseDomain, 'portal.'.$baseDomain, 'billing.'.$baseDomain])) {
++if ($currentHost && !in_array($currentHost, [$baseDomain, $portalDomain, $billingDomain])) {
+     Route::any('{any}', function () {
+         return redirect()->away(config('app.url') . '/warning');
+     })->where('any', '.*');
+@@ -88,23 +91,27 @@
+     Route::get('/recharge/voucher', [PortalVoucherController::class, 'showRechargeForm'])->name('welcome.voucher.recharge');
+     Route::post('/recharge/voucher', [PortalVoucherController::class, 'redeem'])->name('welcome.voucher.redeem');
+ 
+-    Route::get('/portal', function () {
+-        $host = request()->getHost();
+-        if (Str::startsWith($host, 'portal.')) {
+-            return redirect('/');
+-        }
++    if ($singleDomain) {
++        Route::redirect('/billing', '/billing/dashboard');
++    } else {
++        Route::get('/portal', function () {
++            $host = request()->getHost();
++            if (Str::startsWith($host, 'portal.')) {
++                return redirect('/');
++            }
+ 
+-        return redirect()->away('https://portal.'.$host);
+-    });
++            return redirect()->away('https://portal.'.$host);
++        });
+ 
+-    Route::get('/billing', function () {
+-        $host = request()->getHost();
+-        if (Str::startsWith($host, 'billing.')) {
+-            return redirect('/');
+-        }
++        Route::get('/billing', function () {
++            $host = request()->getHost();
++            if (Str::startsWith($host, 'billing.')) {
++                return redirect('/');
++            }
+ 
+-        return redirect()->away('https://billing.'.$host);
+-    });
++            return redirect()->away('https://billing.'.$host);
++        });
++    }
+ });
+ 
+ Route::middleware([
+@@ -112,10 +119,10 @@
+     config('jetstream.auth_session'),
+     'verified',
+     'restrict.profile',
+-])->group(function () use ($baseDomain) {
++])->group(function () use ($baseDomain, $singleDomain, $billingDomain) {
+ 
+     // billing domain
+-    Route::domain('billing.'.$baseDomain)->group(function () {
++    Route::domain($billingDomain)->prefix($singleDomain ? 'billing' : '')->group(function () {
+         Route::get('/system/db-backup/download/{filename}', function ($filename) {
+             if (str_contains($filename, '/') || str_contains($filename, '\\')) {
+                 abort(403, 'Invalid filename.');
+@@ -254,7 +261,7 @@
+ 
+ 
+ // portal domain routes
+-Route::domain('portal.'.$baseDomain)->group(function () {
++Route::domain($portalDomain)->prefix($singleDomain ? 'portal' : '')->group(function () {
+     // Authenticated portal payment initiation routes
+     Route::middleware(['auth:ppp'])->group(function () {
+         Route::get('/payment/bkash/initiate', [BkashPaymentController::class, 'initiate'])->name('payment.bkash.initiate');

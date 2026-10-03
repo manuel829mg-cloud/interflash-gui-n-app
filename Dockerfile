@@ -3,7 +3,7 @@ FROM php:8.3-cli-bookworm
 ARG SOURCE_COMMIT=56c6e7347bf9291b7408a316d8302c021a05b27f
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git unzip patch curl ca-certificates nodejs npm \
+    git unzip patch curl ca-certificates nodejs npm python3 \
     libzip-dev libpng-dev libjpeg62-turbo-dev libfreetype6-dev \
     libicu-dev libonig-dev libxml2-dev \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
@@ -20,6 +20,17 @@ COPY interflash-patch-*.part /tmp/interflash-patches/
 RUN cat /tmp/interflash-patches/interflash-patch-*.part > /tmp/interflash.patch \
     && patch -p2 < /tmp/interflash.patch \
     && rm -rf /tmp/interflash-patches /tmp/interflash.patch
+
+RUN python3 - <<'PY'
+from pathlib import Path
+p = Path('database/seeders/SuperAdminSeeder.php')
+s = p.read_text()
+s = s.replace(
+    "$password = (string) env('ADMIN_PASSWORD', '');\n\n        if ($email === '' || $password === '') {\n            $this->command?->warn('ADMIN_EMAIL / ADMIN_PASSWORD are empty. Super Admin was not created.');\n            return;\n        }",
+    "$password = (string) env('ADMIN_PASSWORD', '');\n        if ($password === '') {\n            $password = substr(hash('sha256', (string) config('app.key')), 0, 20);\n        }\n\n        if ($email === '') {\n            $this->command?->warn('ADMIN_EMAIL is empty. Super Admin was not created.');\n            return;\n        }"
+)
+p.write_text(s)
+PY
 
 RUN cp .env.example .env \
     && composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader \

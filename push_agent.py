@@ -1,9 +1,11 @@
 import os, hmac
 from datetime import datetime
-from flask import request, jsonify, redirect, url_for
+from html import escape
+from flask import request, jsonify, redirect, url_for, Response
 from app import con, auth, shell
 
 TOKEN = os.getenv('MIKROTIK_AGENT_TOKEN','')
+BASE_URL = 'https://interflash-app-production.up.railway.app'
 
 
 def _migrate():
@@ -173,6 +175,41 @@ def sync():
     return jsonify(ok=True, kind=kind, received=len(items))
 
 
+def install_script():
+    if not _authorized():
+        return 'unauthorized', 401
+    # Read-only RouterOS script: it only reads PPP/identity/resource data and POSTs it over HTTPS.
+    ros = f'''/system script remove [find where name="interflash-sync"]
+/system script add name="interflash-sync" policy=read,test source={{
+    :local url "{BASE_URL}/api/mikrotik/sync";
+    :local headers "Content-Type:application/json,X-InterFlash-Token: {TOKEN}";
+    :local router "CCR2116";
+    :local identity [/system identity get name];
+    :local version [/system resource get version];
+    :local identityJson [:serialize to=json value=$identity options=json.no-string-conversion];
+    :local versionJson [:serialize to=json value=$version options=json.no-string-conversion];
+    :local startData ("{{\\\"router\\\":\\\"CCR2116\\\",\\\"kind\\\":\\\"start\\\",\\\"items\\\":[],\\\"identity\\\":" . $identityJson . ",\\\"version\\\":" . $versionJson . "}}");
+    /tool fetch url=$url http-method=post http-header-field=$headers http-data=$startData output=none check-certificate=yes;
+
+    :local secrets [:serialize to=json value=[/ppp secret print as-value proplist=name,profile,service,remote-address,disabled] options=json.no-string-conversion];
+    :local secretsData ("{{\\\"router\\\":\\\"CCR2116\\\",\\\"kind\\\":\\\"secrets\\\",\\\"items\\\":" . $secrets . "}}");
+    /tool fetch url=$url http-method=post http-header-field=$headers http-data=$secretsData output=none check-certificate=yes;
+
+    :local active [:serialize to=json value=[/ppp active print as-value proplist=name,address,caller-id,service,uptime] options=json.no-string-conversion];
+    :local activeData ("{{\\\"router\\\":\\\"CCR2116\\\",\\\"kind\\\":\\\"active\\\",\\\"items\\\":" . $active . "}}");
+    /tool fetch url=$url http-method=post http-header-field=$headers http-data=$activeData output=none check-certificate=yes;
+
+    :local profiles [:serialize to=json value=[/ppp profile print as-value proplist=name,remote-address,local-address,rate-limit] options=json.no-string-conversion];
+    :local profilesData ("{{\\\"router\\\":\\\"CCR2116\\\",\\\"kind\\\":\\\"profiles\\\",\\\"items\\\":" . $profiles . "}}");
+    /tool fetch url=$url http-method=post http-header-field=$headers http-data=$profilesData output=none check-certificate=yes;
+
+    :local finishData ("{{\\\"router\\\":\\\"CCR2116\\\",\\\"kind\\\":\\\"finish\\\",\\\"items\\\":[],\\\"identity\\\":" . $identityJson . ",\\\"version\\\":" . $versionJson . "}}");
+    /tool fetch url=$url http-method=post http-header-field=$headers http-data=$finishData output=user check-certificate=yes;
+}}
+'''
+    return Response(ros, mimetype='text/plain; charset=utf-8', headers={'Cache-Control': 'no-store'})
+
+
 def agent_view():
     if not auth():
         return redirect(url_for('login'))
@@ -181,8 +218,8 @@ def agent_view():
     trs = ''
     for a in agents:
         cls = 'ok' if a['status'] == 'ONLINE' else ('pending' if a['status'] == 'SYNCING' else 'bad')
-        trs += (f"<tr><td><b>{a['name']}</b><br><small>{a['identity'] or ''} {a['ros_version'] or ''}</small></td>"
-                f"<td><span class='tag {cls}'>{a['status']}</span><br><small>{a['last_seen'] or '-'}</small></td>"
+        trs += (f"<tr><td><b>{escape(a['name'] or '')}</b><br><small>{escape(a['identity'] or '')} {escape(a['ros_version'] or '')}</small></td>"
+                f"<td><span class='tag {cls}'>{escape(a['status'] or '')}</span><br><small>{escape(a['last_seen'] or '-')}</small></td>"
                 f"<td>{a['pppoe_secrets'] or 0}</td><td>{a['pppoe_active'] or 0}</td><td>{a['ppp_profiles'] or 0}</td>"
                 f"<td><a class='btn blue' href='{url_for('agent_pppoe_view', name=a['name'])}'>Ver PPPoE</a></td></tr>")
     c.close()
@@ -211,10 +248,10 @@ def agent_pppoe_view(name):
             state, cls = 'OFFLINE', 'pending'
         addr = a['address'] if a else r['remote_address']
         caller = a['caller_id'] if a else r['caller_id']
-        trs += (f"<tr><td><b>{r['name']}</b></td><td>{r['profile'] or '-'}</td><td>{r['service'] or '-'}</td>"
-                f"<td>{addr or '-'}</td><td>{caller or '-'}</td><td><span class='tag {cls}'>{state}</span></td></tr>")
+        trs += (f"<tr><td><b>{escape(r['name'] or '')}</b></td><td>{escape(r['profile'] or '-')}</td><td>{escape(r['service'] or '-')}</td>"
+                f"<td>{escape(addr or '-')}</td><td>{escape(caller or '-')}</td><td><span class='tag {cls}'>{state}</span></td></tr>")
     title = agent['identity'] if agent and agent['identity'] else name
-    body = f'''<div class="head"><div><h1>PPPoE · {title}</h1><p>{len(active)} conectados · {len(rows)} usuarios sincronizados</p></div>
+    body = f'''<div class="head"><div><h1>PPPoE · {escape(title)}</h1><p>{len(active)} conectados · {len(rows)} usuarios sincronizados</p></div>
     <a class="btn" href="{url_for('agent_view')}">Volver</a></div>
     <div class="panel"><table><tr><th>Usuario</th><th>Perfil</th><th>Servicio</th><th>IP</th><th>Caller ID</th><th>Estado</th></tr>
     {trs or '<tr><td colspan="6" class="empty">No hay usuarios sincronizados todavía.</td></tr>'}</table></div>'''
@@ -225,5 +262,6 @@ def setup(app):
     _migrate()
     app.add_url_rule('/api/mikrotik/heartbeat', endpoint='mikrotik_heartbeat', view_func=heartbeat, methods=['POST'])
     app.add_url_rule('/api/mikrotik/sync', endpoint='mikrotik_sync', view_func=sync, methods=['POST'])
+    app.add_url_rule('/api/mikrotik/install-script', endpoint='mikrotik_install_script', view_func=install_script, methods=['GET'])
     app.add_url_rule('/routers/sync', endpoint='agent_view', view_func=agent_view, methods=['GET'])
     app.add_url_rule('/routers/sync/<name>', endpoint='agent_pppoe_view', view_func=agent_pppoe_view, methods=['GET'])

@@ -1,5 +1,7 @@
 import os
 import json
+import time
+import threading
 import urllib.request
 from datetime import datetime
 from flask import request, jsonify
@@ -28,6 +30,51 @@ def _relay(payload):
             resp.read(64)
     except Exception as ex:
         print('MIKROTIK_RELAY_ERROR:', str(ex)[:300], flush=True)
+
+
+def _chunks(items, size=50):
+    for i in range(0, len(items), size):
+        yield items[i:i+size]
+
+
+def _relay_current_snapshot():
+    # Give the worker a moment to finish booting, then copy the already-stored
+    # read-only MikroTik snapshot to the new ISP Manager.
+    time.sleep(3)
+    try:
+        c = con()
+        agent = c.execute('SELECT * FROM router_agents ORDER BY id DESC LIMIT 1').fetchone()
+        if not agent:
+            c.close()
+            return
+        name = agent['name'] or 'CCR2116'
+        secrets = [dict(r) for r in c.execute('SELECT * FROM router_pppoe_secrets WHERE router_name=? ORDER BY id',(name,)).fetchall()]
+        active = [dict(r) for r in c.execute('SELECT * FROM router_pppoe_active WHERE router_name=? ORDER BY id',(name,)).fetchall()]
+        profiles = [dict(r) for r in c.execute('SELECT * FROM router_ppp_profiles WHERE router_name=? ORDER BY id',(name,)).fetchall()]
+        c.close()
+
+        _relay({'router':name,'kind':'start','items':[],'identity':agent['identity'] or name,'version':agent['ros_version'] or ''})
+        for batch in _chunks(secrets):
+            _relay({'router':name,'kind':'secrets','items':[{
+                'name':x.get('name',''),'profile':x.get('profile',''),'service':x.get('service',''),
+                'remote-address':x.get('remote_address',''),'caller-id':x.get('caller_id',''),
+                'disabled':x.get('disabled',''),'comment':x.get('comment','')
+            } for x in batch]})
+        for batch in _chunks(active):
+            _relay({'router':name,'kind':'active','items':[{
+                'name':x.get('name',''),'address':x.get('address',''),'caller-id':x.get('caller_id',''),
+                'service':x.get('service',''),'uptime':x.get('uptime','')
+            } for x in batch]})
+        for batch in _chunks(profiles):
+            _relay({'router':name,'kind':'profiles','items':[{
+                'name':x.get('name',''),'remote-address':x.get('remote_address',''),
+                'local-address':x.get('local_address',''),'rate-limit':x.get('rate_limit',''),
+                'comment':x.get('comment','')
+            } for x in batch]})
+        _relay({'router':name,'kind':'finish','items':[],'identity':agent['identity'] or name,'version':agent['ros_version'] or ''})
+        print(f'MIKROTIK_RELAY_SNAPSHOT sent {name}: {len(active)}/{len(secrets)} PPPoE', flush=True)
+    except Exception as ex:
+        print('MIKROTIK_RELAY_SNAPSHOT_ERROR:', str(ex)[:300], flush=True)
 
 
 def sync_compat():
@@ -122,3 +169,4 @@ def sync_compat():
 
 def setup(app):
     app.view_functions['mikrotik_sync'] = sync_compat
+    threading.Thread(target=_relay_current_snapshot, daemon=True).start()

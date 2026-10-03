@@ -28,6 +28,14 @@ if [ -n "${ADMIN_EMAIL:-}" ]; then
   fi
 fi
 
+# Keep the configured INTER Flash administrator password usable after the
+# first seed as well. The User model hashes the assigned password automatically.
+if [ -n "${ADMIN_EMAIL:-}" ] && [ -n "${ADMIN_PASSWORD:-}" ]; then
+  php artisan tinker --execute='$u=\App\Models\User::where("email", env("ADMIN_EMAIL"))->first(); if ($u) { $u->password = env("ADMIN_PASSWORD"); $u->save(); }' >/dev/null 2>&1 \
+    && echo "INTER Flash administrator credentials synchronized." \
+    || echo "Warning: administrator credentials could not be synchronized."
+fi
+
 php artisan storage:link || true
 php artisan optimize:clear || true
 

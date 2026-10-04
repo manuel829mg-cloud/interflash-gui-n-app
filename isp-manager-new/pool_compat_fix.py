@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import datetime
 from flask import request, jsonify
 import app as base
@@ -26,55 +27,126 @@ def _decode_list(value):
     return []
 
 
+def _objects_from_raw(raw):
+    """Best-effort parser for RouterOS legacy bodies that are not valid JSON."""
+    text = (raw or '').strip().replace('\\"', '"')
+    pools = []
+    secrets = []
+    active = []
+
+    # RouterOS serializes each row as a flat object. Parse each flat object
+    # independently, so a malformed outer JSON wrapper does not matter.
+    for obj in re.findall(r'\{[^{}]*\}', text):
+        fields = {}
+        for key, value in re.findall(r'"([^"\\]+)"\s*:\s*(?:"((?:\\.|[^"\\])*)"|([^,}\]]+))', obj):
+            v = value if value != '' else ''
+            if v == '':
+                # unquoted capture is in the third regex group, recover it below
+                m = re.search(r'"' + re.escape(key) + r'"\s*:\s*([^,}\]]+)', obj)
+                if m:
+                    v = m.group(1).strip().strip('"')
+            fields[key] = v.replace('\\"', '"').strip()
+
+        name = fields.get('name', '')
+        ranges = fields.get('ranges', '')
+        if name and ranges:
+            pools.append({'name': name, 'ranges': ranges})
+
+        remote = fields.get('remote-address', '')
+        if remote:
+            secrets.append({'remote-address': remote})
+
+        addr = fields.get('address', '')
+        if addr:
+            active.append({'address': addr})
+
+    # Fallback regexes for bodies where braces/quoting are damaged.
+    if not pools:
+        names = re.findall(r'"name"\s*:\s*"([^"]+)"', text)
+        ranges = re.findall(r'"ranges"\s*:\s*"([^"]+)"', text)
+        pools = [{'name': n, 'ranges': r} for n, r in zip(names, ranges) if n and r]
+    if not secrets:
+        secrets = [{'remote-address': x} for x in re.findall(r'"remote-address"\s*:\s*"([^"]+)"', text)]
+    if not active:
+        active = [{'address': x} for x in re.findall(r'"address"\s*:\s*"([^"]+)"', text)]
+
+    router_m = re.search(r'"router"\s*:\s*"([^"]+)"', text)
+    return {
+        'router': router_m.group(1) if router_m else 'CCR2116',
+        'pools': pools,
+        'secrets': secrets,
+        'active': active,
+    }
+
+
 def _recover_legacy_body(raw):
-    """Recover the old RouterOS body where JSON arrays were inserted inside quoted fields."""
     raw = (raw or '').strip()
+    if not raw:
+        return None
+
+    # First try the exact old quoted-field wrapper.
     prefix = '{"router":"'
-    if not raw.startswith(prefix):
-        return None
-    body = raw[len(prefix):]
-    try:
-        router, body = body.split('","pools":"', 1)
-        pools_raw, body = body.split('","secrets":"', 1)
-        secrets_raw, body = body.split('","active":"', 1)
-        if body.endswith('"}'):
-            active_raw = body[:-2]
-        else:
-            active_raw = body
-        return {
-            'router': router,
-            'pools': _decode_list(pools_raw),
-            'secrets': _decode_list(secrets_raw),
-            'active': _decode_list(active_raw),
-        }
-    except Exception:
-        return None
+    if raw.startswith(prefix):
+        body = raw[len(prefix):]
+        try:
+            router, body = body.split('\",\"pools\":\"', 1)
+            pools_raw, body = body.split('\",\"secrets\":\"', 1)
+            secrets_raw, body = body.split('\",\"active\":\"', 1)
+            active_raw = body[:-2] if body.endswith('\"}') else body
+            recovered = {
+                'router': router,
+                'pools': _decode_list(pools_raw),
+                'secrets': _decode_list(secrets_raw),
+                'active': _decode_list(active_raw),
+            }
+            if recovered['pools']:
+                return recovered
+        except Exception:
+            pass
+
+    # Then parse the malformed raw RouterOS payload directly.
+    recovered = _objects_from_raw(raw)
+    if recovered['pools'] or recovered['secrets'] or recovered['active']:
+        return recovered
+    return None
 
 
 def pool_state_sync_compat():
     if not pbr_client._auth():
         return jsonify(ok=False, error='unauthorized'), 401
 
+    raw = request.get_data(as_text=True)
     payload = request.get_json(silent=True)
     if isinstance(payload, dict):
         router = str(payload.get('router') or 'CCR2116')[:80]
         pools = _decode_list(payload.get('pools'))
         secrets = _decode_list(payload.get('secrets'))
         active = _decode_list(payload.get('active'))
+        # Some old RouterOS payloads decode as a dict but contain broken string fields.
+        if not pools:
+            recovered = _recover_legacy_body(raw)
+            if recovered:
+                router = str(recovered.get('router') or router)[:80]
+                pools = recovered['pools']
+                secrets = recovered['secrets']
+                active = recovered['active']
     else:
-        recovered = _recover_legacy_body(request.get_data(as_text=True))
+        recovered = _recover_legacy_body(raw)
         if recovered is None:
+            # Keep endpoint non-destructive and log only structure, never the token header.
+            print('INTERFLASH_POOL_COMPAT invalid legacy payload len=' + str(len(raw)), flush=True)
             return jsonify(ok=False, error='invalid-payload'), 400
         router = str(recovered.get('router') or 'CCR2116')[:80]
         pools = recovered['pools']
         secrets = recovered['secrets']
         active = recovered['active']
 
-    # Do not erase a good previous reading if a broken/empty legacy request arrives.
+    # Never erase a good previous reading if a broken/empty legacy request arrives.
     if not pools:
         c = base.db()
         current = c.execute('SELECT COUNT(*) c FROM mikrotik_ip_pools WHERE router_name=?', (router,)).fetchone()['c']
         c.close()
+        print(f'INTERFLASH_POOL_COMPAT empty router={router} existing={current}', flush=True)
         return jsonify(ok=True, router=router, pools=current, used=0, ignored_empty=True)
 
     now = datetime.now().isoformat(timespec='seconds')
@@ -118,5 +190,4 @@ def pool_state_sync_compat():
 
 
 def setup(app):
-    # free_ip_picker already registered this endpoint; replace only its view function.
     app.view_functions['mikrotik_pool_state_sync'] = pool_state_sync_compat

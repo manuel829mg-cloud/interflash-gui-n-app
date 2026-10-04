@@ -6,6 +6,7 @@ import business_suite
 import ops_suite
 import finance_plus
 import command_queue_ui
+import client_extract
 
 _original_audit = push_sync.base.audit
 
@@ -20,6 +21,7 @@ business_suite.setup(app)
 ops_suite.setup(app)
 finance_plus.setup(app)
 command_queue_ui.setup(app)
+client_extract.setup(app)
 
 def routers_secure():
     return redirect(url_for('router_push_view'))

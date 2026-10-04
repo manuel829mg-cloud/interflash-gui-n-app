@@ -35,7 +35,7 @@ def customer_service_action(id, action):
         return redirect(url_for('login'))
 
     action = (action or '').upper()
-    if action not in ('SUSPEND', 'REACTIVATE', 'CANCEL'):
+    if action not in ('SUSPEND', 'REACTIVATE'):
         flash('Acción no permitida.')
         return redirect(url_for('customers'))
 
@@ -52,20 +52,12 @@ def customer_service_action(id, action):
             _queue(c, customer, 'SUSPEND')
         message = 'Cliente marcado como suspendido.' + (' Orden enviada a la cola del MikroTik.' if customer['pppoe'] else '')
         audit_action = 'CUSTOMER_SUSPEND'
-
-    elif action == 'REACTIVATE':
+    else:
         c.execute("UPDATE customers SET status='ACTIVO', service_status='ACTIVO' WHERE id=?", (id,))
         if customer['pppoe']:
             _queue(c, customer, 'REACTIVATE')
         message = 'Cliente marcado como activo.' + (' Orden enviada a la cola del MikroTik.' if customer['pppoe'] else '')
         audit_action = 'CUSTOMER_REACTIVATE'
-
-    else:
-        c.execute("UPDATE customers SET status='CANCELADO', service_status='CANCELADO' WHERE id=?", (id,))
-        if customer['pppoe']:
-            _queue(c, customer, 'DELETE_PPPOE')
-        message = 'Servicio cancelado. El historial del cliente se conserva.' + (' Se agregó la eliminación del PPPoE a la cola del MikroTik.' if customer['pppoe'] else '')
-        audit_action = 'CUSTOMER_CANCEL'
 
     c.commit()
     c.close()
@@ -101,21 +93,17 @@ def customers_responsive():
     trs = []
     for r in rows:
         local_status = (r['status'] or 'ACTIVO').upper()
-        if local_status in ('SUSPENDIDO', 'CANCELADO'):
+        if local_status == 'SUSPENDIDO':
             state = local_status
         else:
             state = 'ONLINE' if (r['pppoe'] or '') in active else local_status
-        cls = 'ok' if state in ('ONLINE', 'ACTIVO') else ('bad' if state in ('SUSPENDIDO', 'CANCELADO') else 'warn')
+        cls = 'ok' if state in ('ONLINE', 'ACTIVO') else ('bad' if state == 'SUSPENDIDO' else 'warn')
         code = r['code'] or ('#' + str(r['id']))
 
-        if state == 'CANCELADO':
-            service_buttons = '<span class="muted" style="font-size:11px">Cancelado</span>'
-        elif state == 'SUSPENDIDO':
-            service_buttons = f'''<form method="post" action="{url_for('customer_service_action',id=r['id'],action='REACTIVATE')}" style="display:inline"><button class="btn action-reactivate" type="submit" onclick="return confirm('¿Reactivar este cliente?')">Reactivar</button></form>
-            <form method="post" action="{url_for('customer_service_action',id=r['id'],action='CANCEL')}" style="display:inline"><button class="btn action-cancel" type="submit" onclick="return confirm('¿Cancelar este cliente? Se conservará su historial y se enviará a la cola la eliminación de su PPPoE.')">Cancelar</button></form>'''
+        if state == 'SUSPENDIDO':
+            service_buttons = f'''<form method="post" action="{url_for('customer_service_action',id=r['id'],action='REACTIVATE')}" style="display:inline"><button class="btn action-reactivate" type="submit" onclick="return confirm('¿Reactivar este cliente?')">Reactivar</button></form>'''
         else:
-            service_buttons = f'''<form method="post" action="{url_for('customer_service_action',id=r['id'],action='SUSPEND')}" style="display:inline"><button class="btn action-suspend" type="submit" onclick="return confirm('¿Suspender este cliente?')">Suspender</button></form>
-            <form method="post" action="{url_for('customer_service_action',id=r['id'],action='CANCEL')}" style="display:inline"><button class="btn action-cancel" type="submit" onclick="return confirm('¿Cancelar este cliente? Se conservará su historial y se enviará a la cola la eliminación de su PPPoE.')">Cancelar</button></form>'''
+            service_buttons = f'''<form method="post" action="{url_for('customer_service_action',id=r['id'],action='SUSPEND')}" style="display:inline"><button class="btn action-suspend" type="submit" onclick="return confirm('¿Suspender este cliente?')">Suspender</button></form>'''
 
         trs.append(f'''<tr>
           <td class="c-code" data-label="Código"><span>{esc(code)}</span></td>
@@ -135,36 +123,35 @@ def customers_responsive():
       .clients-fit th{{color:#92a5b8;font-size:11px;text-transform:uppercase;}}
       .clients-fit .c-code{{width:9%;}}
       .clients-fit .c-code span{{white-space:nowrap;word-break:normal;overflow-wrap:normal;}}
-      .clients-fit .c-client{{width:21%;}}
-      .clients-fit .c-plan{{width:13%;}}
-      .clients-fit .c-zone{{width:11%;}}
-      .clients-fit .c-pppoe{{width:14%;font-family:Consolas,monospace;font-size:12px;}}
-      .clients-fit .c-state{{width:9%;}}
-      .clients-fit .c-actions{{width:23%;}}
+      .clients-fit .c-client{{width:22%;}}
+      .clients-fit .c-plan{{width:14%;}}
+      .clients-fit .c-zone{{width:12%;}}
+      .clients-fit .c-pppoe{{width:15%;font-family:Consolas,monospace;font-size:12px;}}
+      .clients-fit .c-state{{width:10%;}}
+      .clients-fit .c-actions{{width:18%;}}
       .client-actions{{display:flex;gap:5px;flex-wrap:wrap;align-items:center;}}
       .client-actions .btn{{padding:6px 8px;font-size:11px;white-space:nowrap;}}
       .client-actions form{{margin:0;}}
       .action-suspend{{background:#5a3b08;border-color:#8a5c0a;color:#ffd782;}}
-      .action-cancel{{background:#5b171c;border-color:#84242c;color:#ff9da6;}}
       .action-reactivate{{background:#076d45;border-color:#0a925d;color:#b8f6d6;}}
       .clients-toolbar{{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:13px;}}
       .clients-toolbar .field{{flex:1;min-width:220px;max-width:560px;}}
       @media(max-width:1180px){{
         .clients-fit .c-zone{{display:none;}}
-        .clients-fit .c-client{{width:23%;}}
-        .clients-fit .c-plan{{width:14%;}}
-        .clients-fit .c-pppoe{{width:17%;}}
+        .clients-fit .c-client{{width:25%;}}
+        .clients-fit .c-plan{{width:15%;}}
+        .clients-fit .c-pppoe{{width:18%;}}
         .clients-fit .c-code{{width:10%;}}
-        .clients-fit .c-state{{width:10%;}}
-        .clients-fit .c-actions{{width:26%;}}
+        .clients-fit .c-state{{width:11%;}}
+        .clients-fit .c-actions{{width:21%;}}
       }}
       @media(max-width:900px){{
         .clients-fit .c-plan{{display:none;}}
-        .clients-fit .c-client{{width:27%;}}
-        .clients-fit .c-pppoe{{width:20%;}}
+        .clients-fit .c-client{{width:29%;}}
+        .clients-fit .c-pppoe{{width:22%;}}
         .clients-fit .c-code{{width:12%;}}
-        .clients-fit .c-state{{width:12%;}}
-        .clients-fit .c-actions{{width:29%;}}
+        .clients-fit .c-state{{width:13%;}}
+        .clients-fit .c-actions{{width:24%;}}
       }}
       @media(max-width:760px){{
         .clients-fit{{table-layout:auto;}}

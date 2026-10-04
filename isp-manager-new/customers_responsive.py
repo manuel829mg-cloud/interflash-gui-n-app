@@ -30,6 +30,17 @@ def _queue(c, customer, action, payload=None):
     )
 
 
+def _icon(name):
+    icons = {
+        'file': '''<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h8M8 9h2"/></svg>''',
+        'edit': '''<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>''',
+        'suspend': '''<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9 8v8M15 8v8"/></svg>''',
+        'reactivate': '''<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>''',
+        'trash': '''<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 15H6L5 6"/><path d="M10 10v7M14 10v7"/></svg>''',
+    }
+    return icons.get(name, '')
+
+
 def customer_service_action(id, action):
     if not base.logged_in():
         return redirect(url_for('login'))
@@ -59,8 +70,6 @@ def customer_service_action(id, action):
         message = 'Cliente marcado como activo.' + (' Orden enviada a la cola del MikroTik.' if customer['pppoe'] else '')
         audit_action = 'CUSTOMER_REACTIVATE'
     else:
-        # Eliminación segura: desaparece de la lista de clientes y se elimina el PPPoE,
-        # pero se conserva el registro para no perder facturas, pagos ni auditoría.
         c.execute("UPDATE customers SET status='ELIMINADO', service_status='ELIMINADO' WHERE id=?", (id,))
         if customer['pppoe']:
             _queue(c, customer, 'DELETE_PPPOE')
@@ -110,11 +119,18 @@ def customers_responsive():
         code = r['code'] or ('#' + str(r['id']))
 
         if state == 'SUSPENDIDO':
-            service_buttons = f'''<form method="post" action="{url_for('customer_service_action',id=r['id'],action='REACTIVATE')}" style="display:inline"><button class="btn action-reactivate" type="submit" onclick="return confirm('¿Reactivar este cliente?')">Reactivar</button></form>'''
+            service_button = f'''<form method="post" action="{url_for('customer_service_action',id=r['id'],action='REACTIVATE')}"><button class="icon-btn reactivate-icon" type="submit" title="Reactivar cliente" aria-label="Reactivar cliente" onclick="return confirm('¿Reactivar este cliente?')">{_icon('reactivate')}</button></form>'''
         else:
-            service_buttons = f'''<form method="post" action="{url_for('customer_service_action',id=r['id'],action='SUSPEND')}" style="display:inline"><button class="btn action-suspend" type="submit" onclick="return confirm('¿Suspender este cliente?')">Suspender</button></form>'''
+            service_button = f'''<form method="post" action="{url_for('customer_service_action',id=r['id'],action='SUSPEND')}"><button class="icon-btn suspend-icon" type="submit" title="Suspender cliente" aria-label="Suspender cliente" onclick="return confirm('¿Suspender este cliente?')">{_icon('suspend')}</button></form>'''
 
-        delete_button = f'''<form method="post" action="{url_for('customer_service_action',id=r['id'],action='DELETE')}" style="display:inline"><button class="btn action-delete" type="submit" title="Eliminar cliente" aria-label="Eliminar cliente" onclick="return confirm('¿ELIMINAR este cliente? Se quitará de la lista y se eliminará su PPPoE del MikroTik. El historial de facturas y pagos se conservará.')">🗑️</button></form>'''
+        delete_button = f'''<form method="post" action="{url_for('customer_service_action',id=r['id'],action='DELETE')}"><button class="icon-btn delete-icon" type="submit" title="Eliminar cliente" aria-label="Eliminar cliente" onclick="return confirm('¿ELIMINAR este cliente? Se quitará de la lista y se eliminará su PPPoE del MikroTik. El historial de facturas y pagos se conservará.')">{_icon('trash')}</button></form>'''
+
+        actions = f'''<div class="client-actions">
+          <a class="icon-btn" href="{url_for('customer_profile',id=r['id'])}" title="Ficha del cliente" aria-label="Ficha del cliente">{_icon('file')}</a>
+          <a class="icon-btn" href="{url_for('customer_edit',id=r['id'])}" title="Editar cliente" aria-label="Editar cliente">{_icon('edit')}</a>
+          {service_button}
+          {delete_button}
+        </div>'''
 
         trs.append(f'''<tr>
           <td class="c-code" data-label="Código"><span>{esc(code)}</span></td>
@@ -123,7 +139,7 @@ def customers_responsive():
           <td class="c-zone" data-label="Zona">{esc(r['zone_name'] or r['zone'] or '-')}</td>
           <td class="c-pppoe" data-label="PPPoE">{esc(r['pppoe'] or '-')}</td>
           <td class="c-state" data-label="Estado"><span class="tag {cls}">{esc(state)}</span></td>
-          <td class="c-actions" data-label="Acciones"><div class="client-actions"><a class="btn blue" href="{url_for('customer_profile',id=r['id'])}">Ficha</a><a class="btn" href="{url_for('customer_edit',id=r['id'])}">Editar</a>{service_buttons}{delete_button}</div></td>
+          <td class="c-actions" data-label="Acciones">{actions}</td>
         </tr>''')
 
     body = f'''
@@ -134,36 +150,41 @@ def customers_responsive():
       .clients-fit th{{color:#92a5b8;font-size:11px;text-transform:uppercase;}}
       .clients-fit .c-code{{width:9%;}}
       .clients-fit .c-code span{{white-space:nowrap;word-break:normal;overflow-wrap:normal;}}
-      .clients-fit .c-client{{width:21%;}}
+      .clients-fit .c-client{{width:22%;}}
       .clients-fit .c-plan{{width:13%;}}
       .clients-fit .c-zone{{width:11%;}}
-      .clients-fit .c-pppoe{{width:14%;font-family:Consolas,monospace;font-size:12px;}}
+      .clients-fit .c-pppoe{{width:15%;font-family:Consolas,monospace;font-size:12px;}}
       .clients-fit .c-state{{width:10%;}}
-      .clients-fit .c-actions{{width:22%;}}
-      .client-actions{{display:flex;gap:5px;flex-wrap:wrap;align-items:center;}}
-      .client-actions .btn{{padding:6px 8px;font-size:11px;white-space:nowrap;}}
-      .client-actions form{{margin:0;}}
-      .action-suspend{{background:#5a3b08;border-color:#8a5c0a;color:#ffd782;}}
-      .action-reactivate{{background:#076d45;border-color:#0a925d;color:#b8f6d6;}}
-      .action-delete{{background:#5a161b;border-color:#a52a34;color:#ff9aa3;width:34px;height:34px;padding:0!important;font-size:16px!important;line-height:1;}}
+      .clients-fit .c-actions{{width:20%;}}
+      .client-actions{{display:flex;gap:0;align-items:center;flex-wrap:nowrap;}}
+      .client-actions form{{margin:0;display:flex;}}
+      .icon-btn{{width:42px;height:38px;display:inline-flex;align-items:center;justify-content:center;border:1px solid #33485d;background:#132231;color:#aebdcb;cursor:pointer;padding:0;margin:0 -1px 0 0;border-radius:0;transition:.15s ease;}}
+      .client-actions > :first-child{{border-radius:7px 0 0 7px;}}
+      .client-actions > :last-child .icon-btn,.client-actions > .icon-btn:last-child{{border-radius:0 7px 7px 0;}}
+      .icon-btn:hover{{background:#1b3043;color:#fff;border-color:#50667c;position:relative;z-index:1;}}
+      .icon-btn svg{{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;pointer-events:none;}}
+      .suspend-icon:hover{{color:#ffc94e;border-color:#8a5c0a;background:#3b2b0d;}}
+      .reactivate-icon:hover{{color:#66e7ad;border-color:#0a925d;background:#0b3e2b;}}
+      .delete-icon:hover{{color:#ff919b;border-color:#a52a34;background:#45171b;}}
       .clients-toolbar{{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:13px;}}
       .clients-toolbar .field{{flex:1;min-width:220px;max-width:560px;}}
       @media(max-width:1180px){{
         .clients-fit .c-zone{{display:none;}}
-        .clients-fit .c-client{{width:24%;}}
+        .clients-fit .c-client{{width:25%;}}
         .clients-fit .c-plan{{width:14%;}}
-        .clients-fit .c-pppoe{{width:16%;}}
+        .clients-fit .c-pppoe{{width:17%;}}
         .clients-fit .c-code{{width:10%;}}
         .clients-fit .c-state{{width:11%;}}
-        .clients-fit .c-actions{{width:25%;}}
+        .clients-fit .c-actions{{width:23%;}}
       }}
       @media(max-width:900px){{
         .clients-fit .c-plan{{display:none;}}
-        .clients-fit .c-client{{width:27%;}}
-        .clients-fit .c-pppoe{{width:20%;}}
+        .clients-fit .c-client{{width:29%;}}
+        .clients-fit .c-pppoe{{width:21%;}}
         .clients-fit .c-code{{width:12%;}}
         .clients-fit .c-state{{width:13%;}}
-        .clients-fit .c-actions{{width:28%;}}
+        .clients-fit .c-actions{{width:25%;}}
+        .icon-btn{{width:38px;height:36px;}}
       }}
       @media(max-width:760px){{
         .clients-fit{{table-layout:auto;}}

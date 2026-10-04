@@ -77,12 +77,31 @@ def control_script_fast():
 /system script add name="interflash-pool-sync" policy=read,test,sensitive source={{
   :local base "{root}";
   :local token "{token}";
-  :local hdr ("Content-Type:application/json,X-InterFlash-Agent: " . $token);
-  :local pools [:serialize to=json value=[/ip pool print as-value proplist=name,ranges] options=json.no-string-conversion];
-  :local secrets [:serialize to=json value=[/ppp secret print as-value proplist=remote-address] options=json.no-string-conversion];
-  :local active [:serialize to=json value=[/ppp active print as-value proplist=address] options=json.no-string-conversion];
-  :local data ("{{\"router\":\"CCR2116\",\"pools\":" . $pools . ",\"secrets\":" . $secrets . ",\"active\":" . $active . "}}");
-  /tool fetch url=($base . "/api/mikrotik/pool-state") http-method=post http-header-field=$hdr http-data=$data output=none check-certificate=yes;
+  :local hdr ("Content-Type:application/x-www-form-urlencoded,X-InterFlash-Agent: " . $token);
+  :local endpoint ($base . "/api/mikrotik/pool-state-v2");
+  /tool fetch url=$endpoint http-method=post http-header-field=$hdr http-data="router=CCR2116&kind=reset" output=none check-certificate=yes;
+  :foreach item in=[/ip pool print as-value] do={{
+    :local n ($item->"name");
+    :local r ($item->"ranges");
+    :if (([:len $n] > 0) && ([:len $r] > 0)) do={{
+      :local data ("router=CCR2116&kind=pool&name=" . $n . "&ranges=" . $r);
+      /tool fetch url=$endpoint http-method=post http-header-field=$hdr http-data=$data output=none check-certificate=yes;
+    }}
+  }}
+  :foreach item in=[/ppp secret print as-value] do={{
+    :local a ($item->"remote-address");
+    :if ([:len $a] > 0) do={{
+      :local data ("router=CCR2116&kind=used&source=SECRET&address=" . $a);
+      /tool fetch url=$endpoint http-method=post http-header-field=$hdr http-data=$data output=none check-certificate=yes;
+    }}
+  }}
+  :foreach item in=[/ppp active print as-value] do={{
+    :local a ($item->"address");
+    :if ([:len $a] > 0) do={{
+      :local data ("router=CCR2116&kind=used&source=ACTIVE&address=" . $a);
+      /tool fetch url=$endpoint http-method=post http-header-field=$hdr http-data=$data output=none check-certificate=yes;
+    }}
+  }}
 }}
 /system scheduler add name="interflash-pool-sync-scheduler" interval=30s on-event="/system script run interflash-pool-sync" policy=read,test,sensitive start-time=startup
 /system script run interflash-agent
@@ -91,8 +110,8 @@ def control_script_fast():
 
     body = f'''<div class="head"><div><h1>Agente MikroTik</h1><p>Suspensión, reactivación, reinicio, backups, cambios PPPoE e IPs libres desde la plataforma.</p></div><a class="btn" href="{url_for('mikrotik_commands')}">← Cola</a></div>
     <div class="panel">
-      <div class="notice" style="background:#063f2a;color:#b8f6d6;margin-bottom:12px"><b>Control real:</b> Suspender deshabilita y desconecta; Reactivar habilita; Reiniciar PPPoE tumba solo la sesión; Backup guarda una copia y un export en Files del MikroTik. Además sincroniza los pools y las IPs ocupadas cada 30 segundos para el botón <b>Buscar IP libre</b>.</div>
-      <div class="notice" style="background:#4e3707;color:#fff;margin-bottom:12px">Pega este bloque una sola vez para actualizar el agente con la búsqueda automática de IPs libres.</div>
+      <div class="notice" style="background:#063f2a;color:#b8f6d6;margin-bottom:12px"><b>Control real:</b> Suspender deshabilita y desconecta; Reactivar habilita; Reiniciar PPPoE tumba solo la sesión; Backup guarda una copia y un export en Files del MikroTik. Además sincroniza pools e IPs ocupadas cada 30 segundos para <b>Buscar IP libre</b>.</div>
+      <div class="notice" style="background:#4e3707;color:#fff;margin-bottom:12px">Versión nueva de sincronización de pools. Pega este bloque una sola vez en el CCR2116.</div>
       <textarea class="field" style="width:100%;height:520px;font-family:Consolas,monospace">{pbr_client.esc(script)}</textarea>
     </div>'''
     return base.shell('Agente MikroTik', body, 'routers')

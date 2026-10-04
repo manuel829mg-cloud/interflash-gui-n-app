@@ -83,11 +83,7 @@ def pool_state_sync():
 
 
 def pool_state_sync_v2():
-    """RouterOS-friendly sync using one form-encoded item per request.
-
-    This avoids JSON serialization issues on some RouterOS builds. The MikroTik
-    sends reset, then each pool, then each occupied address.
-    """
+    """RouterOS-friendly sync using one form-encoded item per request."""
     if not pbr_client._auth():
         return jsonify(ok=False, error='unauthorized'), 401
     ensure_schema()
@@ -152,6 +148,40 @@ def _expand_segment(segment):
         return []
 
 
+def _latest_for_router(c, router):
+    row = c.execute('SELECT MAX(updated_at) updated_at FROM mikrotik_ip_pools WHERE router_name=?', (router,)).fetchone()
+    return (row['updated_at'] or '') if row else ''
+
+
+def free_ips_refresh_api():
+    """Ask the pull-agent on the selected MikroTik to refresh pools immediately."""
+    if not base.logged_in():
+        return jsonify(ok=False, error='login-required'), 401
+    ensure_schema()
+    router = (request.args.get('router') or 'CCR2116')[:80]
+    c = base.db()
+    try:
+        before = _latest_for_router(c, router)
+        pending = c.execute(
+            """SELECT id FROM router_commands
+               WHERE router_name=? AND action='SYNC_POOLS'
+               AND status IN ('PENDIENTE','EN_PROCESO')
+               ORDER BY id DESC LIMIT 1""",
+            (router,)
+        ).fetchone()
+        if pending:
+            command_id = pending['id']
+            queued = False
+        else:
+            pbr_client._queue(c, None, '', router, 'SYNC_POOLS', {})
+            command_id = c.execute('SELECT last_insert_rowid() id').fetchone()['id']
+            queued = True
+        c.commit()
+        return jsonify(ok=True, router=router, command_id=command_id, queued=queued, before=before)
+    finally:
+        c.close()
+
+
 def free_ips_api():
     if not base.logged_in():
         return jsonify(ok=False, error='login-required'), 401
@@ -162,7 +192,9 @@ def free_ips_api():
     pools = c.execute('SELECT * FROM mikrotik_ip_pools WHERE router_name=? ORDER BY name', (router,)).fetchall()
     used = {r['address'] for r in c.execute('SELECT address FROM mikrotik_ip_used WHERE router_name=?', (router,)).fetchall()}
     try:
-        used.update(r['ip_address'] for r in c.execute('SELECT ip_address FROM customers WHERE router_name=? AND COALESCE(ip_address,\'\')<>\'\'', (router,)).fetchall() if r['ip_address'])
+        used.update(r['ip_address'] for r in c.execute(
+            "SELECT ip_address FROM customers WHERE router_name=? AND COALESCE(ip_address,'')<>''", (router,)
+        ).fetchall() if r['ip_address'])
     except Exception:
         pass
     c.close()
@@ -194,7 +226,7 @@ def _inject_picker(html):
     if 'if-free-ip-modal' in html:
         return html
     pattern = re.compile(r'<div><label>IP asignada<input name="ip_address"([^>]*)></label></div>')
-    replacement = r'''<div class="ip-picker-field"><label>IP remota (opcional)<div class="ip-picker-input"><input id="if-ip-address" name="ip_address"\1><button class="btn blue" type="button" onclick="IFIP.open()">Buscar IP libre</button></div><small class="muted">Vacío = IP del pool PPP. El botón muestra IPs libres leídas del MikroTik.</small></label></div>'''
+    replacement = r'''<div class="ip-picker-field"><label>IP remota (opcional)<div class="ip-picker-input"><input id="if-ip-address" name="ip_address"\1><button class="btn blue" type="button" onclick="IFIP.open()" title="Ver IPs libres de los pools del MikroTik"><span style="font-size:18px">⌕</span><span>Ver IPs libres</span></button></div><small class="muted">Consulta los pools del MikroTik y selecciona una IP disponible.</small></label></div>'''
     html, count = pattern.subn(replacement, html, count=1)
     if count == 0:
         return html
@@ -202,52 +234,92 @@ def _inject_picker(html):
     modal = r'''
 <style>
 .ip-picker-input{display:flex;gap:8px;align-items:center}.ip-picker-input input{flex:1;min-width:0}.ip-picker-input .btn{white-space:nowrap;margin-top:6px;height:40px}
-#if-free-ip-modal{position:fixed;inset:0;background:#0009;z-index:9999;display:none;align-items:center;justify-content:center;padding:18px}.if-ip-box{width:min(720px,96vw);max-height:82vh;background:#0d1a29;border:1px solid #2a4058;border-radius:14px;box-shadow:0 24px 80px #000c;display:flex;flex-direction:column;overflow:hidden}.if-ip-head{display:flex;align-items:center;justify-content:space-between;padding:17px 18px;border-bottom:1px solid #22374e}.if-ip-head h2{margin:0;font-size:22px}.if-ip-close{border:0;background:transparent;color:#aebdcb;font-size:28px;cursor:pointer}.if-ip-tools{padding:14px 18px;border-bottom:1px solid #22374e}.if-ip-tools input{width:100%;background:#101f30;border:1px solid #2b4259;color:#fff;border-radius:9px;padding:12px}.if-ip-meta{font-size:12px;color:#8da1b6;margin-top:8px}.if-ip-list{overflow:auto;padding:6px 0 12px}.if-ip-row{width:100%;display:block;text-align:left;border:0;border-bottom:1px solid #1c3044;background:transparent;color:#e8eef8;padding:12px 18px;cursor:pointer}.if-ip-row:hover{background:#122438}.if-ip-row strong{display:block;font-family:Consolas,monospace;font-size:17px}.if-ip-row small{display:block;color:#8297ab;margin-top:4px}.if-ip-empty{padding:28px 18px;text-align:center;color:#8da1b6}.if-ip-loading{padding:24px 18px;color:#a9bed2}@media(max-width:650px){.ip-picker-input{align-items:stretch;flex-direction:column}.ip-picker-input .btn{margin-top:0;width:100%}}
+#if-free-ip-modal{position:fixed;inset:0;background:#0009;z-index:9999;display:none;align-items:center;justify-content:center;padding:18px}.if-ip-box{width:min(760px,96vw);max-height:84vh;background:#0d1a29;border:1px solid #2a4058;border-radius:14px;box-shadow:0 24px 80px #000c;display:flex;flex-direction:column;overflow:hidden}.if-ip-head{display:flex;align-items:center;justify-content:space-between;padding:17px 18px;border-bottom:1px solid #22374e}.if-ip-head h2{margin:0;font-size:22px}.if-ip-close{border:0;background:transparent;color:#aebdcb;font-size:28px;cursor:pointer}.if-ip-tools{padding:14px 18px;border-bottom:1px solid #22374e}.if-ip-searchline{display:flex;gap:8px}.if-ip-tools input{flex:1;width:100%;background:#101f30;border:1px solid #2b4259;color:#fff;border-radius:9px;padding:12px}.if-ip-refresh{min-width:44px;border:1px solid #2b4259;background:#132336;color:#fff;border-radius:9px;cursor:pointer;font-size:20px}.if-ip-meta{font-size:12px;color:#8da1b6;margin-top:8px}.if-ip-list{overflow:auto;padding:6px 0 12px}.if-ip-group{padding:9px 18px 5px;color:#8da1b6;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;background:#0b1725;position:sticky;top:0}.if-ip-row{width:100%;display:block;text-align:left;border:0;border-bottom:1px solid #1c3044;background:transparent;color:#e8eef8;padding:12px 18px;cursor:pointer}.if-ip-row:hover{background:#122438}.if-ip-row strong{display:block;font-family:Consolas,monospace;font-size:18px}.if-ip-row small{display:block;color:#8297ab;margin-top:4px}.if-ip-empty{padding:28px 18px;text-align:center;color:#8da1b6}.if-ip-loading{padding:34px 18px;text-align:center;color:#c4d4e5}.if-ip-spinner{display:inline-block;width:20px;height:20px;border:2px solid #385069;border-top-color:#e8eef8;border-radius:50%;animation:ifspin .8s linear infinite;vertical-align:middle;margin-right:10px}@keyframes ifspin{to{transform:rotate(360deg)}}@media(max-width:650px){.ip-picker-input{align-items:stretch;flex-direction:column}.ip-picker-input .btn{margin-top:0;width:100%}}
 </style>
 <div id="if-free-ip-modal" role="dialog" aria-modal="true" aria-label="IPs libres del MikroTik">
   <div class="if-ip-box">
-    <div class="if-ip-head"><div><h2>IPs libres (pools MikroTik)</h2><div class="muted" style="margin-top:4px">Selecciona una IP para colocarla en el cliente.</div></div><button class="if-ip-close" type="button" onclick="IFIP.close()">×</button></div>
-    <div class="if-ip-tools"><input id="if-ip-filter" type="text" placeholder="Filtrar por IP o pool..." oninput="IFIP.render()"><div id="if-ip-meta" class="if-ip-meta"></div></div>
+    <div class="if-ip-head"><div><h2>IPs libres (pools MikroTik)</h2><div class="muted" style="margin-top:4px">Selecciona una IP para colocarla automáticamente en el cliente.</div></div><button class="if-ip-close" type="button" onclick="IFIP.close()">×</button></div>
+    <div class="if-ip-tools"><div class="if-ip-searchline"><input id="if-ip-filter" type="text" placeholder="Filtrar por IP o pool..." oninput="IFIP.render()"><button class="if-ip-refresh" type="button" onclick="IFIP.refresh()" title="Consultar de nuevo">↻</button></div><div id="if-ip-meta" class="if-ip-meta"></div></div>
     <div id="if-ip-list" class="if-ip-list"></div>
   </div>
 </div>
 <script>
 window.IFIP=(function(){
   let items=[];
+  let lastData=null;
   const modal=()=>document.getElementById('if-free-ip-modal');
   const list=()=>document.getElementById('if-ip-list');
   const meta=()=>document.getElementById('if-ip-meta');
   const filter=()=>document.getElementById('if-ip-filter');
+  const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
   function router(){const e=document.querySelector('[name="router_name"]');return e&&e.value?e.value:'CCR2116';}
-  async function load(){
-    list().innerHTML='<div class="if-ip-loading">Buscando IPs libres en el MikroTik...</div>';
-    meta().textContent='';
+  async function read(){
+    const r=await fetch('/api/mikrotik/free-ips?router='+encodeURIComponent(router()),{headers:{'Accept':'application/json'},cache:'no-store'});
+    const d=await r.json();
+    if(!d.ok) throw new Error(d.error||'No se pudo leer');
+    return d;
+  }
+  function applyData(d,note){
+    lastData=d;
+    items=Array.isArray(d.items)?d.items:[];
+    meta().textContent=(d.pools||0)+' pools · '+items.length+' IPs libres'+(d.updated_at?' · lectura '+d.updated_at:'')+(note?' · '+note:'');
+    render();
+  }
+  async function refresh(){
+    list().innerHTML='<div class="if-ip-loading"><span class="if-ip-spinner"></span>Consultando MikroTik...</div>';
+    meta().textContent='Leyendo pools e IPs ocupadas en tiempo real';
+    let before='';
     try{
-      const r=await fetch('/api/mikrotik/free-ips?router='+encodeURIComponent(router()),{headers:{'Accept':'application/json'}});
-      const d=await r.json();
-      if(!d.ok) throw new Error(d.error||'No se pudo leer');
-      items=Array.isArray(d.items)?d.items:[];
-      meta().textContent=(d.pools||0)+' pools · '+items.length+' IPs libres'+(d.updated_at?' · última lectura '+d.updated_at:'');
-      render();
-    }catch(e){items=[];list().innerHTML='<div class="if-ip-empty">No hay datos de pools todavía. Actualiza una vez el Agente MikroTik para activar esta función.</div>';}
+      try{const old=await read();before=old.updated_at||'';}catch(_e){}
+      const rr=await fetch('/api/mikrotik/free-ips/refresh?router='+encodeURIComponent(router()),{method:'POST',headers:{'Accept':'application/json'},cache:'no-store'});
+      const rd=await rr.json();
+      if(!rd.ok) throw new Error(rd.error||'No se pudo solicitar la consulta');
+      before=rd.before||before;
+      for(let i=0;i<16;i++){
+        await sleep(700);
+        const d=await read();
+        if((d.updated_at&&d.updated_at!==before&&d.pools>0) || (!before&&d.pools>0)){
+          applyData(d,'actualizado ahora');
+          return;
+        }
+      }
+      const d=await read();
+      applyData(d,'mostrando última lectura');
+    }catch(e){
+      try{applyData(await read(),'última lectura guardada');}
+      catch(_e){items=[];lastData=null;meta().textContent='';list().innerHTML='<div class="if-ip-empty">No pude consultar el MikroTik. Verifica que el agente esté instalado y conectado.</div>';}
+    }
   }
   function render(){
     const q=(filter().value||'').toLowerCase();
     const rows=items.filter(x=>!q||String(x.ip).toLowerCase().includes(q)||String(x.pool).toLowerCase().includes(q)||String(x.range).toLowerCase().includes(q));
     list().innerHTML='';
-    if(!rows.length){list().innerHTML='<div class="if-ip-empty">No encontré IPs libres con ese filtro.</div>';return;}
-    rows.slice(0,1000).forEach(x=>{
+    if(!rows.length){
+      list().innerHTML='<div class="if-ip-empty">'+((lastData&&lastData.pools)?'No encontré IPs libres con ese filtro.':'No llegaron pools del MikroTik todavía.')+'</div>';
+      return;
+    }
+    let current='';
+    rows.slice(0,1200).forEach(x=>{
+      const key=String(x.pool||'Sin pool');
+      if(key!==current){
+        current=key;
+        const h=document.createElement('div');h.className='if-ip-group';h.textContent=key+' · '+String(x.range||'');list().appendChild(h);
+      }
       const b=document.createElement('button');b.type='button';b.className='if-ip-row';
       const s=document.createElement('strong');s.textContent=x.ip;
-      const sm=document.createElement('small');sm.textContent=x.pool+': '+x.range;
+      const sm=document.createElement('small');sm.textContent='Pool: '+x.pool+' · Rango: '+x.range;
       b.appendChild(s);b.appendChild(sm);b.onclick=()=>choose(x.ip);list().appendChild(b);
     });
   }
-  function choose(ip){const e=document.querySelector('[name="ip_address"]');if(e){e.value=ip;e.dispatchEvent(new Event('change',{bubbles:true}));}close();}
-  function open(){modal().style.display='flex';document.body.style.overflow='hidden';filter().value='';load();setTimeout(()=>filter().focus(),50);}
+  function choose(ip){
+    const e=document.querySelector('[name="ip_address"]');
+    if(e){e.value=ip;e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));}
+    close();
+  }
+  function open(){modal().style.display='flex';document.body.style.overflow='hidden';filter().value='';refresh();setTimeout(()=>filter().focus(),100);}
   function close(){modal().style.display='none';document.body.style.overflow='';}
   document.addEventListener('keydown',e=>{if(e.key==='Escape'&&modal()&&modal().style.display==='flex')close();});
-  return {open,close,render,choose};
+  return {open,close,render,choose,refresh};
 })();
 </script>
 '''
@@ -263,3 +335,4 @@ def setup(app):
     app.add_url_rule('/api/mikrotik/pool-state', endpoint='mikrotik_pool_state_sync', view_func=pool_state_sync, methods=['POST'])
     app.add_url_rule('/api/mikrotik/pool-state-v2', endpoint='mikrotik_pool_state_sync_v2', view_func=pool_state_sync_v2, methods=['POST'])
     app.add_url_rule('/api/mikrotik/free-ips', endpoint='mikrotik_free_ips_api', view_func=free_ips_api, methods=['GET'])
+    app.add_url_rule('/api/mikrotik/free-ips/refresh', endpoint='mikrotik_free_ips_refresh_api', view_func=free_ips_refresh_api, methods=['POST'])

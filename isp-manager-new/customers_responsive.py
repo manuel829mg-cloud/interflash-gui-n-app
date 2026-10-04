@@ -35,7 +35,7 @@ def customer_service_action(id, action):
         return redirect(url_for('login'))
 
     action = (action or '').upper()
-    if action not in ('SUSPEND', 'REACTIVATE'):
+    if action not in ('SUSPEND', 'REACTIVATE', 'DELETE'):
         flash('Acción no permitida.')
         return redirect(url_for('customers'))
 
@@ -52,12 +52,20 @@ def customer_service_action(id, action):
             _queue(c, customer, 'SUSPEND')
         message = 'Cliente marcado como suspendido.' + (' Orden enviada a la cola del MikroTik.' if customer['pppoe'] else '')
         audit_action = 'CUSTOMER_SUSPEND'
-    else:
+    elif action == 'REACTIVATE':
         c.execute("UPDATE customers SET status='ACTIVO', service_status='ACTIVO' WHERE id=?", (id,))
         if customer['pppoe']:
             _queue(c, customer, 'REACTIVATE')
         message = 'Cliente marcado como activo.' + (' Orden enviada a la cola del MikroTik.' if customer['pppoe'] else '')
         audit_action = 'CUSTOMER_REACTIVATE'
+    else:
+        # Eliminación segura: desaparece de la lista de clientes y se elimina el PPPoE,
+        # pero se conserva el registro para no perder facturas, pagos ni auditoría.
+        c.execute("UPDATE customers SET status='ELIMINADO', service_status='ELIMINADO' WHERE id=?", (id,))
+        if customer['pppoe']:
+            _queue(c, customer, 'DELETE_PPPOE')
+        message = 'Cliente eliminado de la lista.' + (' Se envió la eliminación del PPPoE al MikroTik.' if customer['pppoe'] else '') + ' El historial financiero se conserva.'
+        audit_action = 'CUSTOMER_DELETE'
 
     c.commit()
     c.close()
@@ -78,12 +86,13 @@ def customers_responsive():
     sql = '''SELECT cu.*,p.name plan_name,z.name zone_name
              FROM customers cu
              LEFT JOIN plans p ON p.id=cu.plan_id
-             LEFT JOIN zones z ON z.id=cu.zone_id'''
+             LEFT JOIN zones z ON z.id=cu.zone_id
+             WHERE COALESCE(cu.status,'ACTIVO') <> 'ELIMINADO' '''
     args = []
     if q:
         like = '%' + q + '%'
-        sql += ''' WHERE cu.name LIKE ? OR cu.phone LIKE ? OR cu.document LIKE ?
-                   OR cu.pppoe LIKE ? OR cu.onu_serial LIKE ? OR cu.code LIKE ?'''
+        sql += ''' AND (cu.name LIKE ? OR cu.phone LIKE ? OR cu.document LIKE ?
+                   OR cu.pppoe LIKE ? OR cu.onu_serial LIKE ? OR cu.code LIKE ?)'''
         args = [like] * 6
     sql += ' ORDER BY cu.id DESC'
     rows = c.execute(sql, args).fetchall()
@@ -105,6 +114,8 @@ def customers_responsive():
         else:
             service_buttons = f'''<form method="post" action="{url_for('customer_service_action',id=r['id'],action='SUSPEND')}" style="display:inline"><button class="btn action-suspend" type="submit" onclick="return confirm('¿Suspender este cliente?')">Suspender</button></form>'''
 
+        delete_button = f'''<form method="post" action="{url_for('customer_service_action',id=r['id'],action='DELETE')}" style="display:inline"><button class="btn action-delete" type="submit" onclick="return confirm('¿ELIMINAR este cliente? Se quitará de la lista y se eliminará su PPPoE del MikroTik. El historial de facturas y pagos se conservará.')">Eliminar</button></form>'''
+
         trs.append(f'''<tr>
           <td class="c-code" data-label="Código"><span>{esc(code)}</span></td>
           <td class="c-client" data-label="Cliente"><b>{esc(r['name'])}</b><br><span class="muted">{esc(r['phone'])}</span></td>
@@ -112,7 +123,7 @@ def customers_responsive():
           <td class="c-zone" data-label="Zona">{esc(r['zone_name'] or r['zone'] or '-')}</td>
           <td class="c-pppoe" data-label="PPPoE">{esc(r['pppoe'] or '-')}</td>
           <td class="c-state" data-label="Estado"><span class="tag {cls}">{esc(state)}</span></td>
-          <td class="c-actions" data-label="Acciones"><div class="client-actions"><a class="btn blue" href="{url_for('customer_profile',id=r['id'])}">Ficha</a><a class="btn" href="{url_for('customer_edit',id=r['id'])}">Editar</a>{service_buttons}</div></td>
+          <td class="c-actions" data-label="Acciones"><div class="client-actions"><a class="btn blue" href="{url_for('customer_profile',id=r['id'])}">Ficha</a><a class="btn" href="{url_for('customer_edit',id=r['id'])}">Editar</a>{service_buttons}{delete_button}</div></td>
         </tr>''')
 
     body = f'''
@@ -123,35 +134,36 @@ def customers_responsive():
       .clients-fit th{{color:#92a5b8;font-size:11px;text-transform:uppercase;}}
       .clients-fit .c-code{{width:9%;}}
       .clients-fit .c-code span{{white-space:nowrap;word-break:normal;overflow-wrap:normal;}}
-      .clients-fit .c-client{{width:22%;}}
-      .clients-fit .c-plan{{width:14%;}}
-      .clients-fit .c-zone{{width:12%;}}
-      .clients-fit .c-pppoe{{width:15%;font-family:Consolas,monospace;font-size:12px;}}
+      .clients-fit .c-client{{width:21%;}}
+      .clients-fit .c-plan{{width:13%;}}
+      .clients-fit .c-zone{{width:11%;}}
+      .clients-fit .c-pppoe{{width:14%;font-family:Consolas,monospace;font-size:12px;}}
       .clients-fit .c-state{{width:10%;}}
-      .clients-fit .c-actions{{width:18%;}}
+      .clients-fit .c-actions{{width:22%;}}
       .client-actions{{display:flex;gap:5px;flex-wrap:wrap;align-items:center;}}
       .client-actions .btn{{padding:6px 8px;font-size:11px;white-space:nowrap;}}
       .client-actions form{{margin:0;}}
       .action-suspend{{background:#5a3b08;border-color:#8a5c0a;color:#ffd782;}}
       .action-reactivate{{background:#076d45;border-color:#0a925d;color:#b8f6d6;}}
+      .action-delete{{background:#5a161b;border-color:#a52a34;color:#ff9aa3;}}
       .clients-toolbar{{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:13px;}}
       .clients-toolbar .field{{flex:1;min-width:220px;max-width:560px;}}
       @media(max-width:1180px){{
         .clients-fit .c-zone{{display:none;}}
-        .clients-fit .c-client{{width:25%;}}
-        .clients-fit .c-plan{{width:15%;}}
-        .clients-fit .c-pppoe{{width:18%;}}
+        .clients-fit .c-client{{width:24%;}}
+        .clients-fit .c-plan{{width:14%;}}
+        .clients-fit .c-pppoe{{width:16%;}}
         .clients-fit .c-code{{width:10%;}}
         .clients-fit .c-state{{width:11%;}}
-        .clients-fit .c-actions{{width:21%;}}
+        .clients-fit .c-actions{{width:25%;}}
       }}
       @media(max-width:900px){{
         .clients-fit .c-plan{{display:none;}}
-        .clients-fit .c-client{{width:29%;}}
-        .clients-fit .c-pppoe{{width:22%;}}
+        .clients-fit .c-client{{width:27%;}}
+        .clients-fit .c-pppoe{{width:20%;}}
         .clients-fit .c-code{{width:12%;}}
         .clients-fit .c-state{{width:13%;}}
-        .clients-fit .c-actions{{width:24%;}}
+        .clients-fit .c-actions{{width:28%;}}
       }}
       @media(max-width:760px){{
         .clients-fit{{table-layout:auto;}}

@@ -114,7 +114,7 @@ def customers_responsive():
         else:
             service_buttons = f'''<form method="post" action="{url_for('customer_service_action',id=r['id'],action='SUSPEND')}" style="display:inline"><button class="btn action-suspend" type="submit" onclick="return confirm('¿Suspender este cliente?')">Suspender</button></form>'''
 
-        delete_button = f'''<form method="post" action="{url_for('customer_service_action',id=r['id'],action='DELETE')}" style="display:inline"><button class="btn action-delete" type="submit" onclick="return confirm('¿ELIMINAR este cliente? Se quitará de la lista y se eliminará su PPPoE del MikroTik. El historial de facturas y pagos se conservará.')">Eliminar</button></form>'''
+        delete_button = f'''<form method="post" action="{url_for('customer_service_action',id=r['id'],action='DELETE')}" style="display:inline"><button class="btn action-delete" type="submit" title="Eliminar cliente" aria-label="Eliminar cliente" onclick="return confirm('¿ELIMINAR este cliente? Se quitará de la lista y se eliminará su PPPoE del MikroTik. El historial de facturas y pagos se conservará.')">🗑️</button></form>'''
 
         trs.append(f'''<tr>
           <td class="c-code" data-label="Código"><span>{esc(code)}</span></td>
@@ -145,7 +145,7 @@ def customers_responsive():
       .client-actions form{{margin:0;}}
       .action-suspend{{background:#5a3b08;border-color:#8a5c0a;color:#ffd782;}}
       .action-reactivate{{background:#076d45;border-color:#0a925d;color:#b8f6d6;}}
-      .action-delete{{background:#5a161b;border-color:#a52a34;color:#ff9aa3;}}
+      .action-delete{{background:#5a161b;border-color:#a52a34;color:#ff9aa3;width:34px;height:34px;padding:0!important;font-size:16px!important;line-height:1;}}
       .clients-toolbar{{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:13px;}}
       .clients-toolbar .field{{flex:1;min-width:220px;max-width:560px;}}
       @media(max-width:1180px){{

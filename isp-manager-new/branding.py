@@ -5,12 +5,12 @@ LOGO_URL = '/static/interflash-logo.svg'
 
 _EXTRA_CSS = '''
 <style>
-.brandmark.brandmark-logo{background:transparent!important;width:58px;height:58px;border-radius:12px;overflow:hidden;display:flex;align-items:center;justify-content:center;flex:0 0 58px;box-shadow:0 0 0 1px #28435f inset}
-.brandmark.brandmark-logo img{width:100%;height:100%;object-fit:contain;display:block;border-radius:10px}
+.brandmark.brandmark-logo{background:transparent!important;width:64px;height:64px;border-radius:0;overflow:visible;display:flex;align-items:center;justify-content:center;flex:0 0 64px;box-shadow:none}
+.brandmark.brandmark-logo img{width:64px;height:64px;object-fit:contain;display:block;border-radius:0}
 .brand{align-items:center}
-.loginbox .brandmark.brandmark-logo{width:104px;height:72px;flex-basis:104px;box-shadow:none}
-.loginbox .brandmark.brandmark-logo img{object-fit:contain}
-@media(max-width:850px){.brandmark.brandmark-logo{width:54px;height:54px;flex-basis:54px}.side .brand{padding-left:4px;padding-right:4px}}
+.loginbox .brandmark.brandmark-logo{width:120px;height:120px;flex-basis:120px;box-shadow:none}
+.loginbox .brandmark.brandmark-logo img{width:120px;height:120px;object-fit:contain;border-radius:0}
+@media(max-width:850px){.brandmark.brandmark-logo{width:58px;height:58px;flex-basis:58px}.brandmark.brandmark-logo img{width:58px;height:58px}.side .brand{padding-left:4px;padding-right:4px}}
 </style>
 '''
 

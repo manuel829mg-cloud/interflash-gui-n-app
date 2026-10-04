@@ -17,6 +17,7 @@ import admin_suite
 import traffic_monitor_fix
 import traffic_monitor_v2
 import free_ip_picker
+import pool_compat_fix
 import branding
 
 _original_audit = push_sync.base.audit
@@ -36,6 +37,7 @@ client_extract.setup(app)
 client_nav_group.setup()
 pbr_client.setup(app)
 free_ip_picker.setup(app)
+pool_compat_fix.setup(app)
 plan_import.setup(app)
 customers_responsive.setup(app)
 suspension_agent.setup(app)

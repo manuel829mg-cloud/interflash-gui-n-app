@@ -38,6 +38,13 @@ def control_script_fast():
       :if ([:len $sec] = 0) do={{ :error "PPPoE no encontrado"; }}
       /ppp secret set $sec disabled=no;
     }}
+    :if ($action="RESTART_PPPOE") do={{
+      :local sec [/ppp secret find where name=$user];
+      :if ([:len $sec] = 0) do={{ :error "PPPoE no encontrado"; }}
+      :if ([/ppp secret get $sec disabled] = true) do={{ :error "PPPoE suspendido"; }}
+      :local act [/ppp active find where name=$user];
+      :if ([:len $act] > 0) do={{ /ppp active remove $act; }}
+    }}
     :if ($action="CHANGE_PROFILE") do={{ /ppp secret set [find where name=$user] profile=($p->"profile"); }}
     :if ($action="CHANGE_PASSWORD") do={{ /ppp secret set [find where name=$user] password=($p->"password"); }}
     :if ($action="DELETE_PPPOE") do={{ /ppp active remove [find where name=$user]; /ppp secret remove [find where name=$user]; }}
@@ -63,15 +70,14 @@ def control_script_fast():
 /system script run interflash-agent
 '''
 
-    body = f'''<div class="head"><div><h1>Agente MikroTik</h1><p>Suspensión real e inmediata de clientes PPPoE.</p></div><a class="btn" href="{url_for('mikrotik_commands')}">← Cola</a></div>
+    body = f'''<div class="head"><div><h1>Agente MikroTik</h1><p>Suspensión, reactivación, reinicio y cambios PPPoE desde la plataforma.</p></div><a class="btn" href="{url_for('mikrotik_commands')}">← Cola</a></div>
     <div class="panel">
-      <div class="notice" style="background:#063f2a;color:#b8f6d6;margin-bottom:12px"><b>Suspensión real:</b> al pulsar Suspender, deshabilita el PPPoE y desconecta la sesión activa. El agente revisa órdenes cada 5 segundos.</div>
-      <div class="notice" style="background:#4e3707;color:#fff;margin-bottom:12px">Pega este bloque una sola vez en la terminal del CCR2116 para actualizar el agente.</div>
+      <div class="notice" style="background:#063f2a;color:#b8f6d6;margin-bottom:12px"><b>Control real:</b> Suspender deshabilita y desconecta; Reactivar habilita; Reiniciar PPPoE tumba solo la sesión para que vuelva a conectar. El agente revisa órdenes cada 5 segundos.</div>
+      <div class="notice" style="background:#4e3707;color:#fff;margin-bottom:12px">Si ya tenías el agente anterior, pega este bloque una sola vez para actualizarlo con la opción Reiniciar PPPoE.</div>
       <textarea class="field" style="width:100%;height:450px;font-family:Consolas,monospace">{pbr_client.esc(script)}</textarea>
     </div>'''
     return base.shell('Agente MikroTik', body, 'routers')
 
 
 def setup(app):
-    # Keep the same endpoint/URL so existing navigation continues to work.
     app.view_functions['pbr_control_script'] = control_script_fast

@@ -82,6 +82,51 @@ def pool_state_sync():
     return jsonify(ok=True, router=router, pools=saved_pools, used=saved_used, updated_at=now)
 
 
+def pool_state_sync_v2():
+    """RouterOS-friendly sync using one form-encoded item per request.
+
+    This avoids JSON serialization issues on some RouterOS builds. The MikroTik
+    sends reset, then each pool, then each occupied address.
+    """
+    if not pbr_client._auth():
+        return jsonify(ok=False, error='unauthorized'), 401
+    ensure_schema()
+    router = str(request.form.get('router') or 'CCR2116')[:80]
+    kind = str(request.form.get('kind') or '').strip().lower()
+    now = datetime.now().isoformat(timespec='seconds')
+    c = base.db()
+    try:
+        if kind == 'reset':
+            c.execute('DELETE FROM mikrotik_ip_pools WHERE router_name=?', (router,))
+            c.execute('DELETE FROM mikrotik_ip_used WHERE router_name=?', (router,))
+            c.commit()
+            return jsonify(ok=True, kind='reset', router=router)
+
+        if kind == 'pool':
+            name = str(request.form.get('name') or '').strip()[:160]
+            ranges = str(request.form.get('ranges') or '').strip()[:2000]
+            if not name or not ranges:
+                return jsonify(ok=False, error='missing-pool-data'), 400
+            c.execute('INSERT OR REPLACE INTO mikrotik_ip_pools(router_name,name,ranges,updated_at) VALUES(?,?,?,?)',
+                      (router, name, ranges, now))
+            c.commit()
+            return jsonify(ok=True, kind='pool', router=router, name=name)
+
+        if kind == 'used':
+            address = str(request.form.get('address') or '').strip()
+            source = str(request.form.get('source') or 'ROUTER').strip().upper()[:24]
+            if not _is_ip(address):
+                return jsonify(ok=True, kind='used', ignored=True)
+            c.execute('INSERT OR IGNORE INTO mikrotik_ip_used(router_name,address,source,updated_at) VALUES(?,?,?,?)',
+                      (router, address, source, now))
+            c.commit()
+            return jsonify(ok=True, kind='used', router=router, address=address)
+
+        return jsonify(ok=False, error='invalid-kind'), 400
+    finally:
+        c.close()
+
+
 def _expand_segment(segment):
     segment = segment.strip()
     if not segment:
@@ -216,4 +261,5 @@ def setup(app):
         return _inject_picker(original(row))
     pbr_client.customer_form = customer_form_with_ip_picker
     app.add_url_rule('/api/mikrotik/pool-state', endpoint='mikrotik_pool_state_sync', view_func=pool_state_sync, methods=['POST'])
+    app.add_url_rule('/api/mikrotik/pool-state-v2', endpoint='mikrotik_pool_state_sync_v2', view_func=pool_state_sync_v2, methods=['POST'])
     app.add_url_rule('/api/mikrotik/free-ips', endpoint='mikrotik_free_ips_api', view_func=free_ips_api, methods=['GET'])

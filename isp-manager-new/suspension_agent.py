@@ -108,7 +108,7 @@ def control_script_fast():
     }}
   }}
 }}
-/system scheduler add name="interflash-pool-sync-scheduler" interval=30s on-event="/system script run interflash-pool-sync" policy=read,test,sensitive start-time=startup
+/system scheduler add name="interflash-pool-sync-scheduler" interval=10m on-event="/system script run interflash-pool-sync" policy=read,test,sensitive start-time=startup
 /system script run interflash-agent
 /system script run interflash-pool-sync
 '''

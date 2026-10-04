@@ -16,6 +16,24 @@ def _auth():
     return bool(TOKEN) and hmac.compare_digest(supplied, TOKEN)
 
 
+def _int(v):
+    try:
+        return int(float(v or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _bps(v):
+    try:
+        return max(float(v or 0), 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _fmt_mbps(v):
+    return f'{_bps(v) / 1_000_000:.2f} Mbps'
+
+
 def ensure_schema():
     c=base.db()
     c.executescript('''
@@ -34,6 +52,18 @@ def ensure_schema():
     CREATE TABLE IF NOT EXISTS push_ppp_profiles(
       id INTEGER PRIMARY KEY AUTOINCREMENT,router_name TEXT,name TEXT,remote_address TEXT,local_address TEXT,rate_limit TEXT,comment TEXT
     );
+    CREATE TABLE IF NOT EXISTS push_router_traffic(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      router_name TEXT NOT NULL,
+      interface_name TEXT NOT NULL,
+      rx_bytes INTEGER DEFAULT 0,
+      tx_bytes INTEGER DEFAULT 0,
+      rx_bps REAL DEFAULT 0,
+      tx_bps REAL DEFAULT 0,
+      updated_at TEXT,
+      UNIQUE(router_name, interface_name)
+    );
+    CREATE INDEX IF NOT EXISTS idx_push_router_traffic_router ON push_router_traffic(router_name);
     ''')
     c.commit(); c.close()
 
@@ -47,6 +77,42 @@ def _touch(c,name,identity='',version='',status='ONLINE'):
       status=excluded.status,last_seen=excluded.last_seen''',(name,identity or name,version or '',status,now))
 
 
+def _save_traffic(c, name, items):
+    now = datetime.now()
+    now_s = now.isoformat(timespec='seconds')
+    for x in items:
+        if not isinstance(x, dict):
+            continue
+        iface = _safe(x.get('name') or x.get('interface'), 120).strip()
+        if not iface:
+            continue
+        rx = _int(x.get('rx-byte') if 'rx-byte' in x else x.get('rx_bytes'))
+        tx = _int(x.get('tx-byte') if 'tx-byte' in x else x.get('tx_bytes'))
+        prev = c.execute(
+            'SELECT rx_bytes,tx_bytes,updated_at FROM push_router_traffic WHERE router_name=? AND interface_name=?',
+            (name, iface)
+        ).fetchone()
+        rx_bps = tx_bps = 0.0
+        if prev and prev['updated_at']:
+            try:
+                before = datetime.fromisoformat(prev['updated_at'])
+                seconds = max((now - before).total_seconds(), 0.0)
+                if seconds >= 1:
+                    prev_rx = _int(prev['rx_bytes']); prev_tx = _int(prev['tx_bytes'])
+                    if rx >= prev_rx:
+                        rx_bps = ((rx - prev_rx) * 8.0) / seconds
+                    if tx >= prev_tx:
+                        tx_bps = ((tx - prev_tx) * 8.0) / seconds
+            except (TypeError, ValueError):
+                pass
+        c.execute('''INSERT INTO push_router_traffic(router_name,interface_name,rx_bytes,tx_bytes,rx_bps,tx_bps,updated_at)
+                     VALUES(?,?,?,?,?,?,?)
+                     ON CONFLICT(router_name,interface_name) DO UPDATE SET
+                       rx_bytes=excluded.rx_bytes,tx_bytes=excluded.tx_bytes,
+                       rx_bps=excluded.rx_bps,tx_bps=excluded.tx_bps,updated_at=excluded.updated_at''',
+                  (name, iface, rx, tx, rx_bps, tx_bps, now_s))
+
+
 def sync_api():
     if not _auth(): return jsonify(ok=False,error='unauthorized'),401
     p=request.get_json(silent=True)
@@ -58,26 +124,45 @@ def sync_api():
     c=base.db()
     try:
         if kind=='start':
-            c.execute('DELETE FROM push_pppoe_secrets WHERE router_name=?',(name,)); c.execute('DELETE FROM push_pppoe_active WHERE router_name=?',(name,)); c.execute('DELETE FROM push_ppp_profiles WHERE router_name=?',(name,))
+            c.execute('DELETE FROM push_pppoe_secrets WHERE router_name=?',(name,))
+            c.execute('DELETE FROM push_pppoe_active WHERE router_name=?',(name,))
+            c.execute('DELETE FROM push_ppp_profiles WHERE router_name=?',(name,))
             _touch(c,name,_safe(p.get('identity'),80),_safe(p.get('version'),80),'SYNCING')
         elif kind=='secrets':
             for x in items:
-                if isinstance(x,dict): c.execute('INSERT INTO push_pppoe_secrets(router_name,name,profile,service,remote_address,caller_id,disabled,comment) VALUES(?,?,?,?,?,?,?,?)',(name,_safe(x.get('name'),255),_safe(x.get('profile'),255),_safe(x.get('service'),80),_safe(x.get('remote-address'),255),_safe(x.get('caller-id'),255),_safe(x.get('disabled'),20),_safe(x.get('comment'))))
+                if isinstance(x,dict):
+                    c.execute('INSERT INTO push_pppoe_secrets(router_name,name,profile,service,remote_address,caller_id,disabled,comment) VALUES(?,?,?,?,?,?,?,?)',
+                              (name,_safe(x.get('name'),255),_safe(x.get('profile'),255),_safe(x.get('service'),80),_safe(x.get('remote-address'),255),_safe(x.get('caller-id'),255),_safe(x.get('disabled'),20),_safe(x.get('comment'))))
             _touch(c,name,status='SYNCING')
         elif kind=='active':
             for x in items:
-                if isinstance(x,dict): c.execute('INSERT INTO push_pppoe_active(router_name,name,address,caller_id,service,uptime) VALUES(?,?,?,?,?,?)',(name,_safe(x.get('name'),255),_safe(x.get('address'),255),_safe(x.get('caller-id'),255),_safe(x.get('service'),80),_safe(x.get('uptime'),80)))
+                if isinstance(x,dict):
+                    c.execute('INSERT INTO push_pppoe_active(router_name,name,address,caller_id,service,uptime) VALUES(?,?,?,?,?,?)',
+                              (name,_safe(x.get('name'),255),_safe(x.get('address'),255),_safe(x.get('caller-id'),255),_safe(x.get('service'),80),_safe(x.get('uptime'),80)))
             _touch(c,name,status='SYNCING')
         elif kind=='profiles':
             for x in items:
-                if isinstance(x,dict): c.execute('INSERT INTO push_ppp_profiles(router_name,name,remote_address,local_address,rate_limit,comment) VALUES(?,?,?,?,?,?)',(name,_safe(x.get('name'),255),_safe(x.get('remote-address'),255),_safe(x.get('local-address'),255),_safe(x.get('rate-limit'),255),_safe(x.get('comment'))))
+                if isinstance(x,dict):
+                    c.execute('INSERT INTO push_ppp_profiles(router_name,name,remote_address,local_address,rate_limit,comment) VALUES(?,?,?,?,?,?)',
+                              (name,_safe(x.get('name'),255),_safe(x.get('remote-address'),255),_safe(x.get('local-address'),255),_safe(x.get('rate-limit'),255),_safe(x.get('comment'))))
             _touch(c,name,status='SYNCING')
+        elif kind=='traffic':
+            _save_traffic(c, name, items)
+            _touch(c,name,status='ONLINE')
         elif kind=='finish':
-            total=c.execute('SELECT COUNT(*) c FROM push_pppoe_secrets WHERE router_name=?',(name,)).fetchone()['c']; active=c.execute('SELECT COUNT(*) c FROM push_pppoe_active WHERE router_name=?',(name,)).fetchone()['c']; profiles=c.execute('SELECT COUNT(*) c FROM push_ppp_profiles WHERE router_name=?',(name,)).fetchone()['c']; now=datetime.now().isoformat(timespec='seconds')
-            _touch(c,name,_safe(p.get('identity'),80),_safe(p.get('version'),80),'ONLINE'); c.execute('UPDATE push_router_agents SET last_sync=?,pppoe_total=?,pppoe_active=?,ppp_profiles=? WHERE name=?',(now,total,active,profiles,name)); base.audit('MIKROTIK_RELAY_SYNC',f'{name} {active}/{total}')
-        else: return jsonify(ok=False,error='unknown-kind'),400
+            total=c.execute('SELECT COUNT(*) c FROM push_pppoe_secrets WHERE router_name=?',(name,)).fetchone()['c']
+            active=c.execute('SELECT COUNT(*) c FROM push_pppoe_active WHERE router_name=?',(name,)).fetchone()['c']
+            profiles=c.execute('SELECT COUNT(*) c FROM push_ppp_profiles WHERE router_name=?',(name,)).fetchone()['c']
+            now=datetime.now().isoformat(timespec='seconds')
+            _touch(c,name,_safe(p.get('identity'),80),_safe(p.get('version'),80),'ONLINE')
+            c.execute('UPDATE push_router_agents SET last_sync=?,pppoe_total=?,pppoe_active=?,ppp_profiles=? WHERE name=?',
+                      (now,total,active,profiles,name))
+            base.audit('MIKROTIK_RELAY_SYNC',f'{name} {active}/{total}')
+        else:
+            return jsonify(ok=False,error='unknown-kind'),400
         c.commit()
-    finally: c.close()
+    finally:
+        c.close()
     return jsonify(ok=True,kind=kind,received=len(items))
 
 
@@ -86,10 +171,66 @@ def view():
     c=base.db(); agents=c.execute('SELECT * FROM push_router_agents ORDER BY id DESC').fetchall(); c.close(); rows=[]
     for a in agents:
         cls='ok' if a['status']=='ONLINE' else 'warn'
-        rows.append(f'''<tr><td><b>{escape(a['name'] or '')}</b><br><span class="muted">{escape(a['identity'] or '')}</span></td><td><span class="tag {cls}">{escape(a['status'] or '')}</span></td><td>{escape(a['ros_version'] or '-')}</td><td>{int(a['pppoe_active'] or 0)} / {int(a['pppoe_total'] or 0)}</td><td>{int(a['ppp_profiles'] or 0)}</td><td>{escape(a['last_sync'] or '-')}</td><td><div style="display:flex;gap:7px;flex-wrap:wrap"><a class="btn blue" href="{url_for('router_push_pppoe',name=a['name'])}">Extraer clientes</a><a class="btn" href="{url_for('router_push_csv',name=a['name'])}">CSV</a></div></td></tr>''')
-    table=''.join(rows) or '<tr><td colspan="7" class="muted">Esperando la primera sincronización desde la página anterior.</td></tr>'
-    body=f'''<div class="head"><div><h1>Sincronización segura</h1><p>La página anterior recibe el CCR2116 y reenvía una copia a este sistema.</p></div></div><div class="panel"><div style="padding:11px;border-radius:8px;background:#063f2a;color:#9ff0c8;margin-bottom:12px"><b>Solo lectura del MikroTik.</b> Puedes escoger cuáles clientes importar al sistema.</div><table class="table"><tr><th>Router</th><th>Estado</th><th>RouterOS</th><th>PPPoE activos/total</th><th>Perfiles</th><th>Última sync</th><th>Extraer</th></tr>{table}</table></div>'''
+        rows.append(f'''<tr><td><b>{escape(a['name'] or '')}</b><br><span class="muted">{escape(a['identity'] or '')}</span></td><td><span class="tag {cls}">{escape(a['status'] or '')}</span></td><td>{escape(a['ros_version'] or '-')}</td><td>{int(a['pppoe_active'] or 0)} / {int(a['pppoe_total'] or 0)}</td><td>{int(a['ppp_profiles'] or 0)}</td><td>{escape(a['last_sync'] or '-')}</td><td><a class="btn blue" href="{url_for('router_push_traffic',name=a['name'])}">Consumo MikroTik</a></td></tr>''')
+    table=''.join(rows) or '<tr><td colspan="7" class="muted">Esperando la primera sincronización desde el MikroTik.</td></tr>'
+    body=f'''<div class="head"><div><h1>Sincronización segura</h1><p>Estado general del CCR y consumo de sus interfaces WAN.</p></div></div><div class="panel"><div style="padding:11px;border-radius:8px;background:#063f2a;color:#9ff0c8;margin-bottom:12px"><b>Solo lectura del MikroTik.</b> La opción principal muestra el tráfico total de las WAN, no el consumo por cliente.</div><table class="table"><tr><th>Router</th><th>Estado</th><th>RouterOS</th><th>PPPoE activos/total</th><th>Perfiles</th><th>Última sync</th><th>Consumo</th></tr>{table}</table></div>'''
     return base.shell('Sincronización segura',body,'routers')
+
+
+def traffic(name):
+    if not base.logged_in(): return redirect(url_for('login'))
+    c=base.db()
+    rows=c.execute('SELECT * FROM push_router_traffic WHERE router_name=? ORDER BY interface_name',(name,)).fetchall()
+    c.close()
+
+    wan=[r for r in rows if 'wan' in (r['interface_name'] or '').lower()]
+    total_rx=sum(_bps(r['rx_bps']) for r in wan)
+    total_tx=sum(_bps(r['tx_bps']) for r in wan)
+    last=max((r['updated_at'] or '' for r in rows), default='-')
+
+    ifaces=[]
+    for r in rows:
+        is_wan='wan' in (r['interface_name'] or '').lower()
+        badge='<span class="tag ok">WAN</span>' if is_wan else '<span class="tag warn">OTRA</span>'
+        ifaces.append(f'''<tr><td><b>{escape(r['interface_name'] or '')}</b></td><td>{badge}</td><td>{_fmt_mbps(r['rx_bps'])}</td><td>{_fmt_mbps(r['tx_bps'])}</td><td>{escape(r['updated_at'] or '-')}</td></tr>''')
+    table=''.join(ifaces) or '<tr><td colspan="5" class="muted">Todavía no han llegado datos de tráfico.</td></tr>'
+
+    if wan:
+        note=f'Sumando {len(wan)} interfaz(es) cuyo nombre contiene WAN.'
+    else:
+        note='Aún no se identifican interfaces con “WAN” en el nombre. Activa el monitor para comenzar a recibir datos.'
+
+    body=f'''<div class="head"><div><h1>Consumo MikroTik · {escape(name)}</h1><p>Tráfico total del router por sus interfaces WAN.</p></div><div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn blue" href="{url_for('router_push_traffic_script',name=name)}">Activar monitor</a><a class="btn" href="{url_for('router_push_view')}">← Volver</a></div></div>
+    <div class="grid6" style="grid-template-columns:repeat(3,minmax(180px,1fr))">
+      <div class="kpi blue1"><div class="label">Descarga total</div><div class="value">{_fmt_mbps(total_rx)}</div><div class="sub">RX de las WAN</div></div>
+      <div class="kpi green1"><div class="label">Subida total</div><div class="value">{_fmt_mbps(total_tx)}</div><div class="sub">TX de las WAN</div></div>
+      <div class="kpi cyan1"><div class="label">Última lectura</div><div class="value" style="font-size:16px">{escape(last)}</div><div class="sub">{escape(note)}</div></div>
+    </div>
+    <div class="panel"><table class="table"><tr><th>Interfaz</th><th>Tipo</th><th>Descarga</th><th>Subida</th><th>Actualizado</th></tr>{table}</table></div>
+    <script>setTimeout(function(){{location.reload()}},10000)</script>'''
+    return base.shell('Consumo MikroTik',body,'routers')
+
+
+def traffic_script(name):
+    if not base.logged_in(): return redirect(url_for('login'))
+    if not TOKEN:
+        return base.shell('Activar monitor','<div class="panel"><div class="notice">Falta MIKROTIK_RELAY_TOKEN en Railway.</div></div>','routers')
+    root=request.url_root.rstrip('/')
+    script=f'''/system script remove [find where name="interflash-traffic"]
+/system scheduler remove [find where name="interflash-traffic-scheduler"]
+/system script add name="interflash-traffic" policy=read,test source={{
+  :local url "{root}/api/mikrotik/relay-sync";
+  :local headers "Content-Type:application/json,X-InterFlash-Relay: {TOKEN}";
+  :local traffic [:serialize to=json value=[/interface print stats as-value proplist=name,rx-byte,tx-byte] options=json.no-string-conversion];
+  :local data ("{{\"router\":\"{name}\",\"kind\":\"traffic\",\"items\":" . $traffic . "}}");
+  /tool fetch url=$url http-method=post http-header-field=$headers http-data=$data output=none check-certificate=yes;
+}}
+/system scheduler add name="interflash-traffic-scheduler" interval=15s on-event="/system script run interflash-traffic" policy=read,test start-time=startup
+/system script run interflash-traffic
+'''
+    body=f'''<div class="head"><div><h1>Activar consumo MikroTik</h1><p>Pega este bloque una sola vez en la terminal del MikroTik. Solo lee contadores de interfaces.</p></div><a class="btn" href="{url_for('router_push_traffic',name=name)}">← Volver</a></div>
+    <div class="panel"><div style="padding:11px;border-radius:8px;background:#063f2a;color:#9ff0c8;margin-bottom:12px"><b>Solo lectura.</b> Envía RX/TX cada 15 segundos para calcular Mbps.</div><textarea class="field" style="width:100%;height:360px;font-family:Consolas,monospace">{escape(script)}</textarea></div>'''
+    return base.shell('Activar consumo MikroTik',body,'routers')
 
 
 def pppoe(name):
@@ -107,7 +248,9 @@ def pppoe(name):
         if q and q.lower() not in ((r['name'] or '')+' '+display_name+' '+(r['profile'] or '')).lower():
             continue
         shown+=1
-        a=amap.get(r['name']); disabled=str(r['disabled'] or '').lower() in ('true','yes','1'); status,cls=('SUSPENDIDO','bad') if disabled else (('ONLINE','ok') if a else ('OFFLINE','warn')); ip=a['address'] if a else r['remote_address']; caller=a['caller_id'] if a else r['caller_id']
+        a=amap.get(r['name']); disabled=str(r['disabled'] or '').lower() in ('true','yes','1')
+        status,cls=('SUSPENDIDO','bad') if disabled else (('ONLINE','ok') if a else ('OFFLINE','warn'))
+        ip=a['address'] if a else r['remote_address']; caller=a['caller_id'] if a else r['caller_id']
         already=(r['name'] or '') in imported
         checkbox='<span class="tag ok">YA IMPORTADO</span>' if already else f'<input class="client-check" type="checkbox" name="client_ids" value="{r["id"]}" style="width:20px;height:20px">'
         rows.append(f'''<tr><td>{checkbox}</td><td><b>{escape(display_name)}</b><br><span class="muted">PPPoE: {escape(r['name'] or '')}</span></td><td>{escape(r['profile'] or '-')}</td><td>{escape(ip or '-')}</td><td>{escape(caller or '-')}</td><td><span class="tag {cls}">{status}</span></td></tr>''')
@@ -175,5 +318,7 @@ def setup(app):
     app.add_url_rule('/api/mikrotik/relay-sync',endpoint='mikrotik_relay_sync',view_func=sync_api,methods=['POST'])
     app.add_url_rule('/routers/push-sync',endpoint='router_push_view',view_func=view,methods=['GET'])
     app.add_url_rule('/routers/push-sync/<name>',endpoint='router_push_pppoe',view_func=pppoe,methods=['GET'])
+    app.add_url_rule('/routers/push-sync/<name>/traffic',endpoint='router_push_traffic',view_func=traffic,methods=['GET'])
+    app.add_url_rule('/routers/push-sync/<name>/traffic-script',endpoint='router_push_traffic_script',view_func=traffic_script,methods=['GET'])
     app.add_url_rule('/routers/push-sync/<name>/import',endpoint='router_push_import',view_func=import_selected,methods=['POST'])
     app.add_url_rule('/routers/push-sync/<name>/csv',endpoint='router_push_csv',view_func=export_csv,methods=['GET'])

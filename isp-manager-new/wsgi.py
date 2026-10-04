@@ -9,6 +9,7 @@ import command_queue_ui
 import client_extract
 import client_nav_group
 import pbr_client
+import plan_import
 
 _original_audit = push_sync.base.audit
 
@@ -26,6 +27,7 @@ command_queue_ui.setup(app)
 client_extract.setup(app)
 client_nav_group.setup()
 pbr_client.setup(app)
+plan_import.setup(app)
 
 def routers_secure():
     return redirect(url_for('router_push_view'))

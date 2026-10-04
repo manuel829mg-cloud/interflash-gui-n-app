@@ -10,6 +10,8 @@ def control_script_fast():
         return base.shell('Agente MikroTik','<div class="panel"><div class="notice">Falta configurar MIKROTIK_AGENT_TOKEN en Railway.</div></div>','routers')
 
     root = request.url_root.rstrip('/')
+    if root.startswith('http://'):
+        root = 'https://' + root[len('http://'):]
     token = pbr_client.TOKEN
     script = f'''/system script remove [find where name="interflash-agent"]
 /system scheduler remove [find where name="interflash-agent-scheduler"]

@@ -14,6 +14,7 @@ import customers_responsive
 import suspension_agent
 import isp_operations_plus
 import admin_suite
+import traffic_monitor_fix
 
 _original_audit = push_sync.base.audit
 
@@ -36,6 +37,7 @@ customers_responsive.setup(app)
 suspension_agent.setup(app)
 isp_operations_plus.setup(app)
 admin_suite.setup(app)
+traffic_monitor_fix.setup(app)
 
 def routers_secure():
     return redirect(url_for('router_push_view'))

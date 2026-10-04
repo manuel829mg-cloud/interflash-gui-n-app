@@ -10,6 +10,7 @@ import client_extract
 import client_nav_group
 import pbr_client
 import plan_import
+import customers_responsive
 
 _original_audit = push_sync.base.audit
 
@@ -28,6 +29,7 @@ client_extract.setup(app)
 client_nav_group.setup()
 pbr_client.setup(app)
 plan_import.setup(app)
+customers_responsive.setup(app)
 
 def routers_secure():
     return redirect(url_for('router_push_view'))

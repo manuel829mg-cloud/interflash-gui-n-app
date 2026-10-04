@@ -7,6 +7,7 @@ import ops_suite
 import finance_plus
 import command_queue_ui
 import client_extract
+import client_nav_group
 
 _original_audit = push_sync.base.audit
 
@@ -22,6 +23,7 @@ ops_suite.setup(app)
 finance_plus.setup(app)
 command_queue_ui.setup(app)
 client_extract.setup(app)
+client_nav_group.setup()
 
 def routers_secure():
     return redirect(url_for('router_push_view'))

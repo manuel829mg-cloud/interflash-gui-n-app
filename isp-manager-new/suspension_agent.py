@@ -15,7 +15,7 @@ def control_script_fast():
     token = pbr_client.TOKEN
     script = f'''/system script remove [find where name="interflash-agent"]
 /system scheduler remove [find where name="interflash-agent-scheduler"]
-/system script add name="interflash-agent" policy=read,write,test source={{
+/system script add name="interflash-agent" policy=read,write,test,sensitive source={{
   :local base "{root}";
   :local token "{token}";
   :local hdr ("X-InterFlash-Agent: " . $token);
@@ -62,18 +62,23 @@ def control_script_fast():
       :local ip ($p->"ip");
       :foreach l in={{"Linea-1-Claro";"Linea-2-Claro";"Linea-3-Altice";"Linea-4-Altice"}} do={{ /ip firewall address-list remove [find where list=$l and address=$ip]; }}
     }}
+    :if ($action="BACKUP_ROUTER") do={{
+      /system backup save name=interflash-auto dont-encrypt=yes;
+      /export file=interflash-auto-export show-sensitive=no;
+      :set result "Backup y export guardados en Files";
+    }}
   }} on-error={{ :set ok false; :set result "ERROR"; }}
   :local data ("{{\"id\":" . $id . ",\"ok\":" . $ok . ",\"result\":\"" . $result . "\"}}");
   /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/json," . $hdr) http-data=$data output=none check-certificate=yes;
 }}
-/system scheduler add name="interflash-agent-scheduler" interval=5s on-event="/system script run interflash-agent" policy=read,write,test start-time=startup
+/system scheduler add name="interflash-agent-scheduler" interval=5s on-event="/system script run interflash-agent" policy=read,write,test,sensitive start-time=startup
 /system script run interflash-agent
 '''
 
-    body = f'''<div class="head"><div><h1>Agente MikroTik</h1><p>Suspensión, reactivación, reinicio y cambios PPPoE desde la plataforma.</p></div><a class="btn" href="{url_for('mikrotik_commands')}">← Cola</a></div>
+    body = f'''<div class="head"><div><h1>Agente MikroTik</h1><p>Suspensión, reactivación, reinicio, backups y cambios PPPoE desde la plataforma.</p></div><a class="btn" href="{url_for('mikrotik_commands')}">← Cola</a></div>
     <div class="panel">
-      <div class="notice" style="background:#063f2a;color:#b8f6d6;margin-bottom:12px"><b>Control real:</b> Suspender deshabilita y desconecta; Reactivar habilita; Reiniciar PPPoE tumba solo la sesión para que vuelva a conectar. El agente revisa órdenes cada 5 segundos.</div>
-      <div class="notice" style="background:#4e3707;color:#fff;margin-bottom:12px">Si ya tenías el agente anterior, pega este bloque una sola vez para actualizarlo con la opción Reiniciar PPPoE.</div>
+      <div class="notice" style="background:#063f2a;color:#b8f6d6;margin-bottom:12px"><b>Control real:</b> Suspender deshabilita y desconecta; Reactivar habilita; Reiniciar PPPoE tumba solo la sesión; Backup guarda una copia y un export en Files del MikroTik. El agente revisa órdenes cada 5 segundos.</div>
+      <div class="notice" style="background:#4e3707;color:#fff;margin-bottom:12px">Pega este bloque una sola vez para actualizar el agente con todas las funciones nuevas.</div>
       <textarea class="field" style="width:100%;height:450px;font-family:Consolas,monospace">{pbr_client.esc(script)}</textarea>
     </div>'''
     return base.shell('Agente MikroTik', body, 'routers')

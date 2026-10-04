@@ -23,6 +23,35 @@ def traffic_sample():
     return jsonify(ok=True, interface=iface)
 
 
+def traffic_batch():
+    if not push_sync._auth():
+        return jsonify(ok=False, error='unauthorized'), 401
+    name = (request.form.get('router') or 'CCR2116')[:80].strip()
+    raw = request.form.get('samples') or ''
+    items = []
+    for part in raw.split('|'):
+        if not part:
+            continue
+        cols = part.split(',')
+        if len(cols) != 3:
+            continue
+        iface, rx, tx = cols
+        iface = iface[:120].strip()
+        if iface:
+            items.append({'name': iface, 'rx_bytes': rx, 'tx_bytes': tx})
+    if not items:
+        return jsonify(ok=False, error='missing-samples'), 400
+    push_sync.ensure_schema()
+    c = base.db()
+    try:
+        push_sync._save_traffic(c, name, items)
+        push_sync._touch(c, name, status='ONLINE')
+        c.commit()
+    finally:
+        c.close()
+    return jsonify(ok=True, received=len(items))
+
+
 def traffic_script_v2(name):
     if not base.logged_in():
         return redirect(url_for('login'))
@@ -36,25 +65,39 @@ def traffic_script_v2(name):
     script = f'''/system script remove [find where name="interflash-traffic"]
 /system scheduler remove [find where name="interflash-traffic-scheduler"]
 /system script add name="interflash-traffic" policy=read,test source={{
-  :local url "{root}/api/mikrotik/traffic-sample";
+  :local url "{root}/api/mikrotik/traffic-batch";
   :local headers "Content-Type:application/x-www-form-urlencoded,X-InterFlash-Relay: {push_sync.TOKEN}";
+  :local samples "";
   :foreach item in=[/interface print stats as-value where name~"WAN"] do={{
     :local n ($item->"name");
     :local rx ($item->"rx-byte");
     :local tx ($item->"tx-byte");
-    :local data ("router={name}&interface=" . $n . "&rx=" . $rx . "&tx=" . $tx);
+    :if ([:len $samples] > 0) do={{ :set samples ($samples . "|"); }}
+    :set samples ($samples . $n . "," . $rx . "," . $tx);
+  }}
+  :if ([:len $samples] > 0) do={{
+    :local data ("router={name}&samples=" . $samples);
     /tool fetch url=$url http-method=post http-header-field=$headers http-data=$data output=none check-certificate=yes;
   }}
 }}
-/system scheduler add name="interflash-traffic-scheduler" interval=15s on-event="/system script run interflash-traffic" policy=read,test start-time=startup
+/system scheduler add name="interflash-traffic-scheduler" interval=2s on-event="/system script run interflash-traffic" policy=read,test start-time=startup
 /system script run interflash-traffic
 '''
 
-    body = f'''<div class="head"><div><h1>Activar consumo MikroTik</h1><p>Versión 2: envía cada interfaz WAN por separado para evitar el error HTTP 400.</p></div><a class="btn" href="{url_for('router_push_traffic',name=name)}">← Volver</a></div>
-    <div class="panel"><div style="padding:11px;border-radius:8px;background:#063f2a;color:#9ff0c8;margin-bottom:12px"><b>Monitor v2.</b> Pega este bloque completo una sola vez. Reemplaza automáticamente el monitor anterior y lee solo interfaces cuyo nombre contiene WAN.</div><textarea class="field" style="width:100%;height:420px;font-family:Consolas,monospace">{push_sync.escape(script)}</textarea></div>'''
+    body = f'''<div class="head"><div><h1>Activar consumo MikroTik</h1><p>Monitor en tiempo casi real: una sola lectura de las WAN cada 2 segundos.</p></div><a class="btn" href="{url_for('router_push_traffic',name=name)}">← Volver</a></div>
+    <div class="panel"><div style="padding:11px;border-radius:8px;background:#063f2a;color:#9ff0c8;margin-bottom:12px"><b>Monitor v3 · 2 segundos.</b> Pega este bloque completo una sola vez. Reemplaza automáticamente el monitor anterior y envía las 4 WAN juntas en una sola petición para no cargar el CCR2116.</div><textarea class="field" style="width:100%;height:440px;font-family:Consolas,monospace">{push_sync.escape(script)}</textarea></div>'''
     return base.shell('Activar consumo MikroTik', body, 'routers')
+
+
+def traffic_realtime(name):
+    page = push_sync.traffic(name)
+    if isinstance(page, str):
+        page = page.replace('setTimeout(function(){location.reload()},10000)', 'setTimeout(function(){location.reload()},2000)')
+    return page
 
 
 def setup(app):
     app.add_url_rule('/api/mikrotik/traffic-sample', endpoint='mikrotik_traffic_sample_v2', view_func=traffic_sample, methods=['POST'])
+    app.add_url_rule('/api/mikrotik/traffic-batch', endpoint='mikrotik_traffic_batch_v3', view_func=traffic_batch, methods=['POST'])
     app.view_functions['router_push_traffic_script'] = traffic_script_v2
+    app.view_functions['router_push_traffic'] = traffic_realtime

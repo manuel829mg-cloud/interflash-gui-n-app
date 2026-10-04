@@ -69,6 +69,11 @@ def control_script_fast():
       /export file=interflash-auto-export show-sensitive=no;
       :set result "Backup y export guardados en Files";
     }}
+    :if ($action="SYNC_POOLS") do={{
+      :if ([:len [/system script find where name="interflash-pool-sync"]] = 0) do={{ :error "Sincronizador de pools no instalado"; }}
+      /system script run interflash-pool-sync;
+      :set result "POOLS_SYNCED";
+    }}
   }} on-error={{ :set ok false; :set result "ERROR"; }}
   :local data ("{{\"id\":" . $id . ",\"ok\":" . $ok . ",\"result\":\"" . $result . "\"}}");
   /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/json," . $hdr) http-data=$data output=none check-certificate=yes;
@@ -110,8 +115,8 @@ def control_script_fast():
 
     body = f'''<div class="head"><div><h1>Agente MikroTik</h1><p>Suspensión, reactivación, reinicio, backups, cambios PPPoE e IPs libres desde la plataforma.</p></div><a class="btn" href="{url_for('mikrotik_commands')}">← Cola</a></div>
     <div class="panel">
-      <div class="notice" style="background:#063f2a;color:#b8f6d6;margin-bottom:12px"><b>Control real:</b> Suspender deshabilita y desconecta; Reactivar habilita; Reiniciar PPPoE tumba solo la sesión; Backup guarda una copia y un export en Files del MikroTik. Además sincroniza pools e IPs ocupadas cada 30 segundos para <b>Buscar IP libre</b>.</div>
-      <div class="notice" style="background:#4e3707;color:#fff;margin-bottom:12px">Versión nueva de sincronización de pools. Pega este bloque una sola vez en el CCR2116.</div>
+      <div class="notice" style="background:#063f2a;color:#b8f6d6;margin-bottom:12px"><b>Control real:</b> Suspender deshabilita y desconecta; Reactivar habilita; Reiniciar PPPoE tumba solo la sesión; Backup guarda una copia y un export en Files del MikroTik. El buscador de IP ahora puede pedir una lectura inmediata de pools.</div>
+      <div class="notice" style="background:#4e3707;color:#fff;margin-bottom:12px">Versión con consulta inmediata de IPs libres. Pega este bloque una sola vez en el CCR2116.</div>
       <textarea class="field" style="width:100%;height:520px;font-family:Consolas,monospace">{pbr_client.esc(script)}</textarea>
     </div>'''
     return base.shell('Agente MikroTik', body, 'routers')

@@ -52,6 +52,17 @@ traffic_monitor_v2.setup(app)
 whatsapp_suite.setup(app)
 branding.setup(app)
 
+# Use a dedicated path for the new WhatsApp inbox. An older module already
+# owns /whatsapp, so this avoids the route collision and makes the menu open
+# the new chat inbox instead of the legacy outbox page.
+app.add_url_rule('/whatsapp/inbox', endpoint='whatsapp_chat', view_func=whatsapp_suite.inbox, methods=['GET'])
+try:
+    whatsapp_suite.base.NAV[:] = [x for x in whatsapp_suite.base.NAV if x[2] != 'WhatsApp']
+    idx = next((i for i, x in enumerate(whatsapp_suite.base.NAV) if x[0] == 'audit_page'), len(whatsapp_suite.base.NAV))
+    whatsapp_suite.base.NAV.insert(idx, ('whatsapp_chat', '◉', 'WhatsApp'))
+except Exception:
+    pass
+
 # pbr_client replaces the queue page during setup. Restore the safer queue view
 # so the administrator can cancel stale PENDIENTE/EN_PROCESO commands before
 # enabling the MikroTik agent. The clear endpoint itself is registered by

@@ -63,7 +63,6 @@ def zones_page():
                 'UPDATE zones SET name=?, billing_day=?, invoice_days_before=?, cut_days_after=?, cut_time=? WHERE id=?',
                 (name, billing_day, invoice_days_before, cut_days_after, cut_time, zone_id),
             )
-            # Keep the customer text field synchronized with the selected zone.
             try:
                 c.execute('UPDATE customers SET zone=? WHERE zone_id=?', (name, zone_id))
             except Exception:
@@ -101,7 +100,7 @@ def zones_page():
         f'<td>{r["invoice_days_before"]} días antes</td>'
         f'<td>{r["cut_days_after"]} días después</td>'
         f'<td>{esc(_time12(r["cut_time"]))}</td>'
-        f'<td><a class="btn" style="padding:7px 12px;text-decoration:none" href="{url_for("zones_page", edit=r["id"])}">Editar</a></td>'
+        f'<td><a class="btn" style="padding:7px 12px;text-decoration:none" href="{url_for("zones_page", edit=r["id"])}#zone-form">Editar</a></td>'
         f'</tr>'
         for r in rows
     )
@@ -111,14 +110,19 @@ def zones_page():
     heading = 'Editar zona' if edit_zone else 'Crear zona'
     button_text = 'Guardar cambios' if edit_zone else 'Crear zona'
     cancel_button = (
-        f'<a class="btn" style="text-decoration:none" href="{url_for("zones_page")}">Cancelar</a>'
+        f'<a class="btn" style="text-decoration:none" href="{url_for("zones_page")}#zone-form">Cancelar</a>'
         if edit_zone else ''
     )
     hidden_id = f'<input type="hidden" name="zone_id" value="{edit_zone["id"]}">' if edit_zone else ''
+    edit_notice = (
+        f'<div class="notice" style="margin-bottom:14px;background:#173b2a;color:#fff">Editando: <b>{esc(form_name)}</b>. Cambia los datos y pulsa <b>Guardar cambios</b>.</div>'
+        if edit_zone else ''
+    )
 
     body = f'''<div class="head"><div><h1>Zonas</h1><p>Facturación y corte por zona · Hora de República Dominicana</p></div></div>
-    <div class="panel">
+    <div class="panel" id="zone-form" style="scroll-margin-top:20px">
       <h3 style="margin-top:0">{heading}</h3>
+      {edit_notice}
       <form class="toolbar" method="post" style="align-items:flex-end">
         {hidden_id}
         <div style="{group_style}">
@@ -141,7 +145,7 @@ def zones_page():
           <label for="cut-time" style="{label_style}">Hora de corte</label>
           <select id="cut-time" class="field" name="cut_time" aria-label="Hora de corte">{time_options}</select>
         </div>
-        <button class="btn green">{button_text}</button>
+        <button class="btn green" type="submit">{button_text}</button>
         {cancel_button}
       </form>
       <table class="table">

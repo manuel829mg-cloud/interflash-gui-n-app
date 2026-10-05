@@ -78,8 +78,8 @@ def _real_state(cu, active_names, secret_disabled):
     if secret_disabled.get(user, False):
         return 'DESHABILITADO', 'bad'
     if user in active_names:
-        return 'ONLINE', 'ok'
-    return 'OFFLINE', 'warn'
+        return 'CONECTADO', 'ok'
+    return 'DESCONECTADO', 'warn'
 
 
 def _queue(c, cu, action, payload=None):
@@ -274,7 +274,7 @@ def customer_profile_plus(id):
     if current_profile and current_profile not in profile_names: profile_names.insert(0,current_profile)
     prof_opts=''.join(f'<option value="{esc(x)}" {"selected" if x==current_profile else ""}>{esc(x)}</option>' for x in profile_names)
     onu_latest=onus[0] if onus else None
-    onu_state=(onu_latest['status'] if onu_latest else '') or 'SIN ONU'
+    onu_state=(onu_latest['status'] if onu_latest else '') or 'ONU NO REGISTRADA'
     onu_cls='bad' if str(onu_state).upper() in ('OFFLINE','DOWN','LOS','CAIDA','CAÍDA') else 'ok' if str(onu_state).upper() in ('ONLINE','ACTIVO','UP') else 'warn'
 
     invr=''.join(f'<tr><td>#{x["id"]}</td><td>{esc(x["concept"])}</td><td>RD${float(x["amount"]):,.2f}</td><td>{esc(x["due_date"])}</td><td><span class="tag {"ok" if x["status"]=="PAGADA" else "warn"}">{esc(x["status"])}</span></td></tr>' for x in inv) or '<tr><td colspan="5" class="muted">Sin facturas.</td></tr>'

@@ -1,5 +1,6 @@
 from flask import redirect, url_for
 from enhanced_app import app
+import schema_compat
 import push_sync
 from push_sync import setup as setup_push_sync
 import business_suite

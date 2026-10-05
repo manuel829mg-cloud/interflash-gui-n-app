@@ -1,6 +1,6 @@
 import re
 from datetime import datetime
-from flask import request, jsonify, redirect, url_for, flash
+from flask import request, jsonify
 import app as base
 import pbr_client
 import suspension_agent
@@ -82,7 +82,7 @@ def profiles_api():
     ensure_schema()
     router = str(request.args.get('router') or 'CCR2116')[:80]
     c = base.db()
-    rows = c.execute('''SELECT name,rate_limit,local_address,remote_address
+    rows = c.execute('''SELECT name,MAX(rate_limit) rate_limit,MAX(local_address) local_address,MAX(remote_address) remote_address
                         FROM push_ppp_profiles
                         WHERE router_name=? AND COALESCE(name,'')<>''
                         GROUP BY name ORDER BY name''', (router,)).fetchall()
@@ -113,6 +113,19 @@ def profiles_refresh_api():
         c.close()
 
 
+def _save_plan_profile(c, router, plan_id, pbr, profile):
+    if not plan_id or not profile:
+        return
+    exists = c.execute('SELECT 1 FROM push_ppp_profiles WHERE router_name=? AND name=? LIMIT 1', (router, profile)).fetchone()
+    if not exists:
+        return
+    c.execute('''INSERT INTO plan_profile_map(router_name,plan_id,pbr_line,profile_name,updated_at)
+                 VALUES(?,?,?,?,?)
+                 ON CONFLICT(router_name,plan_id,pbr_line) DO UPDATE SET
+                   profile_name=excluded.profile_name,updated_at=excluded.updated_at''',
+              (router, int(plan_id), pbr or '', profile, datetime.now().isoformat(timespec='seconds')))
+
+
 def plan_profile_api():
     if not base.logged_in():
         return jsonify(ok=False, error='login-required'), 401
@@ -136,11 +149,7 @@ def plan_profile_api():
                 exists = c.execute('SELECT 1 FROM push_ppp_profiles WHERE router_name=? AND name=? LIMIT 1', (router, profile)).fetchone()
                 if not exists:
                     return jsonify(ok=False, error='profile-not-synced'), 400
-                c.execute('''INSERT INTO plan_profile_map(router_name,plan_id,pbr_line,profile_name,updated_at)
-                             VALUES(?,?,?,?,?)
-                             ON CONFLICT(router_name,plan_id,pbr_line) DO UPDATE SET
-                               profile_name=excluded.profile_name,updated_at=excluded.updated_at''',
-                          (router, plan_id, pbr, profile, datetime.now().isoformat(timespec='seconds')))
+                _save_plan_profile(c, router, plan_id, pbr, profile)
             c.commit()
             return jsonify(ok=True, profile=profile)
 
@@ -148,7 +157,7 @@ def plan_profile_api():
                            WHERE router_name=? AND plan_id=? AND pbr_line=?''', (router, plan_id, pbr)).fetchone()
         if not row and pbr:
             row = c.execute('''SELECT profile_name FROM plan_profile_map
-                               WHERE router_name=? AND plan_id=? AND pbr_line='' ''', (router, plan_id)).fetchone()
+                               WHERE router_name=? AND plan_id=? AND pbr_line=?''', (router, plan_id, '')).fetchone()
         return jsonify(ok=True, profile=(row['profile_name'] if row else ''))
     finally:
         c.close()
@@ -202,20 +211,28 @@ def _patch_agent_builder():
     suspension_agent._agent_rsc = with_profiles
 
 
-def _inject_profile_tools(html):
-    if 'IFPROFILE' in html:
-        return html
-
-    pattern = re.compile(r'<div><label>Perfil MikroTik<select name="mikrotik_profile">(.*?)</select></label></div>', re.S)
-    match = pattern.search(html)
-    if not match:
-        return html
-    options = match.group(1)
-    replacement = f'''<div class="if-profile-field"><label>Perfil MikroTik
+def _profile_widget(options, outer_div=True):
+    inner = f'''<label>Perfil MikroTik
       <div class="if-profile-row"><select id="if-profile-select" name="mikrotik_profile">{options}</select><button class="btn blue" type="button" onclick="IFPROFILE.refresh()">↻ Perfiles</button></div>
       <small id="if-profile-note" class="muted">Perfiles sincronizados directamente desde el CCR2116.</small>
-    </label></div>'''
-    html = pattern.sub(replacement, html, count=1)
+    </label>'''
+    return f'<div class="if-profile-field">{inner}</div>' if outer_div else inner
+
+
+def _inject_profile_tools(html):
+    if 'window.IFPROFILE=' in html:
+        return html
+
+    pattern_outer = re.compile(r'<div><label>Perfil MikroTik<select name="mikrotik_profile">(.*?)</select></label></div>', re.S)
+    match = pattern_outer.search(html)
+    if match:
+        html = pattern_outer.sub(_profile_widget(match.group(1), True), html, count=1)
+    else:
+        pattern_plain = re.compile(r'<label>Perfil MikroTik<select name="mikrotik_profile">(.*?)</select></label>', re.S)
+        match = pattern_plain.search(html)
+        if not match:
+            return html
+        html = pattern_plain.sub(_profile_widget(match.group(1), False), html, count=1)
 
     extra = r'''
 <style>
@@ -237,7 +254,9 @@ window.IFPROFILE=(function(){
   function fill(d){
     const s=sel();if(!s)return;
     const keep=s.value;
-    s.innerHTML='<option value="">Sin perfil</option>';
+    const emptyText=s.options.length?s.options[0].textContent:'Sin perfil';
+    s.innerHTML='';
+    const z=document.createElement('option');z.value='';z.textContent=emptyText||'Sin perfil';s.appendChild(z);
     (d.items||[]).forEach(x=>{const o=document.createElement('option');o.value=x.name;o.textContent=x.name+(x.rate_limit?' · '+x.rate_limit:'');s.appendChild(o);});
     if([...s.options].some(o=>o.value===keep))s.value=keep;
     note((d.count||0)+' perfil(es) disponibles desde '+router());
@@ -325,11 +344,37 @@ def _patch_customer_profile(app):
     app.view_functions['customer_profile'] = wrapped
 
 
+def _patch_change_plan(app):
+    original = app.view_functions.get('change_customer_plan')
+    if not original or getattr(original, '_interflash_mapping_patched', False):
+        return
+    def wrapped(id, _orig=original):
+        if request.method == 'POST':
+            try:
+                plan_id = int(request.form.get('plan_id') or 0)
+            except (TypeError, ValueError):
+                plan_id = 0
+            profile = str(request.form.get('mikrotik_profile') or '').strip()
+            if plan_id and profile:
+                c = base.db()
+                try:
+                    cu = c.execute('SELECT router_name,pbr_line FROM customers WHERE id=?', (id,)).fetchone()
+                    if cu:
+                        _save_plan_profile(c, cu['router_name'] or 'CCR2116', plan_id, cu['pbr_line'] or '', profile)
+                        c.commit()
+                finally:
+                    c.close()
+        return _orig(id)
+    wrapped._interflash_mapping_patched = True
+    app.view_functions['change_customer_plan'] = wrapped
+
+
 def setup(app):
     ensure_schema()
     _patch_agent_builder()
     _patch_customer_form()
     _patch_customer_profile(app)
+    _patch_change_plan(app)
     app.add_url_rule('/api/mikrotik/profile-state-v2', endpoint='mikrotik_profile_state_v2', view_func=profile_state_v2, methods=['POST'])
     app.add_url_rule('/api/mikrotik/profiles', endpoint='mikrotik_profiles_api', view_func=profiles_api, methods=['GET'])
     app.add_url_rule('/api/mikrotik/profiles/refresh', endpoint='mikrotik_profiles_refresh_api', view_func=profiles_refresh_api, methods=['POST'])

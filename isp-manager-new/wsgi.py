@@ -48,6 +48,12 @@ traffic_monitor_fix.setup(app)
 traffic_monitor_v2.setup(app)
 branding.setup(app)
 
+# pbr_client replaces the queue page during setup. Restore the safer queue view
+# so the administrator can cancel stale PENDIENTE/EN_PROCESO commands before
+# enabling the MikroTik agent. The clear endpoint itself is registered by
+# command_queue_ui.setup() above.
+app.view_functions['mikrotik_commands'] = command_queue_ui.commands_page
+
 def routers_secure():
     return redirect(url_for('router_push_view'))
 

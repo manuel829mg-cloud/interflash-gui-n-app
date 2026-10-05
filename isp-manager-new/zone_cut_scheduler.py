@@ -13,9 +13,84 @@ def _table_exists(c, name):
     return c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone() is not None
 
 
+def _columns(c, table):
+    try:
+        return {r['name'] for r in c.execute(f'PRAGMA table_info({table})').fetchall()}
+    except Exception:
+        return set()
+
+
+def ensure_zone_schema():
+    """Add the zone fields required by the current billing/cut engine.
+
+    Some production databases were created by older INTER Flash builds. SQLite's
+    CREATE TABLE IF NOT EXISTS does not add new columns to an existing table, so
+    we migrate the live table additively here before the scheduler starts.
+    """
+    c = base.db()
+    try:
+        c.execute('''CREATE TABLE IF NOT EXISTS zones(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE,
+            billing_day INTEGER DEFAULT 30,
+            invoice_days_before INTEGER DEFAULT 5,
+            cut_days_after INTEGER DEFAULT 6,
+            cut_time TEXT DEFAULT '14:00',
+            active INTEGER DEFAULT 1
+        )''')
+        cols = _columns(c, 'zones')
+        additions = [
+            ('billing_day', 'INTEGER DEFAULT 30'),
+            ('invoice_days_before', 'INTEGER DEFAULT 5'),
+            ('cut_days_after', 'INTEGER DEFAULT 6'),
+            ('cut_time', "TEXT DEFAULT '14:00'"),
+            ('active', 'INTEGER DEFAULT 1'),
+        ]
+        for name, ddl in additions:
+            if name not in cols:
+                c.execute(f'ALTER TABLE zones ADD COLUMN {name} {ddl}')
+                cols.add(name)
+
+        # Preserve values from a few older column names when they exist.
+        legacy_map = {
+            'billing_day': ('due_day', 'billing_date_day', 'day'),
+            'invoice_days_before': ('invoice_before', 'invoice_days', 'days_before'),
+            'cut_days_after': ('cut_after', 'cut_days', 'suspension_days', 'days_after'),
+            'cut_time': ('suspension_time', 'cut_hour', 'hour'),
+        }
+        all_cols = _columns(c, 'zones')
+        for target, candidates in legacy_map.items():
+            legacy = next((x for x in candidates if x in all_cols), None)
+            if not legacy:
+                continue
+            if target == 'cut_time':
+                c.execute(
+                    f"UPDATE zones SET {target}=CAST({legacy} AS TEXT) "
+                    f"WHERE ({target} IS NULL OR TRIM({target})='' OR {target}='14:00') "
+                    f"AND {legacy} IS NOT NULL AND TRIM(CAST({legacy} AS TEXT))<>''"
+                )
+            else:
+                default = 30 if target == 'billing_day' else 5 if target == 'invoice_days_before' else 6
+                c.execute(
+                    f"UPDATE zones SET {target}=CAST({legacy} AS INTEGER) "
+                    f"WHERE ({target} IS NULL OR {target}=?) AND {legacy} IS NOT NULL",
+                    (default,),
+                )
+
+        c.commit()
+        print('INTERFLASH_ZONE_SCHEMA_READY=' + ','.join(sorted(_columns(c, 'zones'))), flush=True)
+    finally:
+        c.close()
+
+
 def _parse_cut_time(value):
     try:
-        parts = str(value or '14:00').strip().split(':')
+        text = str(value or '14:00').strip()
+        # Normal current format is 24-hour HH:MM. Also accept a legacy AM/PM value.
+        upper = text.upper()
+        if upper.endswith(' AM') or upper.endswith(' PM'):
+            return datetime.strptime(upper, '%I:%M %p').time()
+        parts = text.split(':')
         hour = max(0, min(int(parts[0]), 23))
         minute = max(0, min(int(parts[1]), 59))
         return time(hour, minute)
@@ -240,6 +315,8 @@ def _worker():
 
 def setup(app):
     global _started
+
+    ensure_zone_schema()
 
     # The user explicitly configured zone cut times, so make the automatic
     # suspension engine active. Configuration can still disable it later.

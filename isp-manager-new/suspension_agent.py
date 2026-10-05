@@ -93,6 +93,13 @@ def _agent_rsc(root, token):
       :set ok true;
       :set result "PBR_REMOVIDO";
     }
+    :if ($action="SYNC_POOLS") do={
+      :local poolScript [/system script find where name="interflash-pool-sync"];
+      :if ([:len $poolScript] = 0) do={ :error "interflash-pool-sync no instalado"; }
+      /system script run $poolScript;
+      :set ok true;
+      :set result "POOLS_SINCRONIZADOS";
+    }
   } on-error={
     :set ok false;
     :set result "ERROR";
@@ -184,7 +191,7 @@ def control_script_fast():
     <div class="panel">
       <div class="notice" style="background:#063f2a;color:#b8f6d6;margin-bottom:12px"><b>Instalación:</b> copia estas 3 líneas en el CCR2116. Actualiza el agente sin cambiar tu configuración de rutas, mangle o failover.</div>
       <textarea class="field" style="width:100%;height:150px;font-family:Consolas,monospace">{pbr_client.esc(installer)}</textarea>
-      <div class="notice" style="background:#4e3707;color:#fff;margin:14px 0 10px">El agente procesa SUSPEND, REACTIVATE, CREATE_PPPOE, CHANGE_PROFILE, APPLY_PBR y REMOVE_PBR cada 5 segundos.</div>
+      <div class="notice" style="background:#4e3707;color:#fff;margin:14px 0 10px">El agente procesa SUSPEND, REACTIVATE, CREATE_PPPOE, CHANGE_PROFILE, APPLY_PBR, REMOVE_PBR y SYNC_POOLS cada 5 segundos.</div>
       <div class="muted" style="margin-bottom:6px">Verificación opcional:</div>
       <textarea class="field" style="width:100%;height:90px;font-family:Consolas,monospace">{pbr_client.esc(verify)}</textarea>
     </div>'''

@@ -38,6 +38,40 @@ def _int_value(value, default):
         return default
 
 
+def _zone_customer_counts(c, rows):
+    """Return a count for every zone, supporting old and new customer schemas."""
+    counts = {int(r['id']): 0 for r in rows}
+    used_zone_id = False
+
+    try:
+        for row in c.execute(
+            'SELECT zone_id, COUNT(*) AS qty FROM customers WHERE zone_id IS NOT NULL GROUP BY zone_id'
+        ).fetchall():
+            zid = _int_value(row['zone_id'], 0)
+            if zid in counts:
+                counts[zid] += int(row['qty'] or 0)
+        used_zone_id = True
+    except Exception:
+        pass
+
+    # Count legacy customers that only have the text zone field. If zone_id exists,
+    # only count rows without zone_id so the same customer is never counted twice.
+    try:
+        sql = (
+            "SELECT zone, COUNT(*) AS qty FROM customers "
+            "WHERE zone_id IS NULL AND COALESCE(zone,'')<>'' GROUP BY zone"
+            if used_zone_id else
+            "SELECT zone, COUNT(*) AS qty FROM customers WHERE COALESCE(zone,'')<>'' GROUP BY zone"
+        )
+        name_counts = {str(x['zone']).strip().lower(): int(x['qty'] or 0) for x in c.execute(sql).fetchall()}
+        for zone in rows:
+            counts[int(zone['id'])] += name_counts.get(str(zone['name']).strip().lower(), 0)
+    except Exception:
+        pass
+
+    return counts
+
+
 def zones_page():
     if not base.logged_in():
         return redirect(url_for('login'))
@@ -58,6 +92,12 @@ def zones_page():
             assigned = 0
             try:
                 assigned = c.execute('SELECT COUNT(*) FROM customers WHERE zone_id=?', (zone_id,)).fetchone()[0]
+                try:
+                    assigned += c.execute(
+                        "SELECT COUNT(*) FROM customers WHERE zone_id IS NULL AND zone=?", (current['name'],)
+                    ).fetchone()[0]
+                except Exception:
+                    pass
             except Exception:
                 try:
                     assigned = c.execute('SELECT COUNT(*) FROM customers WHERE zone=?', (current['name'],)).fetchone()[0]
@@ -113,15 +153,8 @@ def zones_page():
     edit_id = _int_value(request.args.get('edit'), 0)
     edit_zone = c.execute('SELECT * FROM zones WHERE id=?', (edit_id,)).fetchone() if edit_id else None
     rows = c.execute('SELECT * FROM zones ORDER BY name').fetchall()
-
-    client_count = 0
-    try:
-        client_count = c.execute('SELECT COUNT(*) FROM customers WHERE zone_id IS NOT NULL').fetchone()[0]
-    except Exception:
-        try:
-            client_count = c.execute("SELECT COUNT(*) FROM customers WHERE COALESCE(zone,'')<>''").fetchone()[0]
-        except Exception:
-            client_count = 0
+    zone_counts = _zone_customer_counts(c, rows)
+    client_count = sum(zone_counts.values())
     c.close()
 
     form_name = edit_zone['name'] if edit_zone else ''
@@ -138,6 +171,7 @@ def zones_page():
     trs = ''.join(
         f'<tr class="zone-row" data-zone="{esc(str(r["name"]).lower())}">'
         f'<td><div class="zone-name"><span class="zone-pin">◆</span><b>{esc(r["name"])}</b></div></td>'
+        f'<td><span class="client-pill">👥 {zone_counts.get(int(r["id"]), 0)}</span></td>'
         f'<td>{r["billing_day"]}</td>'
         f'<td>{r["invoice_days_before"]} días antes</td>'
         f'<td>{r["cut_days_after"]} días después</td>'
@@ -201,7 +235,7 @@ def zones_page():
       .zone-search{{width:230px;height:44px;border-radius:12px;border:1px solid rgba(130,166,219,.26);background:rgba(6,17,32,.75);color:#fff;padding:0 13px}}
       .zone-search::placeholder{{color:#7890ad}}
       .zone-table-wrap{{overflow:auto;border-radius:15px;border:1px solid rgba(113,147,196,.18)}}
-      .zones-table{{width:100%;border-collapse:collapse;min-width:840px}}
+      .zones-table{{width:100%;border-collapse:collapse;min-width:930px}}
       .zones-table th{{padding:14px 16px;text-align:left;font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:#a9bdd8;background:rgba(18,39,69,.72);border-bottom:1px solid rgba(121,151,194,.20)}}
       .zones-table td{{padding:15px 16px;border-bottom:1px solid rgba(115,145,184,.12);color:#e7eef8}}
       .zones-table tr:last-child td{{border-bottom:0}}
@@ -209,6 +243,7 @@ def zones_page():
       .zone-name{{display:flex;align-items:center;gap:10px}}
       .zone-pin{{width:28px;height:28px;border-radius:9px;display:grid;place-items:center;background:linear-gradient(145deg,#0b7dff,#734cff);color:#fff;font-size:11px;transform:rotate(45deg)}}
       .zone-pin::first-letter{{transform:rotate(-45deg)}}
+      .client-pill{{display:inline-flex;align-items:center;gap:5px;padding:6px 10px;border-radius:999px;background:rgba(147,79,255,.11);border:1px solid rgba(147,79,255,.28);color:#d9c7ff;font-weight:900}}
       .time-pill{{display:inline-flex;padding:6px 10px;border-radius:999px;background:rgba(29,128,255,.10);border:1px solid rgba(29,128,255,.22);color:#cfe5ff;font-weight:800}}
       .zone-actions{{display:flex;align-items:center;gap:8px;white-space:nowrap}}
       .edit-btn{{display:inline-flex;align-items:center;height:36px;padding:0 13px;border-radius:10px;text-decoration:none!important;color:#65b5ff!important;border:1px solid #137bdf;background:rgba(11,93,178,.10);font-weight:800}}
@@ -257,8 +292,8 @@ def zones_page():
         </div>
         <div class="zone-table-wrap">
           <table class="zones-table">
-            <thead><tr><th>Zona</th><th>Vence</th><th>Factura</th><th>Corte</th><th>Hora</th><th>Acciones</th></tr></thead>
-            <tbody id="zoneRows">{trs or '<tr><td colspan="6" class="empty-zone">Sin zonas registradas.</td></tr>'}</tbody>
+            <thead><tr><th>Zona</th><th>Clientes</th><th>Vence</th><th>Factura</th><th>Corte</th><th>Hora</th><th>Acciones</th></tr></thead>
+            <tbody id="zoneRows">{trs or '<tr><td colspan="7" class="empty-zone">Sin zonas registradas.</td></tr>'}</tbody>
           </table>
         </div>
       </div>

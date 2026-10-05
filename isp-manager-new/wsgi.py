@@ -14,6 +14,7 @@ import plan_import
 import customers_responsive
 import suspension_agent
 import isp_operations_plus
+import customer_provisioning
 import admin_suite
 import traffic_monitor_fix
 import traffic_monitor_v2
@@ -43,6 +44,7 @@ plan_import.setup(app)
 customers_responsive.setup(app)
 suspension_agent.setup(app)
 isp_operations_plus.setup(app)
+customer_provisioning.setup(app)
 admin_suite.setup(app)
 traffic_monitor_fix.setup(app)
 traffic_monitor_v2.setup(app)

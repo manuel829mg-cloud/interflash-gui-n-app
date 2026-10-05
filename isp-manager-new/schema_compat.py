@@ -45,6 +45,39 @@ def ensure_legacy_compat():
                 'WHERE customer_id IS NULL AND client_id IS NOT NULL'
             )
 
+        # Older plan tables may only have fields such as name/price/speed.
+        # Add the columns the current Plans screen expects, without deleting data.
+        plan_cols = _columns(conn, 'plans')
+        if plan_cols:
+            if 'download_mbps' not in plan_cols:
+                conn.execute('ALTER TABLE plans ADD COLUMN download_mbps INTEGER DEFAULT 0')
+                plan_cols.add('download_mbps')
+            if 'upload_mbps' not in plan_cols:
+                conn.execute('ALTER TABLE plans ADD COLUMN upload_mbps INTEGER DEFAULT 0')
+                plan_cols.add('upload_mbps')
+            if 'active' not in plan_cols:
+                conn.execute('ALTER TABLE plans ADD COLUMN active INTEGER DEFAULT 1')
+                plan_cols.add('active')
+            if 'price' not in plan_cols:
+                conn.execute('ALTER TABLE plans ADD COLUMN price REAL DEFAULT 0')
+                plan_cols.add('price')
+
+            # Copy common legacy speed columns when present and current values are empty.
+            for legacy_name in ('download', 'download_speed', 'speed_down', 'down_mbps'):
+                if legacy_name in plan_cols:
+                    conn.execute(
+                        f'UPDATE plans SET download_mbps=CAST({legacy_name} AS INTEGER) '
+                        f'WHERE COALESCE(download_mbps,0)=0 AND {legacy_name} IS NOT NULL'
+                    )
+                    break
+            for legacy_name in ('upload', 'upload_speed', 'speed_up', 'up_mbps'):
+                if legacy_name in plan_cols:
+                    conn.execute(
+                        f'UPDATE plans SET upload_mbps=CAST({legacy_name} AS INTEGER) '
+                        f'WHERE COALESCE(upload_mbps,0)=0 AND {legacy_name} IS NOT NULL'
+                    )
+                    break
+
         # Some older builds stored subscribers in `clients` instead of `customers`.
         # Preserve IDs so existing invoice/payment references keep matching.
         if _table_exists(conn, 'clients') and _table_exists(conn, 'customers'):

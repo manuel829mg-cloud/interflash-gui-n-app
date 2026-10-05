@@ -12,7 +12,7 @@ def _root_url():
 
 
 def _agent_rsc(root, token):
-    template = r'''/system scheduler remove [find where name="interflash-agent-scheduler"]
+    template = '''/system scheduler remove [find where name="interflash-agent-scheduler"]
 /system script remove [find where name="interflash-agent"]
 /system script add name="interflash-agent" policy=read,write,test,sensitive source={
   :local base "__ROOT__";
@@ -124,7 +124,7 @@ def control_script_fast():
 
     root = _root_url()
     token = pbr_client.TOKEN
-    installer = f'''/tool fetch url="{root}/api/mikrotik/bootstrap.rsc" http-header-field="X-InterFlash-Agent: {token}" dst-path=interflash-bootstrap.rsc output=none check-certificate=yes
+    installer = f'''/tool fetch url="{root}/api/mikrotik/bootstrap.rsc" http-header-field="X-InterFlash-Agent: {token}" dst-path=interflash-bootstrap.rsc output=file check-certificate=yes
 /import file-name=interflash-bootstrap.rsc
 /file remove interflash-bootstrap.rsc'''
 

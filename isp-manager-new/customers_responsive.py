@@ -105,17 +105,51 @@ def customers_responsive():
         args = [like] * 6
     sql += ' ORDER BY cu.id DESC'
     rows = c.execute(sql, args).fetchall()
-    active = {r['name'] for r in c.execute('SELECT name FROM push_pppoe_active').fetchall()} if _table_exists(c, 'push_pppoe_active') else set()
+
+    active_names = set()
+    active_pairs = set()
+    if _table_exists(c, 'push_pppoe_active'):
+        for a in c.execute('SELECT router_name,name FROM push_pppoe_active').fetchall():
+            pppoe_name = (a['name'] or '').strip()
+            router_name = (a['router_name'] or 'CCR2116').strip()
+            if pppoe_name:
+                active_names.add(pppoe_name)
+                active_pairs.add((router_name, pppoe_name))
     c.close()
 
     trs = []
+    connected_count = 0
+    disconnected_count = 0
+    suspended_count = 0
+    no_pppoe_count = 0
+
     for r in rows:
         local_status = (r['status'] or 'ACTIVO').upper()
+        pppoe = (r['pppoe'] or '').strip()
+        router_name = (r['router_name'] or 'CCR2116').strip()
+
         if local_status == 'SUSPENDIDO':
-            state = local_status
+            state = 'SUSPENDIDO'
+            suspended_count += 1
+        elif not pppoe:
+            state = 'SIN PPPoE'
+            no_pppoe_count += 1
+        elif (router_name, pppoe) in active_pairs or pppoe in active_names:
+            state = 'CONECTADO'
+            connected_count += 1
         else:
-            state = 'ONLINE' if (r['pppoe'] or '') in active else local_status
-        cls = 'ok' if state in ('ONLINE', 'ACTIVO') else ('bad' if state == 'SUSPENDIDO' else 'warn')
+            state = 'DESCONECTADO'
+            disconnected_count += 1
+
+        if state == 'CONECTADO':
+            cls = 'ok connection-online'
+        elif state == 'SUSPENDIDO':
+            cls = 'bad connection-suspended'
+        elif state == 'SIN PPPoE':
+            cls = 'connection-none'
+        else:
+            cls = 'warn connection-offline'
+
         code = r['code'] or ('#' + str(r['id']))
 
         if state == 'SUSPENDIDO':
@@ -132,13 +166,16 @@ def customers_responsive():
           {delete_button}
         </div>'''
 
+        dot_class = 'dot-online' if state == 'CONECTADO' else ('dot-offline' if state == 'DESCONECTADO' else ('dot-suspended' if state == 'SUSPENDIDO' else 'dot-none'))
+        state_html = f'<span class="tag {cls}"><span class="status-dot {dot_class}"></span>{esc(state)}</span>'
+
         trs.append(f'''<tr>
           <td class="c-code" data-label="Código"><span>{esc(code)}</span></td>
           <td class="c-client" data-label="Cliente"><b>{esc(r['name'])}</b><br><span class="muted">{esc(r['phone'])}</span></td>
           <td class="c-plan" data-label="Plan">{esc(r['plan_name'] or '-')}</td>
           <td class="c-zone" data-label="Zona">{esc(r['zone_name'] or r['zone'] or '-')}</td>
-          <td class="c-pppoe" data-label="PPPoE">{esc(r['pppoe'] or '-')}</td>
-          <td class="c-state" data-label="Estado"><span class="tag {cls}">{esc(state)}</span></td>
+          <td class="c-pppoe" data-label="PPPoE">{esc(pppoe or '-')}</td>
+          <td class="c-state" data-label="Conexión">{state_html}</td>
           <td class="c-actions" data-label="Acciones">{actions}</td>
         </tr>''')
 
@@ -154,8 +191,8 @@ def customers_responsive():
       .clients-fit .c-plan{{width:13%;}}
       .clients-fit .c-zone{{width:11%;}}
       .clients-fit .c-pppoe{{width:15%;font-family:Consolas,monospace;font-size:12px;}}
-      .clients-fit .c-state{{width:10%;}}
-      .clients-fit .c-actions{{width:20%;}}
+      .clients-fit .c-state{{width:12%;}}
+      .clients-fit .c-actions{{width:18%;}}
       .client-actions{{display:flex;gap:0;align-items:center;flex-wrap:nowrap;}}
       .client-actions form{{margin:0;display:flex;}}
       .icon-btn{{width:42px;height:38px;display:inline-flex;align-items:center;justify-content:center;border:1px solid #33485d;background:#132231;color:#aebdcb;cursor:pointer;padding:0;margin:0 -1px 0 0;border-radius:0;transition:.15s ease;}}
@@ -168,22 +205,32 @@ def customers_responsive():
       .delete-icon:hover{{color:#ff919b;border-color:#a52a34;background:#45171b;}}
       .clients-toolbar{{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:13px;}}
       .clients-toolbar .field{{flex:1;min-width:220px;max-width:560px;}}
+      .connection-summary{{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 14px;}}
+      .connection-card{{display:inline-flex;align-items:center;gap:8px;padding:9px 12px;border-radius:12px;border:1px solid #243b52;background:#0d1c2c;font-size:12px;font-weight:800;}}
+      .connection-card b{{font-size:17px;color:#fff;}}
+      .status-dot{{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:7px;vertical-align:1px;box-shadow:0 0 0 3px rgba(255,255,255,.04);}}
+      .dot-online{{background:#22d37f;box-shadow:0 0 0 3px rgba(34,211,127,.12),0 0 10px rgba(34,211,127,.45);}}
+      .dot-offline{{background:#ffad2f;box-shadow:0 0 0 3px rgba(255,173,47,.12);}}
+      .dot-suspended{{background:#ff5e6c;box-shadow:0 0 0 3px rgba(255,94,108,.12);}}
+      .dot-none{{background:#8798aa;box-shadow:0 0 0 3px rgba(135,152,170,.12);}}
+      .connection-none{{display:inline-flex;align-items:center;padding:6px 9px;border-radius:999px;border:1px solid #3a4b5d;color:#aab7c4;background:#172534;font-size:11px;font-weight:800;}}
+      .connection-online,.connection-offline,.connection-suspended{{display:inline-flex;align-items:center;white-space:nowrap;}}
       @media(max-width:1180px){{
         .clients-fit .c-zone{{display:none;}}
         .clients-fit .c-client{{width:25%;}}
         .clients-fit .c-plan{{width:14%;}}
         .clients-fit .c-pppoe{{width:17%;}}
         .clients-fit .c-code{{width:10%;}}
-        .clients-fit .c-state{{width:11%;}}
-        .clients-fit .c-actions{{width:23%;}}
+        .clients-fit .c-state{{width:13%;}}
+        .clients-fit .c-actions{{width:21%;}}
       }}
       @media(max-width:900px){{
         .clients-fit .c-plan{{display:none;}}
         .clients-fit .c-client{{width:29%;}}
         .clients-fit .c-pppoe{{width:21%;}}
         .clients-fit .c-code{{width:12%;}}
-        .clients-fit .c-state{{width:13%;}}
-        .clients-fit .c-actions{{width:25%;}}
+        .clients-fit .c-state{{width:15%;}}
+        .clients-fit .c-actions{{width:23%;}}
         .icon-btn{{width:38px;height:36px;}}
       }}
       @media(max-width:760px){{
@@ -200,13 +247,19 @@ def customers_responsive():
     </style>
     <div class="head"><div><h1>Clientes</h1><p>Clientes, servicio, facturas, ONU y soporte</p></div><a class="btn green" href="{url_for('customer_new')}">+ Nuevo cliente</a></div>
     <div class="panel clients-fit-panel">
+      <div class="connection-summary">
+        <div class="connection-card"><span class="status-dot dot-online"></span>Conectados <b>{connected_count}</b></div>
+        <div class="connection-card"><span class="status-dot dot-offline"></span>Desconectados <b>{disconnected_count}</b></div>
+        <div class="connection-card"><span class="status-dot dot-suspended"></span>Suspendidos <b>{suspended_count}</b></div>
+        <div class="connection-card"><span class="status-dot dot-none"></span>Sin PPPoE <b>{no_pppoe_count}</b></div>
+      </div>
       <form class="clients-toolbar" method="get">
         <input class="field" name="q" value="{esc(q)}" placeholder="Buscar cliente, teléfono, cédula, PPPoE, ONU">
         <button class="btn blue">Buscar</button>
         <a class="btn" href="{url_for('customers')}">Limpiar</a>
       </form>
       <table class="clients-fit">
-        <thead><tr><th>Código</th><th>Cliente</th><th>Plan</th><th class="c-zone">Zona</th><th>PPPoE</th><th>Estado</th><th>Acciones</th></tr></thead>
+        <thead><tr><th>Código</th><th>Cliente</th><th>Plan</th><th class="c-zone">Zona</th><th>PPPoE</th><th>Conexión</th><th>Acciones</th></tr></thead>
         <tbody>{''.join(trs) or '<tr><td colspan="7" class="muted">No hay clientes.</td></tr>'}</tbody>
       </table>
     </div>

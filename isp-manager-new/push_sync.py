@@ -228,7 +228,10 @@ def traffic_script(name):
 /system script add name="interflash-traffic" policy=read,test source={{
   :local url "{root}/api/mikrotik/relay-sync";
   :local headers "Content-Type:application/json,X-InterFlash-Relay: {TOKEN}";
-  :local active [:serialize to=json value=[/ppp active print as-value proplist=name,address,caller-id,service,uptime] options=json.no-string-conversion];\n  :local activeData ("{\\\"router\\\":\\\"{name}\\\",\\\"kind\\\":\\\"active-snapshot\\\",\\\"items\\\":" . $active . "}");\n  /tool fetch url=$url http-method=post http-header-field=$headers http-data=$activeData output=none check-certificate=yes;\n  :local traffic [:serialize to=json value=[/interface print stats as-value proplist=name,rx-byte,tx-byte] options=json.no-string-conversion];
+  :local active [:serialize to=json value=[/ppp active print as-value proplist=name,address,caller-id,service,uptime] options=json.no-string-conversion];
+  :local activeData ("{{\"router\":\"{name}\",\"kind\":\"active-snapshot\",\"items\":" . $active . "}}");
+  /tool fetch url=$url http-method=post http-header-field=$headers http-data=$activeData output=none check-certificate=yes;
+  :local traffic [:serialize to=json value=[/interface print stats as-value proplist=name,rx-byte,tx-byte] options=json.no-string-conversion];
   :local data ("{{\"router\":\"{name}\",\"kind\":\"traffic\",\"items\":" . $traffic . "}}");
   /tool fetch url=$url http-method=post http-header-field=$headers http-data=$data output=none check-certificate=yes;
 }}

@@ -36,6 +36,7 @@ import free_ip_picker
 import pool_compat_fix
 import whatsapp_suite
 import branding
+import zone_time_ui
 
 _original_audit = push_sync.base.audit
 
@@ -84,8 +85,8 @@ except Exception:
 # command_queue_ui.setup() above.
 app.view_functions['mikrotik_commands'] = command_queue_ui.commands_page
 
-# Show zone cut times in the familiar Dominican 12-hour format (AM/PM), while
-# keeping the stored value in 24-hour HH:MM format for the automation engine.
+# Legacy 12-hour zone form kept for compatibility. The final override below
+# replaces its three separate hour/minute/AM-PM controls with one single field.
 def _cut_time_24h(hour12, minute, period):
     try:
         h = max(1, min(int(hour12), 12))
@@ -162,6 +163,10 @@ def zones_page_12h():
     return ops_suite.base.shell('Zonas', body, 'zones_page')
 
 app.view_functions['zones_page'] = zones_page_12h
+
+# Final zone time UI: one selector shows the whole time, including AM/PM,
+# for example "2:00 PM", while the saved value remains 14:00 internally.
+zone_time_ui.setup(app)
 
 
 def routers_secure():

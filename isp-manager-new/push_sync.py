@@ -134,6 +134,13 @@ def sync_api():
                     c.execute('INSERT INTO push_pppoe_secrets(router_name,name,profile,service,remote_address,caller_id,disabled,comment) VALUES(?,?,?,?,?,?,?,?)',
                               (name,_safe(x.get('name'),255),_safe(x.get('profile'),255),_safe(x.get('service'),80),_safe(x.get('remote-address'),255),_safe(x.get('caller-id'),255),_safe(x.get('disabled'),20),_safe(x.get('comment'))))
             _touch(c,name,status='SYNCING')
+        elif kind=='active-snapshot':
+            c.execute('DELETE FROM push_pppoe_active WHERE router_name=?',(name,))
+            for x in items:
+                if isinstance(x,dict):
+                    c.execute('INSERT INTO push_pppoe_active(router_name,name,address,caller_id,service,uptime) VALUES(?,?,?,?,?,?)',
+                              (name,_safe(x.get('name'),255),_safe(x.get('address'),255),_safe(x.get('caller-id'),255),_safe(x.get('service'),80),_safe(x.get('uptime'),80)))
+            _touch(c,name,status='ONLINE')
         elif kind=='active':
             for x in items:
                 if isinstance(x,dict):
@@ -221,7 +228,7 @@ def traffic_script(name):
 /system script add name="interflash-traffic" policy=read,test source={{
   :local url "{root}/api/mikrotik/relay-sync";
   :local headers "Content-Type:application/json,X-InterFlash-Relay: {TOKEN}";
-  :local traffic [:serialize to=json value=[/interface print stats as-value proplist=name,rx-byte,tx-byte] options=json.no-string-conversion];
+  :local active [:serialize to=json value=[/ppp active print as-value proplist=name,address,caller-id,service,uptime] options=json.no-string-conversion];\n  :local activeData ("{\\\"router\\\":\\\"{name}\\\",\\\"kind\\\":\\\"active-snapshot\\\",\\\"items\\\":" . $active . "}");\n  /tool fetch url=$url http-method=post http-header-field=$headers http-data=$activeData output=none check-certificate=yes;\n  :local traffic [:serialize to=json value=[/interface print stats as-value proplist=name,rx-byte,tx-byte] options=json.no-string-conversion];
   :local data ("{{\"router\":\"{name}\",\"kind\":\"traffic\",\"items\":" . $traffic . "}}");
   /tool fetch url=$url http-method=post http-header-field=$headers http-data=$data output=none check-certificate=yes;
 }}

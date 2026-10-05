@@ -50,7 +50,35 @@ def zones_page():
         for r in rows
     )
     time_options = _time_options('14:00')
-    body = f'''<div class="head"><div><h1>Zonas</h1><p>Facturación y corte por zona · Hora de República Dominicana</p></div></div><div class="panel"><form class="toolbar" method="post"><input class="field" name="name" placeholder="Nombre" required><input class="field" type="number" name="billing_day" value="30"><input class="field" type="number" name="invoice_days_before" value="5"><input class="field" type="number" name="cut_days_after" value="6"><select class="field" name="cut_time" aria-label="Hora de corte">{time_options}</select><button class="btn green">Crear zona</button></form><table class="table"><tr><th>Zona</th><th>Vence</th><th>Factura</th><th>Corte</th><th>Hora</th></tr>{trs or '<tr><td colspan=5 class=muted>Sin zonas.</td></tr>'}</table></div>'''
+    label_style = 'display:block;font-size:13px;font-weight:700;margin:0 0 7px 3px;color:#cbd5e1'
+    group_style = 'min-width:170px;flex:1'
+    body = f'''<div class="head"><div><h1>Zonas</h1><p>Facturación y corte por zona · Hora de República Dominicana</p></div></div>
+    <div class="panel">
+      <form class="toolbar" method="post" style="align-items:flex-end">
+        <div style="{group_style}">
+          <label for="zone-name" style="{label_style}">Nombre de zona</label>
+          <input id="zone-name" class="field" name="name" placeholder="Ej. El Manguito" required>
+        </div>
+        <div style="{group_style}">
+          <label for="billing-day" style="{label_style}">Día de vencimiento</label>
+          <input id="billing-day" class="field" type="number" name="billing_day" value="30" min="1" max="31">
+        </div>
+        <div style="{group_style}">
+          <label for="invoice-days" style="{label_style}">Factura días antes</label>
+          <input id="invoice-days" class="field" type="number" name="invoice_days_before" value="5" min="0">
+        </div>
+        <div style="{group_style}">
+          <label for="cut-days" style="{label_style}">Corte días después</label>
+          <input id="cut-days" class="field" type="number" name="cut_days_after" value="6" min="0">
+        </div>
+        <div style="{group_style}">
+          <label for="cut-time" style="{label_style}">Hora de corte</label>
+          <select id="cut-time" class="field" name="cut_time" aria-label="Hora de corte">{time_options}</select>
+        </div>
+        <button class="btn green">Crear zona</button>
+      </form>
+      <table class="table"><tr><th>Zona</th><th>Vence</th><th>Factura</th><th>Corte</th><th>Hora</th></tr>{trs or '<tr><td colspan=5 class=muted>Sin zonas.</td></tr>'}</table>
+    </div>'''
     return base.shell('Zonas', body, 'zones_page')
 
 

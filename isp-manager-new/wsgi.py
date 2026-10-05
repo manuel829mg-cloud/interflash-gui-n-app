@@ -11,7 +11,7 @@ try:
 except AttributeError:
     pass
 
-from flask import redirect, url_for
+from flask import redirect, url_for, request, flash
 from enhanced_app import app
 import schema_compat
 import push_sync
@@ -83,6 +83,86 @@ except Exception:
 # enabling the MikroTik agent. The clear endpoint itself is registered by
 # command_queue_ui.setup() above.
 app.view_functions['mikrotik_commands'] = command_queue_ui.commands_page
+
+# Show zone cut times in the familiar Dominican 12-hour format (AM/PM), while
+# keeping the stored value in 24-hour HH:MM format for the automation engine.
+def _cut_time_24h(hour12, minute, period):
+    try:
+        h = max(1, min(int(hour12), 12))
+        m = max(0, min(int(minute), 59))
+    except Exception:
+        h, m = 2, 0
+    period = (period or 'PM').upper()
+    if period == 'AM':
+        h24 = 0 if h == 12 else h
+    else:
+        h24 = 12 if h == 12 else h + 12
+    return f'{h24:02d}:{m:02d}'
+
+
+def _cut_time_12h(value):
+    try:
+        h, m = [int(x) for x in str(value or '14:00').split(':')[:2]]
+    except Exception:
+        h, m = 14, 0
+    period = 'AM' if h < 12 else 'PM'
+    h12 = h % 12 or 12
+    return f'{h12}:{m:02d} {period}'
+
+
+def zones_page_12h():
+    if not ops_suite.base.logged_in():
+        return redirect(url_for('login'))
+    c = ops_suite.base.db()
+    if request.method == 'POST':
+        cut_time = _cut_time_24h(
+            request.form.get('cut_hour'),
+            request.form.get('cut_minute'),
+            request.form.get('cut_period'),
+        )
+        c.execute(
+            'INSERT INTO zones(name,billing_day,invoice_days_before,cut_days_after,cut_time) VALUES(?,?,?,?,?)',
+            (
+                request.form['name'],
+                int(request.form.get('billing_day') or 30),
+                int(request.form.get('invoice_days_before') or 5),
+                int(request.form.get('cut_days_after') or 6),
+                cut_time,
+            ),
+        )
+        c.commit()
+        flash('Zona creada.')
+    rows = c.execute('SELECT * FROM zones ORDER BY name').fetchall()
+    c.close()
+    trs = ''.join(
+        f'<tr><td>{ops_suite.esc(r["name"])}</td><td>{r["billing_day"]}</td>'
+        f'<td>{r["invoice_days_before"]} días antes</td>'
+        f'<td>{r["cut_days_after"]} días después</td>'
+        f'<td>{_cut_time_12h(r["cut_time"])} <span class="muted">RD</span></td></tr>'
+        for r in rows
+    )
+    hour_opts = ''.join(f'<option value="{h}" {"selected" if h == 2 else ""}>{h}</option>' for h in range(1, 13))
+    minute_opts = ''.join(f'<option value="{m:02d}" {"selected" if m == 0 else ""}>{m:02d}</option>' for m in range(60))
+    body = f'''<div class="head"><div><h1>Zonas</h1><p>Facturación y corte por zona · Hora de República Dominicana</p></div></div>
+    <div class="panel">
+      <form class="toolbar" method="post">
+        <input class="field" name="name" placeholder="Nombre" required>
+        <input class="field" type="number" name="billing_day" value="30" title="Día de vencimiento">
+        <input class="field" type="number" name="invoice_days_before" value="5" title="Factura días antes">
+        <input class="field" type="number" name="cut_days_after" value="6" title="Corte días después">
+        <span class="muted" style="font-weight:700">Hora de corte (RD)</span>
+        <select class="field" name="cut_hour" aria-label="Hora">{hour_opts}</select>
+        <span style="font-weight:800">:</span>
+        <select class="field" name="cut_minute" aria-label="Minutos">{minute_opts}</select>
+        <select class="field" name="cut_period" aria-label="AM o PM"><option>AM</option><option selected>PM</option></select>
+        <button class="btn green">Crear zona</button>
+      </form>
+      <table class="table"><tr><th>Zona</th><th>Vence</th><th>Factura</th><th>Corte</th><th>Hora RD</th></tr>{trs or '<tr><td colspan=5 class=muted>Sin zonas.</td></tr>'}</table>
+    </div>'''
+    return ops_suite.base.shell('Zonas', body, 'zones_page')
+
+app.view_functions['zones_page'] = zones_page_12h
+
 
 def routers_secure():
     return redirect(url_for('router_push_view'))

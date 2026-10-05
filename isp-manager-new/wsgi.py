@@ -20,6 +20,7 @@ import traffic_monitor_fix
 import traffic_monitor_v2
 import free_ip_picker
 import pool_compat_fix
+import whatsapp_suite
 import branding
 
 _original_audit = push_sync.base.audit
@@ -48,6 +49,7 @@ customer_provisioning.setup(app)
 admin_suite.setup(app)
 traffic_monitor_fix.setup(app)
 traffic_monitor_v2.setup(app)
+whatsapp_suite.setup(app)
 branding.setup(app)
 
 # pbr_client replaces the queue page during setup. Restore the safer queue view

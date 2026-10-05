@@ -45,7 +45,36 @@ def zones_page():
     c = base.db()
 
     if request.method == 'POST':
+        action = (request.form.get('action') or 'save').strip().lower()
         zone_id = _int_value(request.form.get('zone_id'), 0)
+
+        if action == 'delete':
+            current = c.execute('SELECT * FROM zones WHERE id=?', (zone_id,)).fetchone() if zone_id else None
+            if not current:
+                c.close()
+                flash('La zona no existe.')
+                return redirect(url_for('zones_page'))
+
+            assigned = 0
+            try:
+                assigned = c.execute('SELECT COUNT(*) FROM customers WHERE zone_id=?', (zone_id,)).fetchone()[0]
+            except Exception:
+                try:
+                    assigned = c.execute('SELECT COUNT(*) FROM customers WHERE zone=?', (current['name'],)).fetchone()[0]
+                except Exception:
+                    assigned = 0
+
+            if assigned:
+                c.close()
+                flash(f'No se puede eliminar {current["name"]}: tiene {assigned} cliente(s) asignado(s). Cambia esos clientes de zona primero.')
+                return redirect(url_for('zones_page'))
+
+            c.execute('DELETE FROM zones WHERE id=?', (zone_id,))
+            c.commit()
+            c.close()
+            flash(f'Zona {current["name"]} eliminada.')
+            return redirect(url_for('zones_page'))
+
         name = (request.form.get('name') or '').strip()
         billing_day = _int_value(request.form.get('billing_day'), 30)
         invoice_days_before = _int_value(request.form.get('invoice_days_before'), 5)
@@ -113,7 +142,13 @@ def zones_page():
         f'<td>{r["invoice_days_before"]} días antes</td>'
         f'<td>{r["cut_days_after"]} días después</td>'
         f'<td><span class="time-pill">{esc(_time12(r["cut_time"]))}</span></td>'
-        f'<td><a class="edit-btn" href="{url_for("zones_page", edit=r["id"])}#zone-form">✎&nbsp; Editar</a></td>'
+        f'<td><div class="zone-actions">'
+        f'<a class="edit-btn" href="{url_for("zones_page", edit=r["id"])}#zone-form">✎&nbsp; Editar</a>'
+        f'<form method="post" style="display:inline" onsubmit="return confirm(\'¿Seguro que deseas eliminar esta zona?\')">'
+        f'<input type="hidden" name="action" value="delete">'
+        f'<input type="hidden" name="zone_id" value="{r["id"]}">'
+        f'<button class="delete-btn" type="submit">🗑&nbsp; Eliminar</button>'
+        f'</form></div></td>'
         f'</tr>'
         for r in rows
     )
@@ -166,7 +201,7 @@ def zones_page():
       .zone-search{{width:230px;height:44px;border-radius:12px;border:1px solid rgba(130,166,219,.26);background:rgba(6,17,32,.75);color:#fff;padding:0 13px}}
       .zone-search::placeholder{{color:#7890ad}}
       .zone-table-wrap{{overflow:auto;border-radius:15px;border:1px solid rgba(113,147,196,.18)}}
-      .zones-table{{width:100%;border-collapse:collapse;min-width:760px}}
+      .zones-table{{width:100%;border-collapse:collapse;min-width:840px}}
       .zones-table th{{padding:14px 16px;text-align:left;font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:#a9bdd8;background:rgba(18,39,69,.72);border-bottom:1px solid rgba(121,151,194,.20)}}
       .zones-table td{{padding:15px 16px;border-bottom:1px solid rgba(115,145,184,.12);color:#e7eef8}}
       .zones-table tr:last-child td{{border-bottom:0}}
@@ -175,7 +210,10 @@ def zones_page():
       .zone-pin{{width:28px;height:28px;border-radius:9px;display:grid;place-items:center;background:linear-gradient(145deg,#0b7dff,#734cff);color:#fff;font-size:11px;transform:rotate(45deg)}}
       .zone-pin::first-letter{{transform:rotate(-45deg)}}
       .time-pill{{display:inline-flex;padding:6px 10px;border-radius:999px;background:rgba(29,128,255,.10);border:1px solid rgba(29,128,255,.22);color:#cfe5ff;font-weight:800}}
+      .zone-actions{{display:flex;align-items:center;gap:8px;white-space:nowrap}}
       .edit-btn{{display:inline-flex;align-items:center;height:36px;padding:0 13px;border-radius:10px;text-decoration:none!important;color:#65b5ff!important;border:1px solid #137bdf;background:rgba(11,93,178,.10);font-weight:800}}
+      .delete-btn{{display:inline-flex;align-items:center;height:36px;padding:0 13px;border-radius:10px;border:1px solid rgba(239,68,68,.65);background:rgba(239,68,68,.10);color:#ff8d8d;font-weight:800;cursor:pointer}}
+      .delete-btn:hover{{background:rgba(239,68,68,.18);border-color:#ef4444;color:#ffd1d1}}
       .empty-zone{{padding:28px;text-align:center;color:#8ea5c0}}
       @media(max-width:1050px){{.zones-stats{{grid-template-columns:repeat(2,1fr)}}.zone-form-grid{{grid-template-columns:repeat(2,1fr)}}.primary-zone-btn,.cancel-btn{{width:100%;justify-content:center}}}}
       @media(max-width:650px){{.zones-stats{{grid-template-columns:1fr}}.zone-form-grid{{grid-template-columns:1fr}}.card-head{{align-items:flex-start;flex-direction:column}}.list-tools{{width:100%}}.zone-search{{width:100%}}}}
@@ -202,6 +240,7 @@ def zones_page():
         </div>
         <form method="post" class="zone-form-grid">
           {hidden_id}
+          <input type="hidden" name="action" value="save">
           <div class="field-group"><label for="zone-name">Nombre de zona *</label><input id="zone-name" class="field" name="name" value="{esc(form_name)}" placeholder="Ej. El Manguito" required></div>
           <div class="field-group"><label for="billing-day">Día de vencimiento *</label><input id="billing-day" class="field" type="number" name="billing_day" value="{form_billing}" min="1" max="31"></div>
           <div class="field-group"><label for="invoice-days">Factura días antes *</label><input id="invoice-days" class="field" type="number" name="invoice_days_before" value="{form_invoice}" min="0"></div>

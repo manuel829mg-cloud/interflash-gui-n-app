@@ -37,6 +37,7 @@ import pool_compat_fix
 import whatsapp_suite
 import branding
 import zone_time_ui
+import zone_cut_scheduler
 
 _original_audit = push_sync.base.audit
 
@@ -167,6 +168,11 @@ app.view_functions['zones_page'] = zones_page_12h
 # Final zone time UI: one selector shows the whole time, including AM/PM,
 # for example "2:00 PM", while the saved value remains 14:00 internally.
 zone_time_ui.setup(app)
+
+# Automatic cut engine: evaluates each customer's zone every 30 seconds using
+# Dominican Republic local time and queues SUSPEND only after the configured
+# cut date and cut time have both arrived.
+zone_cut_scheduler.setup(app)
 
 
 def routers_secure():

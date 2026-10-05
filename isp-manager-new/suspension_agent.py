@@ -25,6 +25,7 @@ def _agent_rsc(root, token):
   :if ($id = 0) do={ :return; }
   :local action ($d->"action");
   :local user ($d->"pppoe");
+  :local p ($d->"payload");
   :local ok false;
   :local result "ACCION_NO_SOPORTADA";
   :do {
@@ -43,6 +44,54 @@ def _agent_rsc(root, token):
       /ppp secret set $sec disabled=no;
       :set ok true;
       :set result "REACTIVADO";
+    }
+    :if ($action="CREATE_PPPOE") do={
+      :local prof ($p->"profile");
+      :local pass ($p->"password");
+      :local rip ($p->"remote_address");
+      :if ([:len $user] = 0) do={ :error "Usuario PPPoE vacio"; }
+      :if ([:len $prof] = 0) do={ :error "Perfil PPPoE vacio"; }
+      :if ([:len $pass] = 0) do={ :error "Password PPPoE vacio"; }
+      :local sec [/ppp secret find where name=$user];
+      :if ([:len $sec] = 0) do={
+        /ppp secret add name=$user password=$pass profile=$prof service=pppoe disabled=no;
+        :set sec [/ppp secret find where name=$user];
+      } else={
+        /ppp secret set $sec password=$pass profile=$prof service=pppoe disabled=no;
+      }
+      :if ([:len $rip] > 0) do={ /ppp secret set $sec remote-address=$rip; }
+      :set ok true;
+      :set result "PPPOE_CREADO";
+    }
+    :if ($action="CHANGE_PROFILE") do={
+      :local prof ($p->"profile");
+      :local sec [/ppp secret find where name=$user];
+      :if ([:len $sec] = 0) do={ :error "PPPoE no encontrado"; }
+      :if ([:len $prof] = 0) do={ :error "Perfil PPPoE vacio"; }
+      /ppp secret set $sec profile=$prof;
+      :set ok true;
+      :set result "PERFIL_CAMBIADO";
+    }
+    :if ($action="APPLY_PBR") do={
+      :local ip ($p->"ip");
+      :local target ($p->"address_list");
+      :if ([:len $ip] = 0) do={ :error "IP vacia"; }
+      :if (($target != "Linea-1-Claro") && ($target != "Linea-2-Claro") && ($target != "Linea-3-Altice") && ($target != "Linea-4-Altice")) do={ :error "Lista PBR invalida"; }
+      :foreach l in={"Linea-1-Claro";"Linea-2-Claro";"Linea-3-Altice";"Linea-4-Altice"} do={
+        /ip firewall address-list remove [find where list=$l and address=$ip];
+      }
+      /ip firewall address-list add list=$target address=$ip comment=("INTERFLASH:" . $user);
+      :set ok true;
+      :set result "PBR_APLICADO";
+    }
+    :if ($action="REMOVE_PBR") do={
+      :local ip ($p->"ip");
+      :if ([:len $ip] = 0) do={ :error "IP vacia"; }
+      :foreach l in={"Linea-1-Claro";"Linea-2-Claro";"Linea-3-Altice";"Linea-4-Altice"} do={
+        /ip firewall address-list remove [find where list=$l and address=$ip];
+      }
+      :set ok true;
+      :set result "PBR_REMOVIDO";
     }
   } on-error={
     :set ok false;
@@ -131,11 +180,11 @@ def control_script_fast():
     verify = '''/system script print detail where name="interflash-agent"
 /system scheduler print where name="interflash-agent-scheduler"'''
 
-    body = f'''<div class="head"><div><h1>Agente MikroTik</h1><p>Instalación definitiva para suspensión y reactivación PPPoE.</p></div><a class="btn" href="{url_for('mikrotik_commands')}">← Cola</a></div>
+    body = f'''<div class="head"><div><h1>Agente MikroTik</h1><p>Control PPPoE y PBR desde la plataforma.</p></div><a class="btn" href="{url_for('mikrotik_commands')}">← Cola</a></div>
     <div class="panel">
-      <div class="notice" style="background:#063f2a;color:#b8f6d6;margin-bottom:12px"><b>Instalación definitiva:</b> copia únicamente estas 3 líneas en el CCR2116. El MikroTik descarga el agente como archivo .rsc y lo importa, evitando los problemas al pegar scripts largos.</div>
+      <div class="notice" style="background:#063f2a;color:#b8f6d6;margin-bottom:12px"><b>Instalación:</b> copia estas 3 líneas en el CCR2116. Actualiza el agente sin cambiar tu configuración de rutas, mangle o failover.</div>
       <textarea class="field" style="width:100%;height:150px;font-family:Consolas,monospace">{pbr_client.esc(installer)}</textarea>
-      <div class="notice" style="background:#4e3707;color:#fff;margin:14px 0 10px">Después de importarlo, el agente queda activo cada 5 segundos. Solo procesa SUSPEND y REACTIVATE; cualquier otra acción se marca como error.</div>
+      <div class="notice" style="background:#4e3707;color:#fff;margin:14px 0 10px">El agente procesa SUSPEND, REACTIVATE, CREATE_PPPOE, CHANGE_PROFILE, APPLY_PBR y REMOVE_PBR cada 5 segundos.</div>
       <div class="muted" style="margin-bottom:6px">Verificación opcional:</div>
       <textarea class="field" style="width:100%;height:90px;font-family:Consolas,monospace">{pbr_client.esc(verify)}</textarea>
     </div>'''

@@ -36,16 +36,12 @@ def _objects_from_raw(raw):
 
     # RouterOS serializes each row as a flat object. Parse each flat object
     # independently, so a malformed outer JSON wrapper does not matter.
+    field_re = r'"([^"\\]+)"\s*:\s*(?:"((?:\\.|[^"\\])*)"|([^,}\]]+))'
     for obj in re.findall(r'\{[^{}]*\}', text):
         fields = {}
-        for key, value in re.findall(r'"([^"\\]+)"\s*:\s*(?:"((?:\\.|[^"\\])*)"|([^,}\]]+))', obj):
-            v = value if value != '' else ''
-            if v == '':
-                # unquoted capture is in the third regex group, recover it below
-                m = re.search(r'"' + re.escape(key) + r'"\s*:\s*([^,}\]]+)', obj)
-                if m:
-                    v = m.group(1).strip().strip('"')
-            fields[key] = v.replace('\\"', '"').strip()
+        for key, quoted, bare in re.findall(field_re, obj):
+            v = quoted if quoted != '' else bare
+            fields[key] = str(v or '').replace('\\"', '"').strip().strip('"')
 
         name = fields.get('name', '')
         ranges = fields.get('ranges', '')

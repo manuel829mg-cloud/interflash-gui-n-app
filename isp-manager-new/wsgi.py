@@ -1,3 +1,16 @@
+import os
+import time
+
+# INTER Flash operates in the Dominican Republic. Force the process local
+# timezone before loading the application so datetime.now()/date.today() and
+# scheduled billing/cut logic use America/Santo_Domingo (UTC-4) instead of the
+# Railway host timezone.
+os.environ['TZ'] = 'America/Santo_Domingo'
+try:
+    time.tzset()
+except AttributeError:
+    pass
+
 from flask import redirect, url_for
 from enhanced_app import app
 import schema_compat

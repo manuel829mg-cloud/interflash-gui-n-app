@@ -63,46 +63,20 @@ def try_send_outbox(limit=25):
     c.commit(); c.close(); return sent,'ok'
 
 def run_billing():
-    today=date.today(); period=today.strftime('%Y-%m'); c=base.db()
-    rows=c.execute("""SELECT cu.*,p.price plan_price,p.name plan_name,p.download_mbps,p.upload_mbps,z.invoice_days_before,z.cut_days_after
-                      FROM customers cu LEFT JOIN plans p ON p.id=cu.plan_id LEFT JOIN zones z ON z.id=cu.zone_id
-                      WHERE cu.plan_id IS NOT NULL""").fetchall()
-    created=overdue=commands=0
+    today=date.today(); period=today.strftime('%Y-%m'); c=base.db(); rows=c.execute('''SELECT cu.*,p.price plan_price,p.name plan_name,p.download_mbps,p.upload_mbps,z.invoice_days_before,z.cut_days_after FROM customers cu LEFT JOIN plans p ON p.id=cu.plan_id LEFT JOIN zones z ON z.id=cu.zone_id WHERE cu.plan_id IS NOT NULL''').fetchall(); created=overdue=commands=0
     for cu in rows:
-        due_day=max(1,min(int(cu['due_day'] or 30),28 if today.month==2 else 30))
-        due=date(today.year,today.month,due_day)
-        issue=due-timedelta(days=int(cu['invoice_days_before'] if cu['invoice_days_before'] is not None else 5))
+        due_day=max(1,min(int(cu['due_day'] or 30),28 if today.month==2 else 30)); due=date(today.year,today.month,due_day); issue=due-timedelta(days=int(cu['invoice_days_before'] if cu['invoice_days_before'] is not None else 5))
         if today>=issue and not c.execute('SELECT id FROM invoices WHERE customer_id=? AND period=?',(cu['id'],period)).fetchone():
-            c.execute('INSERT INTO invoices(customer_id,concept,amount,issue_date,due_date,status,period,generated_by,plan_name,plan_speed) VALUES(?,?,?,?,?,?,?,?,?,?)',
-                      (cu['id'],'Servicio de Internet '+period,float(cu['plan_price'] or 0),today.isoformat(),due.isoformat(),'PENDIENTE',period,'AUTOMATICO',cu['plan_name'] or '',str(cu['download_mbps'] or 0)+'/'+str(cu['upload_mbps'] or 0)+' Mbps'))
-            created+=1
-            if setting('whatsapp_enabled','0')=='1' and setting('whatsapp_auto_invoice','1')=='1' and cu['phone']:
-                t=c.execute("SELECT body FROM whatsapp_templates WHERE code='INVOICE' AND active=1").fetchone()
-                msg=t['body'].format(name=cu['name'],amount='RD'+chr(36)+'{:,.2f}'.format(float(cu['plan_price'] or 0)),due_date=due.isoformat()) if t else ''
+            c.execute('INSERT INTO invoices(customer_id,concept,amount,issue_date,due_date,status,period,generated_by,plan_name,plan_speed) VALUES(?,?,?,?,?,?,?,?,?,?)',(cu['id'],'Servicio de Internet '+period,float(cu['plan_price'] or 0),today.isoformat(),due.isoformat(),'PENDIENTE',period,'AUTOMATICO',cu['plan_name'] or '',(str(cu['download_mbps'] or 0)+'/'+str(cu['upload_mbps'] or 0)+' Mbps'))); created+=1
+            if setting('whatsapp_enabled','0')=='1' and cu['phone']:
+                t=c.execute("SELECT body FROM whatsapp_templates WHERE code='INVOICE'").fetchone(); msg=t['body'].format(name=cu['name'],amount='RD${:,.2f}'.format(float(cu['plan_price'] or 0)),due_date=due.isoformat()) if t else ''
                 if msg: c.execute('INSERT INTO whatsapp_outbox(customer_id,phone,template_code,message,status,created_at) VALUES(?,?,?,?,?,?)',(cu['id'],cu['phone'],'INVOICE',msg,'PENDIENTE',datetime.now().isoformat(timespec='seconds')))
         invs=c.execute("SELECT * FROM invoices WHERE customer_id=? AND status='PENDIENTE' AND due_date<?",(cu['id'],today.isoformat())).fetchall()
         if invs:
-            overdue+=1
-            oldest=min(date.fromisoformat(i['due_date']) for i in invs)
-            cut=int(cu['cut_days_after'] if cu['cut_days_after'] is not None else 6)
-            if setting('whatsapp_enabled','0')=='1' and setting('whatsapp_auto_overdue','1')=='1' and cu['phone']:
-                already=c.execute("SELECT 1 FROM whatsapp_outbox WHERE customer_id=? AND template_code='OVERDUE' AND created_at LIKE ? LIMIT 1",(cu['id'],today.isoformat()+'%')).fetchone()
-                if not already:
-                    total=sum(float(i['amount'] or 0) for i in invs)
-                    t=c.execute("SELECT body FROM whatsapp_templates WHERE code='OVERDUE' AND active=1").fetchone()
-                    msg=t['body'].format(name=cu['name'],amount='RD'+chr(36)+'{:,.2f}'.format(total),due_date=oldest.isoformat()) if t else ''
-                    if msg: c.execute('INSERT INTO whatsapp_outbox(customer_id,phone,template_code,message,status,created_at) VALUES(?,?,?,?,?,?)',(cu['id'],cu['phone'],'OVERDUE',msg,'PENDIENTE',datetime.now().isoformat(timespec='seconds')))
-            pending=c.execute("SELECT id FROM router_commands WHERE pppoe=? AND action='SUSPEND' AND status IN ('PENDIENTE','EN_PROCESO')",(cu['pppoe'],)).fetchone() if cu['pppoe'] else None
-            if setting('auto_suspend','0')=='1' and today>=oldest+timedelta(days=cut) and cu['pppoe'] and not pending:
-                c.execute('INSERT INTO router_commands(router_name,customer_id,pppoe,action,payload,status,created_at,requested_by) VALUES(?,?,?,?,?,?,?,?)',
-                          (cu['router_name'] or 'CCR2116',cu['id'],cu['pppoe'],'SUSPEND','{}','PENDIENTE',datetime.now().isoformat(timespec='seconds'),'AUTOMATICO'))
-                commands+=1
-                if setting('whatsapp_enabled','0')=='1' and setting('whatsapp_auto_suspend','1')=='1' and cu['phone']:
-                    t=c.execute("SELECT body FROM whatsapp_templates WHERE code='SUSPEND' AND active=1").fetchone()
-                    msg=t['body'].format(name=cu['name'],amount='',due_date=oldest.isoformat()) if t else ''
-                    if msg: c.execute('INSERT INTO whatsapp_outbox(customer_id,phone,template_code,message,status,created_at) VALUES(?,?,?,?,?,?)',(cu['id'],cu['phone'],'SUSPEND',msg,'PENDIENTE',datetime.now().isoformat(timespec='seconds')))
-    c.execute('INSERT INTO billing_runs(run_date,status,detail,created_at) VALUES(?,?,?,?)',(today.isoformat(),'OK',f'Facturas {created}; morosos {overdue}; comandos {commands}',datetime.now().isoformat(timespec='seconds')))
-    c.commit(); c.close(); return created,overdue,commands
+            overdue+=1; oldest=min(date.fromisoformat(i['due_date']) for i in invs); cut=int(cu['cut_days_after'] if cu['cut_days_after'] is not None else 6)
+            if setting('auto_suspend','0')=='1' and today>=oldest+timedelta(days=cut) and cu['pppoe'] and not c.execute("SELECT id FROM router_commands WHERE pppoe=? AND action='SUSPEND' AND status IN ('PENDIENTE','EN_PROCESO')",(cu['pppoe'],)).fetchone():
+                c.execute('INSERT INTO router_commands(router_name,customer_id,pppoe,action,payload,status,created_at,requested_by) VALUES(?,?,?,?,?,?,?,?)',(cu['router_name'] or 'CCR2116',cu['id'],cu['pppoe'],'SUSPEND','{}','PENDIENTE',datetime.now().isoformat(timespec='seconds'),'AUTOMATICO')); commands+=1
+    c.execute('INSERT INTO billing_runs(run_date,status,detail,created_at) VALUES(?,?,?,?)',(today.isoformat(),'OK',f'Facturas {created}; morosos {overdue}; comandos {commands}',datetime.now().isoformat(timespec='seconds'))); c.commit(); c.close(); return created,overdue,commands
 
 def customers_full():
     if not base.logged_in(): return redirect(url_for('login'))

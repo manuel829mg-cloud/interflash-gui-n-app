@@ -29,7 +29,7 @@ def invoices_plus():
         except Exception: pass
         try:
             import whatsapp_suite as wa
-            wa.queue_event(cid,'INVOICE',{'amount':'RD'+'
+            wa.queue_event(cid,'INVOICE',{'amount':'RD
     customers=c.execute("""SELECT cu.id,cu.name,p.name plan_name,p.price FROM customers cu LEFT JOIN plans p ON p.id=cu.plan_id
                            WHERE COALESCE(cu.status,'ACTIVO')<>'ELIMINADO' ORDER BY cu.name""").fetchall()
     rows=c.execute("""SELECT i.*,cu.name customer FROM invoices i JOIN customers cu ON cu.id=i.customer_id ORDER BY i.id DESC LIMIT 500""").fetchall()
@@ -120,7 +120,7 @@ def invoice_payment(id):
     except Exception: pass
     try:
         import whatsapp_suite as wa
-        wa.queue_event(inv['customer_id'],'PAYMENT',{'amount':'RD'+'
+        wa.queue_event(inv['customer_id'],'PAYMENT',{'amount':'RD
 
 def payment_receipt(id):
     if not base.logged_in(): return redirect(url_for('login'))
@@ -147,7 +147,8 @@ def setup(app):
     app.add_url_rule('/invoices/<int:id>/payment',endpoint='invoice_payment',view_func=invoice_payment,methods=['POST'])
     app.add_url_rule('/payments/<int:id>/receipt',endpoint='payment_receipt',view_func=payment_receipt,methods=['GET'])
 +'{:,.2f}'.format(amount),'due_date':request.form['due_date']})
-        except Exception: pass
+        except Exception:
+            pass
         flash('Factura creada.'); return redirect(url_for('invoice_detail',id=iid))
     customers=c.execute("""SELECT cu.id,cu.name,p.name plan_name,p.price FROM customers cu LEFT JOIN plans p ON p.id=cu.plan_id
                            WHERE COALESCE(cu.status,'ACTIVO')<>'ELIMINADO' ORDER BY cu.name""").fetchall()
@@ -265,7 +266,8 @@ def setup(app):
     app.add_url_rule('/invoices/<int:id>/payment',endpoint='invoice_payment',view_func=invoice_payment,methods=['POST'])
     app.add_url_rule('/payments/<int:id>/receipt',endpoint='payment_receipt',view_func=payment_receipt,methods=['GET'])
 +'{:,.2f}'.format(amount)})
-    except Exception: pass
+    except Exception:
+        pass
     flash('Pago registrado correctamente.')
     return redirect(url_for('payment_receipt',id=pid))
 
@@ -294,7 +296,8 @@ def setup(app):
     app.add_url_rule('/invoices/<int:id>/payment',endpoint='invoice_payment',view_func=invoice_payment,methods=['POST'])
     app.add_url_rule('/payments/<int:id>/receipt',endpoint='payment_receipt',view_func=payment_receipt,methods=['GET'])
 +'{:,.2f}'.format(amount),'due_date':request.form['due_date']})
-        except Exception: pass
+        except Exception:
+            pass
         flash('Factura creada.'); return redirect(url_for('invoice_detail',id=iid))
     customers=c.execute("""SELECT cu.id,cu.name,p.name plan_name,p.price FROM customers cu LEFT JOIN plans p ON p.id=cu.plan_id
                            WHERE COALESCE(cu.status,'ACTIVO')<>'ELIMINADO' ORDER BY cu.name""").fetchall()

@@ -85,12 +85,28 @@ def traffic_script_v2(name):
     /tool fetch url=$url http-method=post http-header-field=$headers http-data=$data output=none check-certificate=yes;
   }}
 }}
+/system script remove [find where name="interflash-wan-health"]
+/system scheduler remove [find where name="interflash-wan-health-scheduler"]
+/system script add name="interflash-wan-health" policy=read,test source={{
+  :local url "{root}/api/mikrotik/wan-health";
+  :local headers "Content-Type:application/x-www-form-urlencoded,X-InterFlash-Relay: {push_sync.TOKEN}";
+  :local r1 0; :local r2 0; :local r3 0; :local r4 0;
+  :if ([:len [/ip route find where routing-table=Ruta-Linea1 gateway="4.2.2.1" active]] > 0) do={{ :set r1 3; }}
+  :if ([:len [/ip route find where routing-table=Ruta-Linea2 gateway="4.2.2.2" active]] > 0) do={{ :set r2 3; }}
+  :if ([:len [/ip route find where routing-table=Ruta-Linea3 gateway="208.67.222.222" active]] > 0) do={{ :set r3 3; }}
+  :if ([:len [/ip route find where routing-table=Ruta-Linea4 gateway="208.67.220.220" active]] > 0) do={{ :set r4 3; }}
+  :local health ("WAN1-CLARO," . $r1 . ",3|WAN2-CLARO," . $r2 . ",3|WAN3-ALTICE," . $r3 . ",3|WAN4-ALTICE," . $r4 . ",3");
+  :local data ("router={name}&health=" . $health);
+  /tool fetch url=$url http-method=post http-header-field=$headers http-data=$data output=none check-certificate=yes;
+}}
 /system scheduler add name="interflash-traffic-scheduler" interval=2s on-event="/system script run interflash-traffic" policy=read,test start-time=startup
+/system scheduler add name="interflash-wan-health-scheduler" interval=10s on-event="/system script run interflash-wan-health" policy=read,test start-time=startup
 /system script run interflash-traffic
+/system script run interflash-wan-health
 '''
 
-    body = f'''<div class="head"><div><h1>Activar consumo MikroTik</h1><p>Monitor en tiempo casi real: WAN y estado PPPoE activo cada 2 segundos.</p></div><a class="btn" href="{url_for('router_push_traffic',name=name)}">← Volver</a></div>
-    <div class="panel"><div style="padding:11px;border-radius:8px;background:#063f2a;color:#9ff0c8;margin-bottom:12px"><b>Monitor v4 · PPPoE en vivo · 2 segundos.</b> Pega este bloque completo una sola vez. Reemplaza automáticamente el monitor anterior y envía las 4 WAN juntas en una sola petición para no cargar el CCR2116.</div><textarea class="field" style="width:100%;height:440px;font-family:Consolas,monospace">{push_sync.escape(script)}</textarea></div>'''
+    body = f'''<div class="head"><div><h1>Activar consumo MikroTik</h1><p>Monitor en tiempo casi real: WAN y estado PPPoE cada 2 segundos; salud de las 4 líneas cada 10 segundos.</p></div><a class="btn" href="{url_for('router_push_traffic',name=name)}">← Volver</a></div>
+    <div class="panel"><div style="padding:11px;border-radius:8px;background:#063f2a;color:#9ff0c8;margin-bottom:12px"><b>Monitor v5 · PPPoE + 4 líneas en vivo.</b> Pega este bloque completo una sola vez. Reemplaza automáticamente el monitor anterior y envía las 4 WAN juntas en una sola petición para no cargar el CCR2116.</div><textarea class="field" style="width:100%;height:440px;font-family:Consolas,monospace">{push_sync.escape(script)}</textarea></div>'''
     return base.shell('Activar consumo MikroTik', body, 'routers')
 
 

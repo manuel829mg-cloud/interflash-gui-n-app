@@ -76,7 +76,7 @@ def page():
             status,cls='SIN DATOS','warn'
         elif loss >= 100:
             status,cls='OFFLINE','bad'
-        elif loss >= 34:
+        elif loss > 0:
             status,cls='INESTABLE','warn'
         else:
             status,cls='ONLINE','ok'
@@ -92,7 +92,7 @@ def page():
           <div class="grid6" style="grid-template-columns:repeat(3,minmax(90px,1fr));margin-top:12px">
             <div><div class="muted">Descarga</div><b>{rx}</b></div>
             <div><div class="muted">Subida</div><b>{tx}</b></div>
-            <div><div class="muted">Pérdida</div><b>{loss_txt}</b></div>
+            <div><div class="muted">Pérdida real</div><b>{loss_txt}</b></div>
           </div>
           <div class="muted" style="margin-top:12px">Prueba {escape(probe)} · {escape(table)}<br>Última prueba: {updated}</div>
         </div>''')

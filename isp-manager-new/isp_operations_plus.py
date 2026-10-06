@@ -413,6 +413,12 @@ def dashboard_plus():
         if stale: wan_issues.append(w['interface_name'])
     agent_rows=c.execute('SELECT * FROM push_router_agents ORDER BY id DESC').fetchall() if _table_exists(c,'push_router_agents') else []
     router_bad=sum(1 for a in agent_rows if str(a['status'] or '').upper()!='ONLINE')
+    optical_critical=0; optical_warn=0
+    if _table_exists(c,'onu_optical_readings'):
+        optical_critical=c.execute("""SELECT COUNT(*) c FROM onu_optical_readings
+                                      WHERE rx_power IS NOT NULL AND (rx_power < -27 OR rx_power > -8)""").fetchone()['c']
+        optical_warn=c.execute("""SELECT COUNT(*) c FROM onu_optical_readings
+                                  WHERE rx_power >= -27 AND rx_power < -25""").fetchone()['c']
     recent=c.execute('''SELECT cu.name,i.amount,i.status,i.due_date FROM invoices i JOIN customers cu ON cu.id=i.customer_id WHERE COALESCE(cu.status,'ACTIVO')<>'ELIMINADO' ORDER BY i.id DESC LIMIT 8''').fetchall()
     c.close()
     kpis=[('Clientes',total,f'{online_ppp} PPPoE online','blue1'),('Suspendidos',suspended,'Fuera de servicio','orange1'),('Morosos',overdue,f'RD${overdue_money:,.0f} vencido','red1'),('ONU caídas',onu_down,'OFFLINE / LOS','purple1'),('Órdenes MikroTik',pending_cmd,'Pendientes / proceso','cyan1'),('Papelera',trash,'Clientes eliminados','green1')]
@@ -421,6 +427,8 @@ def dashboard_plus():
     if overdue: alerts.append(('bad',f'{overdue} clientes con facturas vencidas',url_for('invoices')))
     if suspended: alerts.append(('warn',f'{suspended} clientes suspendidos',url_for('customers')))
     if onu_down: alerts.append(('bad',f'{onu_down} ONU/ONT caídas o en LOS',url_for('onu_overview')))
+    if optical_critical: alerts.append(('bad',f'{optical_critical} ONU con potencia óptica CRÍTICA (RX menor de -27 dBm)',url_for('onu_page')))
+    if optical_warn: alerts.append(('warn',f'{optical_warn} ONU con potencia óptica en ALERTA (-27 a -25 dBm)',url_for('onu_page')))
     if pending_cmd: alerts.append(('warn',f'{pending_cmd} órdenes pendientes para MikroTik',url_for('mikrotik_commands')))
     if wan_issues: alerts.append(('bad',f'WAN sin lectura reciente: {", ".join(wan_issues[:4])}',url_for('routers')))
     if router_bad: alerts.append(('bad',f'{router_bad} router/agente no está ONLINE',url_for('routers')))

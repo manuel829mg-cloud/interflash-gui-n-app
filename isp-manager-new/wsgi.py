@@ -32,6 +32,7 @@ import plan_form_cleanup
 import admin_suite
 import traffic_monitor_fix
 import traffic_monitor_v2
+import wan_monitor
 import free_ip_picker
 import pool_compat_fix
 import whatsapp_suite
@@ -66,6 +67,7 @@ plan_form_cleanup.setup(app)
 admin_suite.setup(app)
 traffic_monitor_fix.setup(app)
 traffic_monitor_v2.setup(app)
+wan_monitor.setup(app)
 whatsapp_suite.setup(app)
 branding.setup(app)
 

@@ -40,6 +40,9 @@ def ensure_schema(c=None):
     );
     CREATE INDEX IF NOT EXISTS idx_onu_optical_serial ON onu_optical_readings(serial);
     """)
+    cols = [x['name'] for x in c.execute("PRAGMA table_info(onu_optical_readings)").fetchall()]
+    if 'customer_id' not in cols:
+        c.execute("ALTER TABLE onu_optical_readings ADD COLUMN customer_id INTEGER")
     if own:
         c.commit()
         c.close()
@@ -76,6 +79,16 @@ def optical_batch():
     c = base.db()
     try:
         ensure_schema(c)
+        # Existing customer/ONU records are used for automatic exact association.
+        auto = {}
+        for x in c.execute("SELECT id,onu_serial FROM customers WHERE onu_serial IS NOT NULL AND onu_serial<>''").fetchall():
+            auto[_norm(x['onu_serial'])] = x['id']
+        for x in c.execute("SELECT customer_id,serial,mac FROM onu_devices WHERE customer_id IS NOT NULL").fetchall():
+            if x['serial']:
+                auto[_norm(x['serial'])] = x['customer_id']
+            if x['mac']:
+                auto[_norm(x['mac'])] = x['customer_id']
+
         for serial, idx, rxv, txv, status in parsed:
             c.execute("""INSERT INTO onu_optical_readings(olt_ip,index_key,serial,rx_power,tx_power,status,last_seen)
                          VALUES(?,?,?,?,?,?,?)
@@ -83,6 +96,10 @@ def optical_batch():
                            serial=excluded.serial,rx_power=excluded.rx_power,tx_power=excluded.tx_power,
                            status=excluded.status,last_seen=excluded.last_seen""",
                       (olt, idx, serial, rxv, txv, status, now))
+            cid = auto.get(_norm(serial))
+            if cid:
+                c.execute("UPDATE onu_optical_readings SET customer_id=? WHERE olt_ip=? AND index_key=? AND customer_id IS NULL",
+                          (cid, olt, idx))
             # Keep manually linked ONU inventory fresh when the same serial exists there.
             c.execute("""UPDATE onu_devices SET rx_power=?,tx_power=?,status=?,last_seen=?
                          WHERE UPPER(REPLACE(REPLACE(REPLACE(serial,':',''),'-',''),' ',''))=?""",
@@ -102,7 +119,7 @@ def onu_live_page():
     ensure_schema(c)
     rows = c.execute('SELECT * FROM onu_optical_readings ORDER BY CAST(rx_power AS REAL) ASC, index_key').fetchall()
     customers = c.execute('SELECT id,name,onu_serial FROM customers ORDER BY name').fetchall()
-    devices = c.execute('SELECT customer_id,serial FROM onu_devices WHERE customer_id IS NOT NULL').fetchall()
+    devices = c.execute('SELECT customer_id,serial,mac FROM onu_devices WHERE customer_id IS NOT NULL').fetchall()
     c.close()
 
     cmap = {}
@@ -111,8 +128,11 @@ def onu_live_page():
         if x['onu_serial']:
             cmap[_norm(x['onu_serial'])] = x['name']
     for x in devices:
-        if x['serial'] and x['customer_id'] in names:
-            cmap[_norm(x['serial'])] = names[x['customer_id']]
+        if x['customer_id'] in names:
+            if x['serial']:
+                cmap[_norm(x['serial'])] = names[x['customer_id']]
+            if x['mac']:
+                cmap[_norm(x['mac'])] = names[x['customer_id']]
 
     good = alert = critical = 0
     last = '-'
@@ -127,10 +147,19 @@ def onu_live_page():
             critical += 1
         if r['last_seen'] and (last == '-' or r['last_seen'] > last):
             last = r['last_seen']
-        client = cmap.get(_norm(r['serial']), 'Sin asociar')
+        cid = r['customer_id']
+        client = names.get(cid) if cid else cmap.get(_norm(r['serial']))
         rx = '-' if r['rx_power'] is None else f"{float(r['rx_power']):.2f} dBm"
         tx = '-' if r['tx_power'] is None else f"{float(r['tx_power']):.2f} dBm"
-        trs.append(f'<tr><td>{bs.esc(client)}</td><td>{bs.esc(r["serial"])}</td><td>{bs.esc(r["index_key"])}</td>'
+        if client:
+            client_cell = f'<b>{bs.esc(client)}</b>'
+        else:
+            opts = ''.join(f'<option value="{x["id"]}">{bs.esc(x["name"])}</option>' for x in customers)
+            client_cell = (f'<form method="post" action="{url_for("onu_optical_associate")}" style="display:flex;gap:6px;min-width:260px">'
+                           f'<input type="hidden" name="reading_id" value="{r["id"]}">'
+                           f'<select class="field" name="customer_id" required><option value="">Asociar cliente…</option>{opts}</select>'
+                           f'<button class="btn green" type="submit">Guardar</button></form>')
+        trs.append(f'<tr><td>{client_cell}</td><td>{bs.esc(r["serial"])}</td><td>{bs.esc(r["index_key"])}</td>'
                    f'<td><b>{rx}</b></td><td>{tx}</td><td><span class="tag {cls}">{status}</span></td>'
                    f'<td>{bs.esc(r["last_seen"])}</td></tr>')
 
@@ -148,6 +177,39 @@ def onu_live_page():
     <script>setTimeout(function(){{location.reload()}},30000)</script>"""
     return base.shell('OLT / ONU', body, 'onu_page')
 
+
+
+def associate_onu():
+    if not base.logged_in():
+        return redirect(url_for('login'))
+    try:
+        rid = int(request.form.get('reading_id') or 0)
+        cid = int(request.form.get('customer_id') or 0)
+    except ValueError:
+        return redirect(url_for('onu_page'))
+    c = base.db()
+    ensure_schema(c)
+    r = c.execute("SELECT * FROM onu_optical_readings WHERE id=?", (rid,)).fetchone()
+    cu = c.execute("SELECT id,name FROM customers WHERE id=?", (cid,)).fetchone()
+    if r and cu:
+        c.execute("UPDATE onu_optical_readings SET customer_id=? WHERE id=?", (cid, rid))
+        found = c.execute("""SELECT id FROM onu_devices
+                             WHERE customer_id=? AND UPPER(REPLACE(REPLACE(REPLACE(serial,':',''),'-',''),' ',''))=?""",
+                          (cid, _norm(r['serial']))).fetchone()
+        if found:
+            c.execute("""UPDATE onu_devices SET olt=?,pon_port=?,rx_power=?,tx_power=?,status=?,last_seen=?
+                         WHERE id=?""",
+                      (r['olt_ip'], r['index_key'], str(r['rx_power']), str(r['tx_power']),
+                       r['status'], r['last_seen'], found['id']))
+        else:
+            c.execute("""INSERT INTO onu_devices(customer_id,vendor,model,serial,olt,pon_port,rx_power,tx_power,status,last_seen,notes)
+                         VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                      (cid, 'Hioso', 'HA7304VX', r['serial'], r['olt_ip'], r['index_key'],
+                       str(r['rx_power']), str(r['tx_power']), r['status'], r['last_seen'],
+                       'Asociada desde monitor óptico SNMP'))
+        c.commit()
+    c.close()
+    return redirect(url_for('onu_page'))
 
 def optical_script():
     if not base.logged_in():
@@ -212,4 +274,5 @@ def setup(app):
     ensure_schema()
     app.add_url_rule('/api/olt/optical-batch', endpoint='onu_optical_batch', view_func=optical_batch, methods=['POST'])
     app.add_url_rule('/onu/monitor-script', endpoint='onu_optical_script', view_func=optical_script, methods=['GET'])
+    app.add_url_rule('/onu/associate', endpoint='onu_optical_associate', view_func=associate_onu, methods=['POST'])
     app.view_functions['onu_page'] = onu_live_page

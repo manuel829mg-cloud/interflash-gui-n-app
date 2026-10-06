@@ -1,6 +1,6 @@
 import re
 import calendar
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from html import escape
 from flask import request, redirect, url_for, flash, session
 import app as base
@@ -260,6 +260,28 @@ def customer_profile_plus(id):
     debt=float(c.execute("SELECT COALESCE(SUM(amount),0) s FROM invoices WHERE customer_id=? AND status='PENDIENTE'",(id,)).fetchone()['s'] or 0)
     oldest=c.execute("SELECT MIN(due_date) d FROM invoices WHERE customer_id=? AND status='PENDIENTE'",(id,)).fetchone()['d']
     last_payment=c.execute('SELECT MAX(paid_at) p FROM payments WHERE customer_id=?',(id,)).fetchone()['p']
+    conn_events=[]
+    microcuts24=0
+    last_connected=None
+    last_disconnected=None
+    if cu['pppoe'] and _table_exists(c,'pppoe_connection_events'):
+        conn_events=c.execute(
+            'SELECT * FROM pppoe_connection_events WHERE pppoe=? ORDER BY id DESC LIMIT 30',
+            (cu['pppoe'],)
+        ).fetchall()
+        last_connected=c.execute(
+            "SELECT * FROM pppoe_connection_events WHERE pppoe=? AND event='CONECTADO' ORDER BY id DESC LIMIT 1",
+            (cu['pppoe'],)
+        ).fetchone()
+        last_disconnected=c.execute(
+            "SELECT * FROM pppoe_connection_events WHERE pppoe=? AND event='DESCONECTADO' ORDER BY id DESC LIMIT 1",
+            (cu['pppoe'],)
+        ).fetchone()
+        cutoff=(datetime.now()-timedelta(hours=24)).isoformat(timespec='seconds')
+        microcuts24=c.execute(
+            'SELECT COUNT(*) n FROM pppoe_connection_events WHERE pppoe=? AND is_microcut=1 AND created_at>=?',
+            (cu['pppoe'],cutoff)
+        ).fetchone()['n']
     c.close()
 
     active_names={cu['pppoe']} if active else set(); disabled={cu['pppoe']: str(secret['disabled'] or '').lower() in ('yes','true','1')} if secret and cu['pppoe'] else {}
@@ -282,6 +304,39 @@ def customer_profile_plus(id):
     onur=''.join(f'<tr><td>{esc(x["vendor"])} {esc(x["model"])}</td><td>{esc(x["serial"] or cu["onu_serial"] or "-")}</td><td>{esc(x["olt"] or "-")} / {esc(x["pon_port"] or "-")}</td><td>{esc(x["rx_power"] or "-")}</td><td>{esc(x["tx_power"] or "-")}</td><td><span class="tag {"bad" if str(x["status"] or "").upper() in ("OFFLINE","DOWN","LOS","CAIDA","CAÍDA") else "ok"}">{esc(x["status"] or "-")}</span></td><td>{esc(x["last_seen"] or "-")}</td></tr>' for x in onus) or '<tr><td colspan="7" class="muted">Sin ONU/ONT registrada.</td></tr>'
     cmdr=''.join(f'<tr><td>{esc(x["created_at"])}</td><td>{esc(x["action"])}</td><td><span class="tag {"ok" if x["status"]=="COMPLETADO" else "bad" if x["status"]=="ERROR" else "warn"}">{esc(x["status"])}</span></td><td>{esc(x["result"] or "-")}</td></tr>' for x in cmds) or '<tr><td colspan="4" class="muted">Sin comandos.</td></tr>'
     evr=''.join(f'<tr><td>{esc(x["created_at"])}</td><td>{esc(x["action"])}</td><td>{esc(x["actor"] or "-")}</td><td>{esc(x["detail"] or "-")}</td></tr>' for x in events) or '<tr><td colspan="4" class="muted">Sin acciones registradas todavía.</td></tr>'
+
+    def _dur(seconds):
+        if seconds is None:
+            return '-'
+        try: seconds=max(0,int(seconds))
+        except (TypeError,ValueError): return '-'
+        if seconds < 60: return f'{seconds}s'
+        if seconds < 3600: return f'{seconds//60}m {seconds%60}s'
+        if seconds < 86400: return f'{seconds//3600}h {(seconds%3600)//60}m'
+        return f'{seconds//86400}d {(seconds%86400)//3600}h'
+
+    current_session='-'
+    if active and last_connected and last_connected['created_at']:
+        try:
+            current_session=_dur((datetime.now()-datetime.fromisoformat(last_connected['created_at'])).total_seconds())
+        except (TypeError,ValueError):
+            pass
+    conn_rows=[]
+    for x in conn_events:
+        is_on=x['event']=='CONECTADO'
+        badge='ok' if is_on else ('bad' if not x['is_microcut'] else 'warn')
+        label='CONECTADO' if is_on else ('MICROCORTE' if x['is_microcut'] else 'DESCONECTADO')
+        detail='Sesión actual' if is_on and x['id']==(last_connected['id'] if last_connected else -1) and active else (
+            'Duración '+_dur(x['duration_seconds']) if not is_on else (
+                'Volvió en '+_dur(x['gap_seconds']) if x['gap_seconds'] is not None else '-'
+            )
+        )
+        if x['is_microcut'] and x['gap_seconds'] is not None:
+            detail='Volvió en '+_dur(x['gap_seconds'])
+        conn_rows.append(f'<tr><td>{esc(x["created_at"])}</td><td><span class="tag {badge}">{label}</span></td><td>{esc(detail)}</td></tr>')
+    connr=''.join(conn_rows) or '<tr><td colspan="3" class="muted">El historial comenzará a llenarse automáticamente con el monitor PPPoE.</td></tr>'
+    last_on_text=last_connected['created_at'] if last_connected else '-'
+    last_off_text=last_disconnected['created_at'] if last_disconnected else '-'
     service_action='REACTIVATE' if (cu['status'] or '').upper()=='SUSPENDIDO' else 'SUSPEND'
     service_label='Reactivar' if service_action=='REACTIVATE' else 'Suspender'
     wa_btn=f'<a class="btn" style="border-color:#168a57;color:#70ebb0" target="_blank" href="https://wa.me/{wa}">WhatsApp</a>' if wa else ''
@@ -292,6 +347,7 @@ def customer_profile_plus(id):
     <div class="panel"><div class="actionline"><form method="post" action="{url_for('customer_service_action',id=id,action=service_action)}"><button class="btn {'green' if service_action=='REACTIVATE' else ''}" onclick="return confirm('¿{service_label} este cliente?')">{service_label}</button></form><form method="post" action="{url_for('restart_pppoe',id=id)}"><button class="btn" onclick="return confirm('¿Reiniciar la sesión PPPoE de este cliente?')">Reiniciar PPPoE</button></form><a class="btn" href="{url_for('promise_new',customer_id=id)}">Promesa de pago</a><a class="btn" href="{url_for('customer_service_info',id=id)}">Servicio / mapa</a></div></div>
     <div class="split2"><div class="panel"><h3>Cambiar plan / perfil</h3><form method="post" action="{url_for('change_customer_plan',id=id)}" class="formgrid"><label>Plan comercial<select name="plan_id"><option value="">Sin plan</option>{plan_opts}</select></label><label>Perfil MikroTik<select name="mikrotik_profile"><option value="">Sin cambiar perfil</option>{prof_opts}</select></label><div class="full"><button class="btn blue">Guardar cambio</button></div></form></div>
     <div class="panel"><h3>Consumo / sesión PPPoE</h3><div class="profile-kpis" style="grid-template-columns:repeat(2,1fr)"><div class="mini"><small>Descarga actual</small><b>{rx_mbps:.2f} Mbps</b><span class="muted">{esc(traffic['interface_name'] if traffic else 'Sin contador sincronizado')}</span></div><div class="mini"><small>Subida actual</small><b>{tx_mbps:.2f} Mbps</b><span class="muted">Uptime {esc(active['uptime'] if active else '-')}</span></div></div></div></div>
+    <div class="panel"><h3>Historial de conexión PPPoE</h3><div class="profile-kpis" style="grid-template-columns:repeat(4,minmax(140px,1fr));margin-bottom:14px"><div class="mini"><small>Sesión actual</small><b>{esc(current_session)}</b><span class="muted">{esc(state)}</span></div><div class="mini"><small>Última conexión</small><b style="font-size:14px">{esc(last_on_text)}</b></div><div class="mini"><small>Última desconexión</small><b style="font-size:14px">{esc(last_off_text)}</b></div><div class="mini"><small>Microcortes 24h</small><b>{int(microcuts24 or 0)}</b><span class="muted">Reconexión ≤ 2 min</span></div></div><table class="table"><tr><th>Fecha</th><th>Evento</th><th>Detalle</th></tr>{connr}</table></div>
     <div class="panel"><h3>ONU / ONT</h3><table class="table"><tr><th>Equipo</th><th>Serial</th><th>OLT / PON</th><th>RX</th><th>TX</th><th>Estado</th><th>Última lectura</th></tr>{onur}</table></div>
     <div class="split2"><div class="panel"><h3>Facturas</h3><table class="table"><tr><th>#</th><th>Concepto</th><th>Monto</th><th>Vence</th><th>Estado</th></tr>{invr}</table></div><div class="panel"><h3>Pagos</h3><table class="table"><tr><th>Fecha</th><th>Monto</th><th>Método</th><th>Ref.</th></tr>{payr}</table></div></div>
     <div class="split2"><div class="panel"><h3>Historial de acciones</h3><table class="table"><tr><th>Fecha</th><th>Acción</th><th>Quién</th><th>Detalle</th></tr>{evr}</table></div><div class="panel"><h3>Comandos MikroTik</h3><table class="table"><tr><th>Fecha</th><th>Acción</th><th>Estado</th><th>Resultado</th></tr>{cmdr}</table></div></div>'''

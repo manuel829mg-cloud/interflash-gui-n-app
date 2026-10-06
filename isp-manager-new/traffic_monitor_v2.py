@@ -73,8 +73,7 @@ def traffic_script_v2(name):
 /system script add name="interflash-traffic" policy=read,test source={{
   :local url "{root}/api/mikrotik/traffic-batch";
   :local headers "Content-Type:application/x-www-form-urlencoded,X-InterFlash-Relay: {push_sync.TOKEN}";
-  :local samples "";
-  :foreach item in=[/interface print stats as-value where name~"WAN"] do={{
+  :local samples "";\n  :local active "";\n  :foreach session in=[/ppp active print as-value proplist=name] do={{\n    :local u ($session->"name");\n    :if ([:len $active] > 0) do={{ :set active ($active . "|"); }}\n    :set active ($active . $u);\n  }}\n  :foreach item in=[/interface print stats as-value where name~"WAN"] do={{
     :local n ($item->"name");
     :local rx ($item->"rx-byte");
     :local tx ($item->"tx-byte");
@@ -82,7 +81,7 @@ def traffic_script_v2(name):
     :set samples ($samples . $n . "," . $rx . "," . $tx);
   }}
   :if ([:len $samples] > 0) do={{
-    :local data ("router={name}&samples=" . $samples);
+    :local data ("router={name}&samples=" . $samples . "&active=" . $active);
     /tool fetch url=$url http-method=post http-header-field=$headers http-data=$data output=none check-certificate=yes;
   }}
 }}
@@ -90,8 +89,8 @@ def traffic_script_v2(name):
 /system script run interflash-traffic
 '''
 
-    body = f'''<div class="head"><div><h1>Activar consumo MikroTik</h1><p>Monitor en tiempo casi real: una sola lectura de las WAN cada 2 segundos.</p></div><a class="btn" href="{url_for('router_push_traffic',name=name)}">← Volver</a></div>
-    <div class="panel"><div style="padding:11px;border-radius:8px;background:#063f2a;color:#9ff0c8;margin-bottom:12px"><b>Monitor v3 · 2 segundos.</b> Pega este bloque completo una sola vez. Reemplaza automáticamente el monitor anterior y envía las 4 WAN juntas en una sola petición para no cargar el CCR2116.</div><textarea class="field" style="width:100%;height:440px;font-family:Consolas,monospace">{push_sync.escape(script)}</textarea></div>'''
+    body = f'''<div class="head"><div><h1>Activar consumo MikroTik</h1><p>Monitor en tiempo casi real: WAN y estado PPPoE activo cada 2 segundos.</p></div><a class="btn" href="{url_for('router_push_traffic',name=name)}">← Volver</a></div>
+    <div class="panel"><div style="padding:11px;border-radius:8px;background:#063f2a;color:#9ff0c8;margin-bottom:12px"><b>Monitor v4 · PPPoE en vivo · 2 segundos.</b> Pega este bloque completo una sola vez. Reemplaza automáticamente el monitor anterior y envía las 4 WAN juntas en una sola petición para no cargar el CCR2116.</div><textarea class="field" style="width:100%;height:440px;font-family:Consolas,monospace">{push_sync.escape(script)}</textarea></div>'''
     return base.shell('Activar consumo MikroTik', body, 'routers')
 
 

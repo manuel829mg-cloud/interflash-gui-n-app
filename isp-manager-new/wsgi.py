@@ -19,6 +19,7 @@ from push_sync import setup as setup_push_sync
 import business_suite
 import ops_suite
 import finance_plus
+import invoice_suite
 import command_queue_ui
 import client_extract
 import client_nav_group
@@ -53,6 +54,7 @@ setup_push_sync(app)
 business_suite.setup(app)
 ops_suite.setup(app)
 finance_plus.setup(app)
+invoice_suite.setup(app)
 command_queue_ui.setup(app)
 client_extract.setup(app)
 client_nav_group.setup()

@@ -37,23 +37,16 @@ def payments_full():
             inv=c.execute('SELECT amount FROM invoices WHERE id=?',(inv_id,)).fetchone(); total=c.execute('SELECT COALESCE(SUM(amount),0) s FROM payments WHERE invoice_id=?',(inv_id,)).fetchone()['s']
             if inv and total>=float(inv['amount']): c.execute("UPDATE invoices SET status='PAGADA',paid_at=? WHERE id=?",(now,inv_id))
         cu=c.execute('SELECT * FROM customers WHERE id=?',(cid,)).fetchone(); c.commit(); c.close()
-        if bs.setting('whatsapp_enabled','0')=='1':
-            try:
-                import whatsapp_suite as wa
-                wa.queue_event(cid,'PAYMENT',{'amount':'RD$'+'{:,.2f}'.format(amount)})
-            except Exception:
-                pass
+        if bs.setting('whatsapp_enabled','0')=='1': bs.queue_whatsapp(cid,'PAYMENT',{'amount':'RD${:,.2f}'.format(amount)})
         if cu and cu['status']=='SUSPENDIDO' and bs.setting('auto_reactivate','0')=='1' and cu['pppoe']:
             c=base.db(); c.execute('INSERT INTO router_commands(router_name,customer_id,pppoe,action,payload,status,created_at,requested_by) VALUES(?,?,?,?,?,?,?,?)',(cu['router_name'] or 'CCR2116',cid,cu['pppoe'],'REACTIVATE','{}','PENDIENTE',datetime.now().isoformat(timespec='seconds'),'PAGO')); c.commit(); c.close()
-            try:
-                import whatsapp_suite as wa
-                wa.queue_event(cid,'RECONNECT',{})
-            except Exception: pass
         flash('Pago registrado.'); return redirect(url_for('payments'))
-    customers=c.execute('SELECT id,name FROM customers ORDER BY name').fetchall(); invoices=c.execute("SELECT i.id,i.customer_id,i.amount,i.due_date,cu.name customer FROM invoices i JOIN customers cu ON cu.id=i.customer_id WHERE i.status='PENDIENTE' ORDER BY i.id DESC").fetchall(); rows=c.execute('SELECT p.*,cu.name customer FROM payments p JOIN customers cu ON cu.id=p.customer_id ORDER BY p.id DESC LIMIT 200').fetchall(); c.close()
-    copts=''.join('<option value="{}">{}</option>'.format(x['id'],esc(x['name'])) for x in customers); iopts=''.join('<option value="{}">#{} · {} · RD$ {:,.2f}</option>'.format(x['id'],x['id'],esc(x['customer']),x['amount']) for x in invoices); trs=''.join('<tr><td>#{}</td><td>{}</td><td>RD$ {:,.2f}</td><td>{}</td><td>{}</td><td>{}</td></tr>'.format(r['id'],esc(r['customer']),r['amount'],esc(r['method']),esc(r['reference'] or '-'),esc(r['paid_at'])) for r in rows)
+    customers=c.execute('SELECT id,name FROM customers ORDER BY name').fetchall(); invoices=c.execute("SELECT i.id,i.customer_id,i.amount,i.due_date,cu.name customer FROM invoices i JOIN customers cu ON cu.id=i.customer_id WHERE i.status='PENDIENTE' ORDER BY i.id DESC").fetchall(); rows=c.execute('''SELECT p.*,cu.name customer FROM payments p JOIN customers cu ON cu.id=p.customer_id ORDER BY p.id DESC LIMIT 200''').fetchall(); c.close()
+    copts=''.join('<option value="{}">{}</option>'.format(x['id'],esc(x['name'])) for x in customers); iopts=''.join('<option value="{}">#{} · {} · RD${:,.2f}</option>'.format(x['id'],x['id'],esc(x['customer']),x['amount']) for x in invoices); trs=''.join('<tr><td>#{}</td><td>{}</td><td>RD${:,.2f}</td><td>{}</td><td>{}</td><td>{}</td></tr>'.format(r['id'],esc(r['customer']),r['amount'],esc(r['method']),esc(r['reference'] or '-'),esc(r['paid_at'])) for r in rows)
     body='''<div class="head"><div><h1>Pagos</h1><p>Recibos, transferencias y conciliación manual</p></div></div><div class="panel"><form class="toolbar" method="post"><select class="field" name="customer_id" required><option value="">Cliente</option>{copts}</select><select class="field" name="invoice_id"><option value="">Sin factura específica</option>{iopts}</select><input class="field" type="number" step="0.01" name="amount" placeholder="Monto" required><select class="field" name="method"><option>EFECTIVO</option><option>TRANSFERENCIA</option><option>DEPOSITO</option><option>TARJETA</option><option>OTRO</option></select><input class="field" name="reference" placeholder="Referencia"><input class="field" name="proof" placeholder="Comprobante / nota"><button class="btn green">Registrar pago</button></form><table class="table"><tr><th>#</th><th>Cliente</th><th>Monto</th><th>Método</th><th>Referencia</th><th>Fecha</th></tr>{rows}</table></div>'''.format(copts=copts,iopts=iopts,rows=trs or '<tr><td colspan=6 class=muted>Sin pagos.</td></tr>')
     return base.shell('Pagos',body,'payments')
+
+
 def expenses_page():
     if not base.logged_in(): return redirect(url_for('login'))
     c=base.db()
@@ -76,33 +69,22 @@ def banks_page():
 
 def invoice_pay_full(id):
     if not base.logged_in(): return redirect(url_for('login'))
-    c=base.db(); inv=c.execute('SELECT * FROM invoices WHERE id=?',(id,)).fetchone(); cu=None; changed=False
+    c=base.db(); inv=c.execute('SELECT * FROM invoices WHERE id=?',(id,)).fetchone(); cu=None
     if inv and inv['status']!='PAGADA':
-        now=datetime.now().isoformat(timespec='seconds'); c.execute("UPDATE invoices SET status='PAGADA',paid_at=? WHERE id=?",(now,id)); c.execute('INSERT INTO payments(customer_id,invoice_id,amount,method,paid_at,received_by) VALUES(?,?,?,?,?,?)',(inv['customer_id'],id,inv['amount'],'EFECTIVO',now,session.get('user') or base.ADMIN_USER)); cu=c.execute('SELECT * FROM customers WHERE id=?',(inv['customer_id'],)).fetchone(); c.commit(); changed=True
+        now=datetime.now().isoformat(timespec='seconds'); c.execute("UPDATE invoices SET status='PAGADA',paid_at=? WHERE id=?",(now,id)); c.execute('INSERT INTO payments(customer_id,invoice_id,amount,method,paid_at,received_by) VALUES(?,?,?,?,?,?)',(inv['customer_id'],id,inv['amount'],'EFECTIVO',now,session.get('user') or base.ADMIN_USER)); cu=c.execute('SELECT * FROM customers WHERE id=?',(inv['customer_id'],)).fetchone(); c.commit()
     c.close()
-    if changed and bs.setting('whatsapp_enabled','0')=='1':
-        try:
-            import whatsapp_suite as wa
-            wa.queue_event(inv['customer_id'],'PAYMENT',{'amount':'RD$'+'{:,.2f}'.format(inv['amount'])})
-        except Exception: pass
+    if inv and inv['status']!='PAGADA' and bs.setting('whatsapp_enabled','0')=='1': bs.queue_whatsapp(inv['customer_id'],'PAYMENT',{'amount':'RD${:,.2f}'.format(inv['amount'])})
     if cu and cu['status']=='SUSPENDIDO' and bs.setting('auto_reactivate','0')=='1' and cu['pppoe']:
         c=base.db(); c.execute('INSERT INTO router_commands(router_name,customer_id,pppoe,action,payload,status,created_at,requested_by) VALUES(?,?,?,?,?,?,?,?)',(cu['router_name'] or 'CCR2116',cu['id'],cu['pppoe'],'REACTIVATE','{}','PENDIENTE',datetime.now().isoformat(timespec='seconds'),'PAGO')); c.commit(); c.close()
-        try:
-            import whatsapp_suite as wa
-            wa.queue_event(cu['id'],'RECONNECT',{})
-        except Exception: pass
     return redirect(url_for('invoices'))
+
+
 def cron_daily():
     supplied=request.headers.get('X-InterFlash-Cron',''); token=os.getenv('BILLING_CRON_TOKEN','')
     if not token or not secrets.compare_digest(supplied,token): return {'ok':False},401
     if bs.setting('billing_enabled','1')!='1': return {'ok':True,'skipped':'billing-disabled'}
     created,overdue,commands=bs.run_billing(); sent=0
-    if bs.setting('whatsapp_enabled','0')=='1':
-        try:
-            import whatsapp_suite as wa
-            sent=wa.process_legacy_outbox(100)
-        except Exception:
-            sent,_=bs.try_send_outbox(100)
+    if bs.setting('whatsapp_enabled','0')=='1': sent,_=bs.try_send_outbox(100)
     return {'ok':True,'created':created,'overdue':overdue,'commands':commands,'whatsapp_sent':sent}
 
 

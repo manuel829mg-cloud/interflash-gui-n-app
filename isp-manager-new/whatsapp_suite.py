@@ -257,6 +257,7 @@ def _tabs(active='chat'):
 
 def queue_event(customer_id, code, extra=None):
     ensure_schema()
+    if _setting('whatsapp_enabled','0')!='1': return False
     c=base.db(); cu=c.execute('SELECT * FROM customers WHERE id=?',(customer_id,)).fetchone()
     trow=c.execute('SELECT * FROM whatsapp_templates WHERE code=? AND active=1',(code,)).fetchone()
     if not cu or not cu['phone'] or not trow:
@@ -273,6 +274,28 @@ def queue_event(customer_id, code, extra=None):
     row=c.execute('SELECT * FROM whatsapp_queue WHERE id=?',(cur.lastrowid,)).fetchone(); c.commit()
     ok,err=_process_queue_item(c,row); c.close()
     return ok
+
+
+
+def process_legacy_outbox(limit=100):
+    ensure_schema(); c=base.db()
+    try:
+        rows=c.execute("SELECT * FROM whatsapp_outbox WHERE status='PENDIENTE' ORDER BY id LIMIT ?",(limit,)).fetchall()
+    except Exception:
+        c.close(); return 0
+    sent=0
+    for r in rows:
+        phone=_wa_phone(r['phone']); body=r['message'] or ''
+        if not phone or not body: continue
+        cu=c.execute('SELECT * FROM customers WHERE id=?',(r['customer_id'],)).fetchone() if r['customer_id'] else None
+        t=_thread_for_phone(c,phone,cu['name'] if cu else '',cu['id'] if cu else None)
+        ok,pid,err=_send_text(phone,body)
+        if ok:
+            _record_outgoing(c,t['id'],body,pid,'ENVIADO'); c.execute("UPDATE whatsapp_outbox SET status='ENVIADO',sent_at=?,error='' WHERE id=?",(_now(),r['id'])); sent+=1
+        else:
+            c.execute("UPDATE whatsapp_outbox SET status='ERROR',error=? WHERE id=?",(err,r['id']))
+        c.commit()
+    c.close(); return sent
 
 
 def inbox():

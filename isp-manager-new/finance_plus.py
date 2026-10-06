@@ -43,6 +43,10 @@ def payments_full():
                 wa.queue_event(cid,'PAYMENT',{'amount':'RD'+'
         if cu and cu['status']=='SUSPENDIDO' and bs.setting('auto_reactivate','0')=='1' and cu['pppoe']:
             c=base.db(); c.execute('INSERT INTO router_commands(router_name,customer_id,pppoe,action,payload,status,created_at,requested_by) VALUES(?,?,?,?,?,?,?,?)',(cu['router_name'] or 'CCR2116',cid,cu['pppoe'],'REACTIVATE','{}','PENDIENTE',datetime.now().isoformat(timespec='seconds'),'PAGO')); c.commit(); c.close()
+            try:
+                import whatsapp_suite as wa
+                wa.queue_event(cid,'RECONNECT',{})
+            except Exception: pass
         flash('Pago registrado.'); return redirect(url_for('payments'))
     customers=c.execute('SELECT id,name FROM customers ORDER BY name').fetchall(); invoices=c.execute("SELECT i.id,i.customer_id,i.amount,i.due_date,cu.name customer FROM invoices i JOIN customers cu ON cu.id=i.customer_id WHERE i.status='PENDIENTE' ORDER BY i.id DESC").fetchall(); rows=c.execute('''SELECT p.*,cu.name customer FROM payments p JOIN customers cu ON cu.id=p.customer_id ORDER BY p.id DESC LIMIT 200''').fetchall(); c.close()
     copts=''.join('<option value="{}">{}</option>'.format(x['id'],esc(x['name'])) for x in customers); iopts=''.join('<option value="{}">#{} · {} · RD${:,.2f}</option>'.format(x['id'],x['id'],esc(x['customer']),x['amount']) for x in invoices); trs=''.join('<tr><td>#{}</td><td>{}</td><td>RD${:,.2f}</td><td>{}</td><td>{}</td><td>{}</td></tr>'.format(r['id'],esc(r['customer']),r['amount'],esc(r['method']),esc(r['reference'] or '-'),esc(r['paid_at'])) for r in rows)
@@ -82,6 +86,10 @@ def invoice_pay_full(id):
             wa.queue_event(inv['customer_id'],'PAYMENT',{'amount':'RD'+'
     if cu and cu['status']=='SUSPENDIDO' and bs.setting('auto_reactivate','0')=='1' and cu['pppoe']:
         c=base.db(); c.execute('INSERT INTO router_commands(router_name,customer_id,pppoe,action,payload,status,created_at,requested_by) VALUES(?,?,?,?,?,?,?,?)',(cu['router_name'] or 'CCR2116',cu['id'],cu['pppoe'],'REACTIVATE','{}','PENDIENTE',datetime.now().isoformat(timespec='seconds'),'PAGO')); c.commit(); c.close()
+        try:
+            import whatsapp_suite as wa
+            wa.queue_event(cu['id'],'RECONNECT',{})
+        except Exception: pass
     return redirect(url_for('invoices'))
 
 

@@ -359,5 +359,3 @@ def setup(app):
     app.add_url_rule('/onu/associate', endpoint='onu_optical_associate', view_func=associate_onu, methods=['POST'])
     app.add_url_rule('/onu/history/<int:reading_id>', endpoint='onu_optical_history', view_func=optical_history_page, methods=['GET'])
     app.view_functions['onu_page'] = onu_live_page
-    if 'dashboard' in app.view_functions:
-        app.view_functions['dashboard'] = dashboard_with_optical(app.view_functions['dashboard'])

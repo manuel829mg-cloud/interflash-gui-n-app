@@ -30,9 +30,9 @@ def ensure_schema():
     CREATE TABLE IF NOT EXISTS router_commands(id INTEGER PRIMARY KEY AUTOINCREMENT,router_name TEXT DEFAULT 'CCR2116',customer_id INTEGER,pppoe TEXT,action TEXT,payload TEXT,status TEXT DEFAULT 'PENDIENTE',created_at TEXT,executed_at TEXT,result TEXT,requested_by TEXT);
     ''')
     for n,ddl in [('latitude','TEXT'),('longitude','TEXT'),('notes','TEXT'),('zone_id','INTEGER'),('router_name','TEXT DEFAULT "CCR2116"'),('install_date','TEXT'),('service_status','TEXT DEFAULT "ACTIVO"')]: _col(c,'customers',n,ddl)
-    for n,ddl in [('period','TEXT'),('late_fee','REAL DEFAULT 0'),('generated_by','TEXT')]: _col(c,'invoices',n,ddl)
+    for n,ddl in [('period','TEXT'),('late_fee','REAL DEFAULT 0'),('generated_by','TEXT'),('plan_name','TEXT'),('plan_speed','TEXT')]: _col(c,'invoices',n,ddl)
     for n,ddl in [('received_by','TEXT'),('proof','TEXT')]: _col(c,'payments',n,ddl)
-    for k,v in {'business_name':'INTER Flash','billing_enabled':'1','auto_suspend':'0','auto_reactivate':'0','whatsapp_enabled':'0','monitor_stale_minutes':'10'}.items(): c.execute('INSERT OR IGNORE INTO app_settings(key,value) VALUES(?,?)',(k,v))
+    for k,v in {'business_name':'INTER Flash','business_rnc':'','business_phone':'','business_email':'','business_address':'','billing_footer':'Gracias por preferir INTER Flash.','billing_enabled':'1','auto_suspend':'0','auto_reactivate':'0','whatsapp_enabled':'0','monitor_stale_minutes':'10'}.items(): c.execute('INSERT OR IGNORE INTO app_settings(key,value) VALUES(?,?)',(k,v))
     for code,name,body in [('INVOICE','Factura generada','Hola {name}, tu factura de {amount} vence el {due_date}.'),('OVERDUE','Factura vencida','Hola {name}, tienes una factura vencida por {amount}.'),('PAYMENT','Pago recibido','Hola {name}, recibimos tu pago de {amount}. Gracias.'),('SUSPEND','Suspensión','Hola {name}, tu servicio está programado para suspensión.'),('RECONNECT','Reconexión','Hola {name}, tu servicio fue programado para reconexión.')]:
         c.execute('INSERT OR IGNORE INTO whatsapp_templates(code,name,body) VALUES(?,?,?)',(code,name,body))
     c.commit(); c.close()
@@ -63,11 +63,11 @@ def try_send_outbox(limit=25):
     c.commit(); c.close(); return sent,'ok'
 
 def run_billing():
-    today=date.today(); period=today.strftime('%Y-%m'); c=base.db(); rows=c.execute('''SELECT cu.*,p.price plan_price,z.invoice_days_before,z.cut_days_after FROM customers cu LEFT JOIN plans p ON p.id=cu.plan_id LEFT JOIN zones z ON z.id=cu.zone_id WHERE cu.plan_id IS NOT NULL''').fetchall(); created=overdue=commands=0
+    today=date.today(); period=today.strftime('%Y-%m'); c=base.db(); rows=c.execute('''SELECT cu.*,p.price plan_price,p.name plan_name,p.download_mbps,p.upload_mbps,z.invoice_days_before,z.cut_days_after FROM customers cu LEFT JOIN plans p ON p.id=cu.plan_id LEFT JOIN zones z ON z.id=cu.zone_id WHERE cu.plan_id IS NOT NULL''').fetchall(); created=overdue=commands=0
     for cu in rows:
         due_day=max(1,min(int(cu['due_day'] or 30),28 if today.month==2 else 30)); due=date(today.year,today.month,due_day); issue=due-timedelta(days=int(cu['invoice_days_before'] if cu['invoice_days_before'] is not None else 5))
         if today>=issue and not c.execute('SELECT id FROM invoices WHERE customer_id=? AND period=?',(cu['id'],period)).fetchone():
-            c.execute('INSERT INTO invoices(customer_id,concept,amount,issue_date,due_date,status,period,generated_by) VALUES(?,?,?,?,?,?,?,?)',(cu['id'],'Servicio de Internet '+period,float(cu['plan_price'] or 0),today.isoformat(),due.isoformat(),'PENDIENTE',period,'AUTOMATICO')); created+=1
+            c.execute('INSERT INTO invoices(customer_id,concept,amount,issue_date,due_date,status,period,generated_by,plan_name,plan_speed) VALUES(?,?,?,?,?,?,?,?,?,?)',(cu['id'],'Servicio de Internet '+period,float(cu['plan_price'] or 0),today.isoformat(),due.isoformat(),'PENDIENTE',period,'AUTOMATICO',cu['plan_name'] or '',(str(cu['download_mbps'] or 0)+'/'+str(cu['upload_mbps'] or 0)+' Mbps'))); created+=1
             if setting('whatsapp_enabled','0')=='1' and cu['phone']:
                 t=c.execute("SELECT body FROM whatsapp_templates WHERE code='INVOICE'").fetchone(); msg=t['body'].format(name=cu['name'],amount='RD${:,.2f}'.format(float(cu['plan_price'] or 0)),due_date=due.isoformat()) if t else ''
                 if msg: c.execute('INSERT INTO whatsapp_outbox(customer_id,phone,template_code,message,status,created_at) VALUES(?,?,?,?,?,?)',(cu['id'],cu['phone'],'INVOICE',msg,'PENDIENTE',datetime.now().isoformat(timespec='seconds')))
@@ -123,10 +123,25 @@ def users_page():
 
 def settings_page():
     if not base.logged_in(): return redirect(url_for('login'))
+    keys=['business_name','business_rnc','business_phone','business_email','business_address','billing_footer','billing_enabled','auto_suspend','auto_reactivate','whatsapp_enabled','monitor_stale_minutes']
     if request.method=='POST':
-        for k in ['business_name','billing_enabled','auto_suspend','auto_reactivate','whatsapp_enabled','monitor_stale_minutes']: set_setting(k,request.form.get(k,'0'))
+        for k in keys: set_setting(k,request.form.get(k,'0') if k in ('billing_enabled','auto_suspend','auto_reactivate','whatsapp_enabled') else request.form.get(k,''))
         flash('Configuración guardada.')
-    return base.shell('Configuración',f'''<div class="head"><div><h1>Configuración</h1></div><a class="btn" href="{url_for('backup_download')}">Descargar backup</a></div><div class="panel"><form class="formgrid" method="post"><label>Empresa<input name="business_name" value="{esc(setting('business_name'))}"></label><label>Monitoreo (minutos)<input type="number" name="monitor_stale_minutes" value="{esc(setting('monitor_stale_minutes'))}"></label><label>Facturación<select name="billing_enabled"><option value="1">ACTIVA</option><option value="0">INACTIVA</option></select></label><label>Corte automático<select name="auto_suspend"><option value="0">DESACTIVADO</option><option value="1">ACTIVO</option></select></label><label>Reconexión<select name="auto_reactivate"><option value="0">DESACTIVADA</option><option value="1">ACTIVA</option></select></label><label>WhatsApp<select name="whatsapp_enabled"><option value="0">DESACTIVADO</option><option value="1">ACTIVO</option></select></label><div class="full"><button class="btn green">Guardar</button></div></form></div>''','settings_page')
+    def sel(k,v): return 'selected' if setting(k)==v else ''
+    return base.shell('Configuración',f'''<div class="head"><div><h1>Configuración</h1><p>Datos generales y de facturación de INTER Flash</p></div><a class="btn" href="{url_for('backup_download')}">Descargar backup</a></div>
+    <div class="panel"><h3>Datos que aparecerán en la factura</h3><form class="formgrid" method="post">
+    <label>Empresa<input name="business_name" value="{esc(setting('business_name'))}"></label>
+    <label>RNC / Identificación fiscal<input name="business_rnc" value="{esc(setting('business_rnc'))}" placeholder="Opcional"></label>
+    <label>Teléfono<input name="business_phone" value="{esc(setting('business_phone'))}"></label>
+    <label>Correo<input type="email" name="business_email" value="{esc(setting('business_email'))}"></label>
+    <label class="full">Dirección<input name="business_address" value="{esc(setting('business_address'))}"></label>
+    <label class="full">Pie de factura<input name="billing_footer" value="{esc(setting('billing_footer'))}"></label>
+    <label>Monitoreo (minutos)<input type="number" name="monitor_stale_minutes" value="{esc(setting('monitor_stale_minutes'))}"></label>
+    <label>Facturación<select name="billing_enabled"><option value="1" {sel('billing_enabled','1')}>ACTIVA</option><option value="0" {sel('billing_enabled','0')}>INACTIVA</option></select></label>
+    <label>Corte automático<select name="auto_suspend"><option value="0" {sel('auto_suspend','0')}>DESACTIVADO</option><option value="1" {sel('auto_suspend','1')}>ACTIVO</option></select></label>
+    <label>Reconexión<select name="auto_reactivate"><option value="0" {sel('auto_reactivate','0')}>DESACTIVADA</option><option value="1" {sel('auto_reactivate','1')}>ACTIVA</option></select></label>
+    <label>WhatsApp<select name="whatsapp_enabled"><option value="0" {sel('whatsapp_enabled','0')}>DESACTIVADO</option><option value="1" {sel('whatsapp_enabled','1')}>ACTIVO</option></select></label>
+    <div class="full"><button class="btn green">Guardar</button></div></form></div>''','settings_page')
 
 def login_full():
     error=''

@@ -75,8 +75,8 @@ def automation_page():
 
 
 def setup(app):
-    nav=[('zones_page','⌖','Zonas'),('onu_page','◈','OLT / ONU'),('tickets_page','🎧','Soporte'),('installations_page','🛠','Instalaciones'),('whatsapp_page','◉','WhatsApp'),('monitoring_page','⌁','Monitoreo'),('reports_page','▥','Reportes'),('automation_page','⚙','Automatización')]
+    nav=[('zones_page','⌖','Zonas'),('onu_page','◈','OLT / ONU'),('tickets_page','🎧','Soporte'),('installations_page','🛠','Instalaciones'),('monitoring_page','⌁','Monitoreo'),('reports_page','▥','Reportes'),('automation_page','⚙','Automatización')]
     existing={x[0] for x in base.NAV}
     for x in nav:
         if x[0] not in existing: base.NAV.append(x)
-    for rule,ep,fn,methods in [('/zones','zones_page',zones_page,['GET','POST']),('/onu','onu_page',onu_page,['GET','POST']),('/tickets','tickets_page',tickets_page,['GET','POST']),('/installations','installations_page',installations_page,['GET','POST']),('/whatsapp','whatsapp_page',whatsapp_page,['GET','POST']),('/monitoring','monitoring_page',monitoring_page,['GET']),('/reports','reports_page',reports_page,['GET']),('/automation','automation_page',automation_page,['GET','POST'])]: app.add_url_rule(rule,endpoint=ep,view_func=fn,methods=methods)
+    for rule,ep,fn,methods in [('/zones','zones_page',zones_page,['GET','POST']),('/onu','onu_page',onu_page,['GET','POST']),('/tickets','tickets_page',tickets_page,['GET','POST']),('/installations','installations_page',installations_page,['GET','POST']),('/monitoring','monitoring_page',monitoring_page,['GET']),('/reports','reports_page',reports_page,['GET']),('/automation','automation_page',automation_page,['GET','POST'])]: app.add_url_rule(rule,endpoint=ep,view_func=fn,methods=methods)

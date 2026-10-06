@@ -45,8 +45,7 @@ def setup():
         parts.append(item('zones_page','⌖','Zonas'))
         parts.append(item('whatsapp_chat','◯','WhatsApp'))
         parts.append(item('whatsapp_inbox','◯','WhatsApp'))
-        parts.append(item('onu_page','◉','OLT'))
-        parts.append(item('onu_overview','◉','OLT / ONU'))
+        parts.append(group('olt','◉','OLT',['onu_page','onu_overview']))
 
         # Preserve any installed module not yet assigned to a section.
         extras=[]

@@ -4,7 +4,7 @@ import urllib.request
 import urllib.error
 from datetime import datetime
 from html import escape
-from flask import request, redirect, url_for, flash, jsonify
+from flask import request, redirect, url_for, flash, jsonify, current_app
 import app as base
 
 GRAPH_VERSION = os.getenv('WHATSAPP_GRAPH_VERSION', 'v23.0').strip() or 'v23.0'
@@ -36,6 +36,11 @@ def _wa_phone(v):
 def ensure_schema():
     c = base.db()
     c.executescript('''
+    CREATE TABLE IF NOT EXISTS whatsapp_webhook_health(
+      id INTEGER PRIMARY KEY CHECK(id=1), last_event TEXT, last_incoming TEXT,
+      last_verification TEXT
+    );
+    INSERT OR IGNORE INTO whatsapp_webhook_health(id) VALUES(1);
     CREATE TABLE IF NOT EXISTS whatsapp_threads(
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       phone TEXT NOT NULL UNIQUE,
@@ -205,16 +210,46 @@ def _process_queue_item(c, row):
         ok, provider_id, err = _send_text(row['phone'], row['body'] or '')
         visible_body = row['body'] or ''
     if ok:
-        c.execute("UPDATE whatsapp_queue SET status='ENVIADO',provider_id=?,sent_at=?,last_error=NULL WHERE id=?",
+        c.execute("UPDATE whatsapp_queue SET status='ACEPTADO',provider_id=?,sent_at=?,last_error=NULL WHERE id=?",
                   (provider_id,_now(),row['id']))
         if row['thread_id']:
-            _record_outgoing(c,row['thread_id'],visible_body,provider_id,'ENVIADO')
+            _record_outgoing(c,row['thread_id'],visible_body,provider_id,'ACEPTADO')
     else:
         c.execute("UPDATE whatsapp_queue SET status='ERROR',last_error=? WHERE id=?", (err,row['id']))
         if row['thread_id']:
             _record_outgoing(c,row['thread_id'],visible_body,'','ERROR',err)
     c.commit()
     return ok, err
+
+
+def _public_webhook_url():
+    # Railway terminates TLS before forwarding requests to Gunicorn.
+    return url_for('whatsapp_webhook', _external=True, _scheme='https')
+
+
+def _reception_summary(c):
+    row = c.execute('SELECT * FROM whatsapp_webhook_health WHERE id=1').fetchone()
+    if row and row['last_incoming']:
+        return 'Última entrada recibida: ' + row['last_incoming'] + ' (hora del servidor)'
+    if row and row['last_event']:
+        return 'Webhook recibido; todavía sin mensaje entrante registrado.'
+    return 'Recepción sin comprobar: aún no se ha registrado un webhook con esta versión.'
+
+
+def revision():
+    if not base.logged_in():
+        return jsonify(error='Sesión terminada'), 401
+    c = base.db()
+    try:
+        rows = c.execute('SELECT status,COUNT(*),MAX(id) FROM whatsapp_messages GROUP BY status ORDER BY status').fetchall()
+        health = c.execute('SELECT * FROM whatsapp_webhook_health WHERE id=1').fetchone()
+        import hashlib
+        value = hashlib.sha256(repr(([tuple(r) for r in rows], tuple(health) if health else None)).encode()).hexdigest()
+        response = jsonify(revision=value)
+        response.headers['Cache-Control'] = 'no-store'
+        return response
+    finally:
+        c.close()
 
 
 def inbox():
@@ -241,6 +276,7 @@ def inbox():
     queue_error=c.execute("SELECT COUNT(*) c FROM whatsapp_queue WHERE status='ERROR'").fetchone()['c']
     unread=c.execute('SELECT COALESCE(SUM(unread),0) c FROM whatsapp_threads').fetchone()['c']
     templates=c.execute('SELECT * FROM whatsapp_local_templates WHERE active=1 ORDER BY id').fetchall()
+    reception = _reception_summary(c)
     c.close()
 
     trows=[]
@@ -257,21 +293,55 @@ def inbox():
     template_opts=''.join(f'<option value="{esc(x["body"])}">{esc(x["title"])}</option>' for x in templates)
     composer='''<div class="wa-empty">Selecciona una conversación o inicia una nueva.</div>'''
     if thread:
-        composer=f'''<div class="wa-chat-head"><div><b>{esc(thread['customer_name'] or thread['display_name'] or thread['phone'])}</b><small>{esc(thread['phone'])}</small></div><span class="tag {'ok' if _meta_ready() else 'warn'}">{'Meta conectado' if _meta_ready() else 'Falta configurar Meta'}</span></div>
+        composer=f'''<div class="wa-chat-head"><div><b>{esc(thread['customer_name'] or thread['display_name'] or thread['phone'])}</b><small>{esc(thread['phone'])}</small></div><span class="tag {'ok' if _meta_ready() else 'warn'}">{'Credenciales cargadas' if _meta_ready() else 'Falta configurar Meta'}</span></div>
         <div class="wa-messages">{''.join(bubbles) or '<div class="wa-empty">Todavía no hay mensajes.</div>'}</div>
         <form class="wa-compose" method="post" action="{url_for('whatsapp_send')}"><input type="hidden" name="thread_id" value="{thread['id']}"><input type="hidden" name="phone" value="{esc(thread['phone'])}"><select class="field" onchange="if(this.value){{this.form.body.value=this.value;this.selectedIndex=0}}"><option value="">Plantillas rápidas…</option>{template_opts}</select><textarea class="field" name="body" rows="2" placeholder="Escribe un mensaje…" required></textarea><button class="btn green">Enviar</button></form>'''
 
-    configured='Meta Cloud API lista para enviar y recibir.' if _meta_ready() else 'Faltan WHATSAPP_ACCESS_TOKEN y WHATSAPP_PHONE_NUMBER_ID en Railway.'
+    configured='Credenciales de envío cargadas. La entrega se confirma por mensaje.' if _meta_ready() else 'Faltan WHATSAPP_ACCESS_TOKEN y WHATSAPP_PHONE_NUMBER_ID en Railway.'
     webhook_state='Token de verificación listo.' if VERIFY_TOKEN else 'Falta WHATSAPP_VERIFY_TOKEN para activar el webhook.'
     body=f'''<style>
-    .wa-kpis{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}}.wa-layout{{display:grid;grid-template-columns:360px 1fr;gap:14px;min-height:640px}}.wa-side,.wa-chat{{background:#0d1a29;border:1px solid #22374e;border-radius:12px;overflow:hidden}}.wa-side-head{{padding:14px;border-bottom:1px solid #22374e}}.wa-side-head form{{display:flex;gap:7px}}.wa-side-head input{{width:100%}}.wa-threads{{max-height:590px;overflow:auto}}.wa-thread{{display:grid;grid-template-columns:44px 1fr auto;gap:10px;padding:12px;border-bottom:1px solid #1b3045;align-items:center}}.wa-thread:hover,.wa-thread.on{{background:#122438}}.wa-avatar{{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;background:#075e54;color:#fff;font-weight:900}}.wa-thread-main{{min-width:0}}.wa-thread-main b,.wa-thread-main small,.wa-thread-main span{{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.wa-thread-main small{{color:#7f94aa;margin:2px 0}}.wa-thread-main span{{color:#9fb0c0;font-size:12px}}.wa-unread{{min-width:22px;height:22px;padding:0 6px;border-radius:999px;background:#16c784;color:#052d1f;display:grid;place-items:center;font-size:11px;font-weight:900}}.wa-chat{{display:flex;flex-direction:column}}.wa-chat-head{{padding:14px 16px;border-bottom:1px solid #22374e;display:flex;justify-content:space-between;align-items:center}}.wa-chat-head small{{display:block;color:#8397aa;margin-top:3px}}.wa-messages{{flex:1;overflow:auto;padding:18px;background:radial-gradient(circle at 30% 10%,#10243a,#0a1522 55%)}}.wa-msg{{max-width:72%;padding:10px 12px;border-radius:11px;margin:8px 0;line-height:1.35}}.wa-msg.in{{background:#182a3d;margin-right:auto}}.wa-msg.out{{background:#075e54;margin-left:auto}}.wa-msg small{{display:block;color:#b9c8d5;font-size:10px;margin-top:6px;text-align:right}}.wa-compose{{padding:12px;border-top:1px solid #22374e;display:grid;grid-template-columns:190px 1fr auto;gap:8px;align-items:end}}.wa-compose textarea{{resize:vertical;min-height:44px}}.wa-empty{{padding:40px;text-align:center;color:#8397aa}}.wa-config{{display:grid;grid-template-columns:1fr 1fr;gap:12px}}@media(max-width:950px){{.wa-layout{{grid-template-columns:1fr}}.wa-side{{max-height:360px}}.wa-kpis{{grid-template-columns:repeat(2,1fr)}}}}@media(max-width:650px){{.wa-compose{{grid-template-columns:1fr}}.wa-config{{grid-template-columns:1fr}}.wa-kpis{{grid-template-columns:1fr}}}}
+    .wa-kpis{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}}.wa-layout{{display:grid;grid-template-columns:360px 1fr;gap:14px;min-height:640px}}.wa-side,.wa-chat{{background:#0d1a29;border:1px solid #22374e;border-radius:12px;overflow:hidden}}.wa-side-head{{padding:14px;border-bottom:1px solid #22374e}}.wa-side-head form{{display:flex;gap:7px}}.wa-side-head input{{width:100%}}.wa-threads{{max-height:590px;overflow:auto}}.wa-thread{{display:grid;grid-template-columns:44px 1fr auto;gap:10px;padding:12px;border-bottom:1px solid #1b3045;align-items:center}}.wa-thread:hover,.wa-thread.on{{background:#122438}}.wa-avatar{{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;background:#075e54;color:#fff;font-weight:900}}.wa-thread-main{{min-width:0}}.wa-thread-main b,.wa-thread-main small,.wa-thread-main span{{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.wa-thread-main small{{color:#7f94aa;margin:2px 0}}.wa-thread-main span{{color:#9fb0c0;font-size:12px}}.wa-unread{{min-width:22px;height:22px;padding:0 6px;border-radius:999px;background:#16c784;color:#052d1f;display:grid;place-items:center;font-size:11px;font-weight:900}}.wa-chat{{display:flex;flex-direction:column}}.wa-chat-head{{padding:14px 16px;border-bottom:1px solid #22374e;display:flex;justify-content:space-between;align-items:center}}.wa-chat-head small{{display:block;color:#8397aa;margin-top:3px}}.wa-messages{{height:520px;min-height:240px;flex:1;overflow:auto;padding:18px;background:radial-gradient(circle at 30% 10%,#10243a,#0a1522 55%)}}.wa-msg{{max-width:72%;padding:10px 12px;border-radius:11px;margin:8px 0;line-height:1.35}}.wa-msg.in{{background:#182a3d;margin-right:auto}}.wa-msg.out{{background:#075e54;margin-left:auto}}.wa-msg small{{display:block;color:#b9c8d5;font-size:10px;margin-top:6px;text-align:right}}.wa-compose{{padding:12px;border-top:1px solid #22374e;display:grid;grid-template-columns:190px 1fr auto;gap:8px;align-items:end}}.wa-compose textarea{{resize:vertical;min-height:44px}}.wa-empty{{padding:40px;text-align:center;color:#8397aa}}.wa-config{{display:grid;grid-template-columns:1fr 1fr;gap:12px}}@media(max-width:950px){{.wa-layout{{grid-template-columns:1fr}}.wa-side{{max-height:360px}}.wa-kpis{{grid-template-columns:repeat(2,1fr)}}}}@media(max-width:650px){{.wa-compose{{grid-template-columns:1fr}}.wa-config{{grid-template-columns:1fr}}.wa-kpis{{grid-template-columns:1fr}}}}
     </style>
     <div class="head"><div><h1>WhatsApp</h1><p>Bandeja de chats, cola de mensajes y conexión con Meta Cloud API.</p></div><div style="display:flex;gap:8px"><a class="btn" href="{url_for('whatsapp_queue')}">Cola</a><a class="btn blue" href="{url_for('whatsapp_settings')}">Configuración</a></div></div>
-    <div class="wa-kpis"><div class="kpi green1"><div class="label">Conexión</div><div class="value" style="font-size:18px">{'ACTIVA' if _meta_ready() else 'PENDIENTE'}</div><div class="sub">Meta Cloud API</div></div><div class="kpi blue1"><div class="label">Chats</div><div class="value">{len(threads)}</div><div class="sub">Cargados</div></div><div class="kpi orange1"><div class="label">No leídos</div><div class="value">{unread}</div><div class="sub">Mensajes</div></div><div class="kpi red1"><div class="label">Cola</div><div class="value">{queue_pending}</div><div class="sub">Pendientes · {queue_error} error(es)</div></div></div>
-    <div class="panel wa-config"><div><b>{esc(configured)}</b><div class="muted" style="margin-top:5px">Número: {esc(BUSINESS_NUMBER or 'por configurar')}</div></div><div><b>{esc(webhook_state)}</b><div class="muted" style="margin-top:5px">Webhook: {esc(request.url_root.rstrip('/') + '/webhooks/whatsapp')}</div></div></div>
+    <div class="wa-kpis"><div class="kpi green1"><div class="label">Conexión</div><div class="value" style="font-size:18px">{'CONFIGURADA' if _meta_ready() else 'PENDIENTE'}</div><div class="sub">Meta Cloud API</div></div><div class="kpi blue1"><div class="label">Chats</div><div class="value">{len(threads)}</div><div class="sub">Cargados</div></div><div class="kpi orange1"><div class="label">No leídos</div><div class="value">{unread}</div><div class="sub">Mensajes</div></div><div class="kpi red1"><div class="label">Cola</div><div class="value">{queue_pending}</div><div class="sub">Pendientes · {queue_error} error(es)</div></div></div>
+    <div class="panel"><b>Recepción de mensajes</b><p id="wa-reception">{esc(reception)}</p><span id="wa-sync" class="muted">Actualización automática cada 5 segundos.</span></div><div class="panel wa-config"><div><b>{esc(configured)}</b><div class="muted" style="margin-top:5px">Número: {esc(BUSINESS_NUMBER or 'por configurar')}</div></div><div><b>{esc(webhook_state)}</b><div class="muted" style="margin-top:5px">Webhook: {esc(_public_webhook_url())}</div></div></div>
     <div class="panel"><div style="font-weight:900;margin-bottom:9px">Prueba rápida de WhatsApp</div><form method="post" action="{url_for('whatsapp_send')}" class="toolbar" style="margin:0"><input class="field" name="phone" placeholder="Número de prueba, ej. 18097079216" required><input class="field" name="body" value="Hola, esta es una prueba de INTER Flash." placeholder="Mensaje de prueba" required><button class="btn green">Enviar prueba</button></form><div class="muted" style="margin-top:8px">Con el número de prueba de Meta, el destinatario debe estar autorizado en la lista de prueba.</div></div>
     <div class="panel"><form method="post" action="{url_for('whatsapp_new_thread')}" class="toolbar" style="margin:0"><input class="field" name="phone" placeholder="Número para nueva conversación" required><input class="field" name="name" placeholder="Nombre (opcional)"><button class="btn green">+ Nueva conversación</button></form></div>
     <div class="wa-layout"><div class="wa-side"><div class="wa-side-head"><form method="get"><input class="field" name="q" value="{esc(q)}" placeholder="Buscar nombre o número"><button class="btn">Buscar</button></form></div><div class="wa-threads">{''.join(trows) or '<div class="wa-empty">Sin conversaciones todavía.</div>'}</div></div><div class="wa-chat">{composer}</div></div>'''
+    body += r"""<script>
+    (() => {
+      let previous = null, busy = false;
+      const box = document.querySelector('.wa-messages');
+      if (box) box.scrollTop = box.scrollHeight;
+      async function refresh() {
+        if (busy || document.hidden) return;
+        busy = true;
+        try {
+          const response = await fetch('/whatsapp/revision', {cache:'no-store'});
+          if (!response.ok) throw new Error('session');
+          const data = await response.json();
+          if (previous !== data.revision) {
+            const page = await fetch(location.href, {cache:'no-store'});
+            if (!page.ok || page.redirected) throw new Error('session');
+            const doc = new DOMParser().parseFromString(await page.text(), 'text/html');
+            for (const selector of ['.wa-messages', '.wa-threads', '#wa-reception', '.wa-kpis']) {
+              const old = document.querySelector(selector), fresh = doc.querySelector(selector);
+              if (!old || !fresh) continue;
+              const bottom = old.scrollHeight - old.scrollTop - old.clientHeight < 80;
+              const scroll = old.scrollTop;
+              old.replaceChildren(...fresh.childNodes);
+              old.scrollTop = selector === '.wa-messages' && bottom ? old.scrollHeight : scroll;
+            }
+            previous = data.revision;
+          }
+          document.querySelector('#wa-sync').textContent = 'Actualizado: ' + new Date().toLocaleTimeString();
+        } catch (_) {
+          document.querySelector('#wa-sync').textContent = 'No se pudo actualizar. Revisa la conexión o recarga la página.';
+        } finally { busy = false; }
+      }
+      refresh(); setInterval(refresh, 5000);
+    })();
+    </script>"""
     return base.shell('WhatsApp',body,'whatsapp_inbox')
 
 
@@ -300,7 +370,7 @@ def send():
                      VALUES(?,?,?,?,?,'PENDIENTE',?)''',(t['id'],t['customer_id'],phone,'text',body,_now()))
     qrow=c.execute('SELECT * FROM whatsapp_queue WHERE id=?',(cur.lastrowid,)).fetchone(); c.commit()
     ok,err=_process_queue_item(c,qrow); c.close()
-    if ok: flash('Mensaje enviado a WhatsApp.')
+    if ok: flash('Meta aceptó el mensaje. Esperando confirmación de entrega.')
     else: flash('Mensaje guardado, pero no pudo enviarse: '+err)
     return redirect(url_for('whatsapp_inbox',thread=t['id']))
 
@@ -310,7 +380,7 @@ def queue_page():
     ensure_schema(); c=base.db(); rows=c.execute('SELECT * FROM whatsapp_queue ORDER BY id DESC LIMIT 250').fetchall(); c.close()
     trs=[]
     for r in rows:
-        cls='ok' if r['status']=='ENVIADO' else 'bad' if r['status']=='ERROR' else 'warn'
+        cls='ok' if r['status'] in ('ENVIADO','ENTREGADO','LEÍDO') else 'bad' if r['status']=='ERROR' else 'warn'
         retry=f'''<form method="post" action="{url_for('whatsapp_retry',id=r['id'])}"><button class="btn">Reintentar</button></form>''' if r['status']=='ERROR' else ''
         trs.append(f'''<tr><td>#{r['id']}</td><td>{esc(r['phone'])}</td><td>{esc((r['body'] or ('Plantilla: '+str(r['template_name'] or '')))[:100])}</td><td><span class="tag {cls}">{esc(r['status'])}</span></td><td>{r['attempts']}</td><td>{esc(r['last_error'] or '-')}</td><td>{esc(r['created_at'])}</td><td>{retry}</td></tr>''')
     body=f'''<div class="head"><div><h1>Cola de WhatsApp</h1><p>Mensajes enviados, pendientes y con error.</p></div><a class="btn" href="{url_for('whatsapp_inbox')}">← WhatsApp</a></div><div class="panel"><table class="table"><tr><th>#</th><th>Número</th><th>Mensaje</th><th>Estado</th><th>Intentos</th><th>Error</th><th>Fecha</th><th></th></tr>{''.join(trs) or '<tr><td colspan="8" class="muted">Sin mensajes en cola.</td></tr>'}</table></div>'''
@@ -331,27 +401,33 @@ def settings_page():
     ensure_schema(); c=base.db(); templates=c.execute('SELECT * FROM whatsapp_local_templates ORDER BY id').fetchall(); c.close()
     trs=''.join(f'''<tr><td>{esc(x['title'])}</td><td><code>{esc(x['code'])}</code></td><td>{esc(x['body'])}</td><td>{esc(x['meta_template_name'] or 'Sin mapear')}</td></tr>''' for x in templates)
     vars_rows=[
-        ('WHATSAPP_ACCESS_TOKEN',bool(ACCESS_TOKEN),'Token permanente de Meta'),
+        ('WHATSAPP_ACCESS_TOKEN',bool(ACCESS_TOKEN),'Token de acceso cargado; su vigencia no se comprueba aquí'),
         ('WHATSAPP_PHONE_NUMBER_ID',bool(PHONE_NUMBER_ID),'ID del número de WhatsApp Business'),
         ('WHATSAPP_VERIFY_TOKEN',bool(VERIFY_TOKEN),'Token que usarás al verificar el webhook'),
-        ('WHATSAPP_BUSINESS_NUMBER',bool(BUSINESS_NUMBER),'Número visible, por ejemplo 1809…'),
+        ('WHATSAPP_BUSINESS_NUMBER',bool(BUSINESS_NUMBER),'Opcional: número visible; no controla la recepción'),
         ('WHATSAPP_GRAPH_VERSION',bool(GRAPH_VERSION),f'Actual: {GRAPH_VERSION}'),
     ]
-    vr=''.join(f'''<tr><td><code>{esc(n)}</code></td><td><span class="tag {'ok' if ok else 'warn'}">{'LISTO' if ok else 'FALTA'}</span></td><td>{esc(desc)}</td></tr>''' for n,ok,desc in vars_rows)
-    body=f'''<div class="head"><div><h1>Configuración WhatsApp</h1><p>Primera fase: Meta Cloud API oficial, bandeja, webhook y cola de mensajes.</p></div><a class="btn" href="{url_for('whatsapp_inbox')}">← WhatsApp</a></div><div class="panel"><h3>Conexión Meta</h3><div class="notice" style="background:#17304b;color:#bfdbfe">Los tokens no se guardan en la base de datos. Se configuran como variables privadas en Railway.</div><table class="table"><tr><th>Variable</th><th>Estado</th><th>Uso</th></tr>{vr}</table><p class="muted">Webhook público: <code>{esc(request.url_root.rstrip('/') + '/webhooks/whatsapp')}</code></p></div><div class="panel"><h3>Plantillas internas</h3><p class="muted">Estas sirven como respuestas rápidas. Más adelante se podrán mapear con plantillas aprobadas de Meta para mensajes fuera de la ventana de atención.</p><table class="table"><tr><th>Nombre</th><th>Código</th><th>Texto</th><th>Plantilla Meta</th></tr>{trs}</table></div>'''
+    vr=''.join(f'''<tr><td><code>{esc(n)}</code></td><td><span class="tag {'ok' if ok else 'warn'}">{'CARGADO' if ok else 'OPCIONAL' if n=='WHATSAPP_BUSINESS_NUMBER' else 'FALTA'}</span></td><td>{esc(desc)}</td></tr>''' for n,ok,desc in vars_rows)
+    body=f'''<div class="head"><div><h1>Configuración WhatsApp</h1><p>Primera fase: Meta Cloud API oficial, bandeja, webhook y cola de mensajes.</p></div><a class="btn" href="{url_for('whatsapp_inbox')}">← WhatsApp</a></div><div class="panel"><h3>Conexión Meta</h3><div class="notice" style="background:#17304b;color:#bfdbfe">Los tokens no se guardan en la base de datos. Se configuran como variables privadas en Railway.</div><table class="table"><tr><th>Variable</th><th>Estado</th><th>Uso</th></tr>{vr}</table><p class="muted">Webhook público: <code>{esc(_public_webhook_url())}</code></p></div><div class="panel"><h3>Plantillas internas</h3><p class="muted">Estas sirven como respuestas rápidas. Más adelante se podrán mapear con plantillas aprobadas de Meta para mensajes fuera de la ventana de atención.</p><table class="table"><tr><th>Nombre</th><th>Código</th><th>Texto</th><th>Plantilla Meta</th></tr>{trs}</table></div>'''
     return base.shell('Configuración WhatsApp',body,'whatsapp_inbox')
 
 
-def webhook():
+def _receive_webhook():
     ensure_schema()
     if request.method=='GET':
         mode=request.args.get('hub.mode'); token=request.args.get('hub.verify_token'); challenge=request.args.get('hub.challenge','')
         if mode=='subscribe' and VERIFY_TOKEN and token==VERIFY_TOKEN:
+            c=base.db()
+            c.execute('UPDATE whatsapp_webhook_health SET last_verification=? WHERE id=1', (_now(),))
+            c.commit(); c.close()
             return challenge,200
         return 'verification failed',403
-    payload=request.get_json(silent=True) or {}
+    payload=request.get_json(silent=True)
+    if not isinstance(payload, dict) or not isinstance(payload.get('entry'), list):
+        return jsonify(error='Formato de webhook inválido'),400
     c=base.db()
     try:
+        c.execute('UPDATE whatsapp_webhook_health SET last_event=? WHERE id=1', (_now(),))
         for entry in payload.get('entry') or []:
             for change in entry.get('changes') or []:
                 value=change.get('value') or {}
@@ -360,8 +436,11 @@ def webhook():
                     wa_id=_wa_phone(ct.get('wa_id')); name=((ct.get('profile') or {}).get('name') or '').strip(); contacts[wa_id]=name
                 for msg in value.get('messages') or []:
                     phone=_wa_phone(msg.get('from')); provider_id=str(msg.get('id') or '')
+                    if not phone or not provider_id:
+                        continue
                     if provider_id and c.execute('SELECT 1 FROM whatsapp_messages WHERE provider_id=?',(provider_id,)).fetchone():
                         continue
+                    c.execute('UPDATE whatsapp_webhook_health SET last_incoming=? WHERE id=1', (_now(),))
                     cu=_customer_by_phone(c,phone); t=_thread_for_phone(c,phone,contacts.get(phone) or (cu['name'] if cu else ''),cu['id'] if cu else None)
                     mtype=str(msg.get('type') or 'unknown'); body=''
                     if mtype=='text': body=((msg.get('text') or {}).get('body') or '')
@@ -374,18 +453,37 @@ def webhook():
                     c.execute('UPDATE whatsapp_threads SET last_message=?,last_at=?,unread=unread+1 WHERE id=?',(body[:500],_now(),t['id']))
                 for st in value.get('statuses') or []:
                     pid=str(st.get('id') or ''); status=str(st.get('status') or '').upper()
-                    if pid:
-                        c.execute('UPDATE whatsapp_messages SET status=? WHERE provider_id=?',(status,pid))
-                        c.execute('UPDATE whatsapp_queue SET status=? WHERE provider_id=?',(status,pid))
+                    mapped={'SENT':'ENVIADO','DELIVERED':'ENTREGADO','READ':'LEÍDO','FAILED':'ERROR'}.get(status)
+                    if pid and mapped:
+                        errors=st.get('errors') or []
+                        detail='; '.join(str(e.get('code','')) + ': ' + str(e.get('title','')) for e in errors)[:500] or None
+                        old=c.execute('SELECT status FROM whatsapp_messages WHERE provider_id=?',(pid,)).fetchone()
+                        rank={'ENVIADO':1,'ENTREGADO':2,'LEÍDO':3}
+                        if old and mapped!='ERROR' and rank.get(old['status'],0)>rank.get(mapped,0):
+                            continue
+                        c.execute('UPDATE whatsapp_messages SET status=?,error=? WHERE provider_id=?',(mapped,detail,pid))
+                        c.execute('UPDATE whatsapp_queue SET status=?,last_error=? WHERE provider_id=?',(mapped,detail,pid))
         c.commit()
     finally:
         c.close()
     return jsonify(ok=True)
 
 
+def webhook():
+    try:
+        result = _receive_webhook()
+        current_app.logger.info('WhatsApp webhook processed method=%s', request.method)
+        return result
+    except Exception as exc:
+        # Log the exception type without tokens, phone numbers or message bodies.
+        current_app.logger.error('WhatsApp webhook failed type=%s', type(exc).__name__)
+        return jsonify(error='No se pudo guardar el evento'), 500
+
+
 def setup(app):
     ensure_schema()
     app.add_url_rule('/whatsapp',endpoint='whatsapp_inbox',view_func=inbox,methods=['GET'])
+    app.add_url_rule('/whatsapp/revision',endpoint='whatsapp_revision',view_func=revision,methods=['GET'])
     app.add_url_rule('/whatsapp/new',endpoint='whatsapp_new_thread',view_func=new_thread,methods=['POST'])
     app.add_url_rule('/whatsapp/send',endpoint='whatsapp_send',view_func=send,methods=['POST'])
     app.add_url_rule('/whatsapp/queue',endpoint='whatsapp_queue',view_func=queue_page,methods=['GET'])

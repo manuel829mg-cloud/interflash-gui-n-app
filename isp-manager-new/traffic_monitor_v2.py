@@ -1,3 +1,4 @@
+from datetime import datetime
 from flask import request, jsonify, redirect, url_for
 import app as base
 import push_sync
@@ -45,17 +46,88 @@ def traffic_batch():
     push_sync.ensure_schema()
     c = base.db()
     try:
+        c.executescript('''
+        CREATE TABLE IF NOT EXISTS pppoe_connection_events(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          router_name TEXT NOT NULL,
+          pppoe TEXT NOT NULL,
+          event TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          duration_seconds INTEGER,
+          gap_seconds INTEGER,
+          is_microcut INTEGER DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS idx_pppoe_connection_events_user
+          ON pppoe_connection_events(pppoe,id DESC);
+        ''')
+        previous = {str(x['name']).strip() for x in c.execute(
+            'SELECT name FROM push_pppoe_active WHERE router_name=?', (name,)
+        ).fetchall() if x['name']}
+        current = {x.strip()[:255] for x in active_raw.split('|') if x.strip()}
+        now = datetime.now()
+        now_s = now.isoformat(timespec='seconds')
+
+        # Seed users that were already online when connection history was enabled.
+        for user in current & previous:
+            exists = c.execute(
+                'SELECT 1 FROM pppoe_connection_events WHERE router_name=? AND pppoe=? LIMIT 1',
+                (name, user)
+            ).fetchone()
+            if not exists:
+                c.execute(
+                    'INSERT INTO pppoe_connection_events(router_name,pppoe,event,created_at) VALUES(?,?,?,?)',
+                    (name, user, 'CONECTADO', now_s)
+                )
+
+        for user in previous - current:
+            last_on = c.execute(
+                "SELECT created_at FROM pppoe_connection_events WHERE router_name=? AND pppoe=? AND event='CONECTADO' ORDER BY id DESC LIMIT 1",
+                (name, user)
+            ).fetchone()
+            duration = None
+            if last_on and last_on['created_at']:
+                try:
+                    duration = max(0, int((now - datetime.fromisoformat(last_on['created_at'])).total_seconds()))
+                except (TypeError, ValueError):
+                    pass
+            c.execute(
+                'INSERT INTO pppoe_connection_events(router_name,pppoe,event,created_at,duration_seconds) VALUES(?,?,?,?,?)',
+                (name, user, 'DESCONECTADO', now_s, duration)
+            )
+
+        for user in current - previous:
+            last_off = c.execute(
+                "SELECT id,created_at FROM pppoe_connection_events WHERE router_name=? AND pppoe=? AND event='DESCONECTADO' ORDER BY id DESC LIMIT 1",
+                (name, user)
+            ).fetchone()
+            gap = None
+            if last_off and last_off['created_at']:
+                try:
+                    gap = max(0, int((now - datetime.fromisoformat(last_off['created_at'])).total_seconds()))
+                except (TypeError, ValueError):
+                    pass
+            if last_off and gap is not None and gap <= 120:
+                c.execute(
+                    'UPDATE pppoe_connection_events SET is_microcut=1,gap_seconds=? WHERE id=?',
+                    (gap, last_off['id'])
+                )
+            c.execute(
+                'INSERT INTO pppoe_connection_events(router_name,pppoe,event,created_at,gap_seconds) VALUES(?,?,?,?,?)',
+                (name, user, 'CONECTADO', now_s, gap)
+            )
+
         push_sync._save_traffic(c, name, items)
         c.execute('DELETE FROM push_pppoe_active WHERE router_name=?', (name,))
-        for active_name in active_raw.split('|'):
-            active_name = active_name.strip()
-            if active_name:
-                c.execute('INSERT INTO push_pppoe_active(router_name,name,address,caller_id,service,uptime) VALUES(?,?,?,?,?,?)', (name, active_name[:255], '', '', 'pppoe', ''))
+        for active_name in sorted(current):
+            c.execute(
+                'INSERT INTO push_pppoe_active(router_name,name,address,caller_id,service,uptime) VALUES(?,?,?,?,?,?)',
+                (name, active_name, '', '', 'pppoe', '')
+            )
         push_sync._touch(c, name, status='ONLINE')
         c.commit()
     finally:
         c.close()
-    return jsonify(ok=True, received=len(items))
+    return jsonify(ok=True, received=len(items), active=len(current))
 
 
 def traffic_script_v2(name):

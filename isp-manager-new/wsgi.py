@@ -186,3 +186,7 @@ def routers_secure():
 
 app.view_functions['routers'] = routers_secure
 print('INTERFLASH_FULL_ISP_SUITE_ENABLED', flush=True)
+
+# Mobile application uses the existing administrator login and personal portals.
+import mobile_app
+mobile_app.setup(app)

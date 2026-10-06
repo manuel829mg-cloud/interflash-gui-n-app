@@ -314,7 +314,11 @@ def optical_script():
   :local rxBase "1.3.6.1.4.1.25355.3.2.6.14.2.1.8";
   :for pon from=1 to=4 do={{
     :local rows "";
-    :for onu from=1 to=64 do={{
+    :local maxOnu 64;
+    # Some HA7304/VX firmware exposes PON 2/3/4 in the 1.2.X SNMP group.
+    # Scan the extended group as well while retaining native PON 3/4 support.
+    :if ($pon = 2) do={{ :set maxOnu 192; }}
+    :for onu from=1 to=$maxOnu do={{
       :local idx ("1." . $pon . "." . $onu);
       :local sn "";
       :do {{
@@ -347,7 +351,7 @@ def optical_script():
 '''
     body = f"""<div class="head"><div><h1>Activar monitor óptico</h1><p>Hioso HA7304VX · SN + RX + TX por SNMP de solo lectura</p></div>
     <a class="btn" href="{url_for('onu_page')}">← Volver</a></div>
-    <div class="panel"><div class="notice" style="background:#063f2a;color:#fff;margin-bottom:12px"><b>Monitor óptico v1.</b> Pega este bloque completo una sola vez en New Terminal del CCR2116. Consulta la OLT cada 10 minutos y no realiza cambios en las ONU.</div>
+    <div class="panel"><div class="notice" style="background:#063f2a;color:#fff;margin-bottom:12px"><b>Monitor óptico v2.</b> Pega este bloque completo una sola vez en New Terminal del CCR2116. Esta versión revisa también el grupo SNMP extendido 1.2.X que algunos firmware Hioso usan para agrupar PON 2/3/4. Consulta la OLT cada 10 minutos y es de solo lectura.</div>
     <textarea class="field" style="width:100%;height:520px;font-family:Consolas,monospace">{push_sync.escape(script)}</textarea></div>"""
     return base.shell('Activar monitor OLT', body, 'onu_page')
 

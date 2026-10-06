@@ -413,12 +413,20 @@ def dashboard_plus():
         if stale: wan_issues.append(w['interface_name'])
     agent_rows=c.execute('SELECT * FROM push_router_agents ORDER BY id DESC').fetchall() if _table_exists(c,'push_router_agents') else []
     router_bad=sum(1 for a in agent_rows if str(a['status'] or '').upper()!='ONLINE')
-    optical_critical=0; optical_warn=0
+    optical_critical=0; optical_warn=0; optical_alert_rows=[]
     if _table_exists(c,'onu_optical_readings'):
         optical_critical=c.execute("""SELECT COUNT(*) c FROM onu_optical_readings
                                       WHERE rx_power IS NOT NULL AND (rx_power < -27 OR rx_power > -8)""").fetchone()['c']
         optical_warn=c.execute("""SELECT COUNT(*) c FROM onu_optical_readings
                                   WHERE rx_power >= -27 AND rx_power < -25""").fetchone()['c']
+        optical_alert_rows=c.execute("""SELECT o.id,o.customer_id,o.serial,o.index_key,o.rx_power,cu.name customer
+                                        FROM onu_optical_readings o
+                                        LEFT JOIN customers cu ON cu.id=o.customer_id
+                                        WHERE o.rx_power IS NOT NULL
+                                          AND (o.rx_power < -25 OR o.rx_power > -8)
+                                        ORDER BY CASE WHEN o.rx_power < -27 OR o.rx_power > -8 THEN 0 ELSE 1 END,
+                                                 o.rx_power ASC
+                                        LIMIT 20""").fetchall()
     recent=c.execute('''SELECT cu.name,i.amount,i.status,i.due_date FROM invoices i JOIN customers cu ON cu.id=i.customer_id WHERE COALESCE(cu.status,'ACTIVO')<>'ELIMINADO' ORDER BY i.id DESC LIMIT 8''').fetchall()
     c.close()
     kpis=[('Clientes',total,f'{online_ppp} PPPoE online','blue1'),('Suspendidos',suspended,'Fuera de servicio','orange1'),('Morosos',overdue,f'RD${overdue_money:,.0f} vencido','red1'),('ONU caídas',onu_down,'OFFLINE / LOS','purple1'),('Órdenes MikroTik',pending_cmd,'Pendientes / proceso','cyan1'),('Papelera',trash,'Clientes eliminados','green1')]
@@ -434,6 +442,22 @@ def dashboard_plus():
     if router_bad: alerts.append(('bad',f'{router_bad} router/agente no está ONLINE',url_for('routers')))
     if not wan_rows: alerts.append(('warn','Todavía no hay lecturas WAN en el monitor',url_for('routers')))
     alert_html=''.join(f'<a href="{u}" style="display:block;padding:11px 12px;margin:7px 0;border-radius:9px;background:{"#4a161b" if cls=="bad" else "#4e3707"};color:{"#fecaca" if cls=="bad" else "#ffe6a3"}">{esc(txt)}</a>' for cls,txt,u in alerts) or '<div style="padding:12px;border-radius:9px;background:#063f2a;color:#b8f6d6">Sin alertas operativas importantes.</div>'
+    if optical_alert_rows:
+        optical_detail=[]
+        for x in optical_alert_rows:
+            critical=(float(x['rx_power']) < -27 or float(x['rx_power']) > -8)
+            cls='bad' if critical else 'warn'
+            state='CRÍTICA' if critical else 'ALERTA'
+            who=esc(x['customer'] or 'Sin asociar')
+            if x['customer_id']:
+                who=f'<a href="{url_for("customer_profile",id=x["customer_id"])}" style="color:inherit;font-weight:800">{who}</a>'
+            optical_detail.append(
+                f'<tr><td>{who}<br><span class="muted">{esc(x["serial"])}</span></td>'
+                f'<td><b>{float(x["rx_power"]):.2f} dBm</b></td><td>{esc(x["index_key"])}</td>'
+                f'<td><span class="tag {cls}">{state}</span></td></tr>')
+        alert_html += (f'<div style="margin-top:12px"><b>ONU que requieren revisión</b>'
+                       f'<table class="table" style="margin-top:8px"><tr><th>Cliente</th><th>RX</th><th>PON / ONU</th><th>Estado</th></tr>'
+                       f'{"".join(optical_detail)}</table></div>')
     rows=''.join(f'<tr><td>{esc(r["name"])}</td><td>RD${float(r["amount"]):,.2f}</td><td>{esc(r["due_date"])}</td><td><span class="tag {"ok" if r["status"]=="PAGADA" else "warn"}">{esc(r["status"])}</span></td></tr>' for r in recent)
     body=f'''<div class="head"><div><h1>Dashboard</h1><p>Operación diaria de INTER Flash</p></div><div style="display:flex;gap:8px"><a class="btn" href="{url_for('onu_overview')}">ONU / ONT</a><a class="btn green" href="{url_for('customer_new')}">+ Nuevo cliente</a></div></div><div class="grid6">{cards}</div><div class="cards2"><div class="panel"><h3>Alertas operativas</h3>{alert_html}</div><div class="panel"><h3>Accesos rápidos</h3><p><a class="btn" href="{url_for('customers')}">Clientes</a></p><p><a class="btn" href="{url_for('mikrotik_commands')}">Cola MikroTik</a></p><p><a class="btn" href="{url_for('customer_trash')}">Papelera</a></p></div></div><div class="panel"><h3>Facturas recientes</h3><table class="table"><tr><th>Cliente</th><th>Monto</th><th>Vence</th><th>Estado</th></tr>{rows or '<tr><td colspan="4" class="muted">Sin facturas.</td></tr>'}</table></div>'''
     return base.shell('Dashboard',body,'dashboard')

@@ -90,10 +90,10 @@ def traffic_script_v2(name):
 /system script add name="interflash-wan-health" policy=read,test source={{
   :local url "{root}/api/mikrotik/wan-health";
   :local headers "Content-Type:application/x-www-form-urlencoded,X-InterFlash-Relay: {push_sync.TOKEN}";
-  :local r1 [/tool ping address=4.2.2.1 routing-table=Ruta-Linea1 count=3 interval=200ms];
-  :local r2 [/tool ping address=4.2.2.2 routing-table=Ruta-Linea2 count=3 interval=200ms];
-  :local r3 [/tool ping address=208.67.222.222 routing-table=Ruta-Linea3 count=3 interval=200ms];
-  :local r4 [/tool ping address=208.67.220.220 routing-table=Ruta-Linea4 count=3 interval=200ms];
+  :local r1 [/tool ping address=4.2.2.1 interface=WAN1-CLARO count=3 interval=200ms];
+  :local r2 [/tool ping address=4.2.2.2 interface=WAN2-CLARO count=3 interval=200ms];
+  :local r3 [/tool ping address=208.67.222.222 interface=WAN3-ALTICE count=3 interval=200ms];
+  :local r4 [/tool ping address=208.67.220.220 interface=WAN4-ALTICE count=3 interval=200ms];
   :local health ("WAN1-CLARO," . $r1 . ",3|WAN2-CLARO," . $r2 . ",3|WAN3-ALTICE," . $r3 . ",3|WAN4-ALTICE," . $r4 . ",3");
   :local data ("router={name}&health=" . $health);
   /tool fetch url=$url http-method=post http-header-field=$headers http-data=$data output=none check-certificate=yes;
@@ -105,7 +105,7 @@ def traffic_script_v2(name):
 '''
 
     body = f'''<div class="head"><div><h1>Activar consumo MikroTik</h1><p>Monitor en tiempo casi real: WAN y estado PPPoE cada 2 segundos; ping real de las 4 líneas cada 10 segundos.</p></div><a class="btn" href="{url_for('router_push_traffic',name=name)}">← Volver</a></div>
-    <div class="panel"><div style="padding:11px;border-radius:8px;background:#063f2a;color:#9ff0c8;margin-bottom:12px"><b>Monitor v6 · PPPoE + 4 líneas con ping real.</b> Pega este bloque completo una sola vez. Reemplaza automáticamente el monitor anterior y envía las 4 WAN juntas en una sola petición para no cargar el CCR2116.</div><textarea class="field" style="width:100%;height:440px;font-family:Consolas,monospace">{push_sync.escape(script)}</textarea></div>'''
+    <div class="panel"><div style="padding:11px;border-radius:8px;background:#063f2a;color:#9ff0c8;margin-bottom:12px"><b>Monitor v6.1 · PPPoE + 4 líneas con ping real.</b> Pega este bloque completo una sola vez. Reemplaza automáticamente el monitor anterior y envía las 4 WAN juntas en una sola petición para no cargar el CCR2116.</div><textarea class="field" style="width:100%;height:440px;font-family:Consolas,monospace">{push_sync.escape(script)}</textarea></div>'''
     return base.shell('Activar consumo MikroTik', body, 'routers')
 
 

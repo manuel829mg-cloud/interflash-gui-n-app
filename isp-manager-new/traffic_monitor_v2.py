@@ -28,6 +28,7 @@ def traffic_batch():
         return jsonify(ok=False, error='unauthorized'), 401
     name = (request.form.get('router') or 'CCR2116')[:80].strip()
     raw = request.form.get('samples') or ''
+    active_raw = request.form.get('active') or ''
     items = []
     for part in raw.split('|'):
         if not part:
@@ -45,6 +46,11 @@ def traffic_batch():
     c = base.db()
     try:
         push_sync._save_traffic(c, name, items)
+        c.execute('DELETE FROM push_pppoe_active WHERE router_name=?', (name,))
+        for active_name in active_raw.split('|'):
+            active_name = active_name.strip()
+            if active_name:
+                c.execute('INSERT INTO push_pppoe_active(router_name,name,address,caller_id,service,uptime) VALUES(?,?,?,?,?,?)', (name, active_name[:255], '', '', 'pppoe', ''))
         push_sync._touch(c, name, status='ONLINE')
         c.commit()
     finally:

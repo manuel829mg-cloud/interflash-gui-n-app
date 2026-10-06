@@ -39,6 +39,19 @@ def ensure_schema(c=None):
       UNIQUE(olt_ip,index_key)
     );
     CREATE INDEX IF NOT EXISTS idx_onu_optical_serial ON onu_optical_readings(serial);
+    CREATE TABLE IF NOT EXISTS onu_optical_history(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      olt_ip TEXT NOT NULL,
+      index_key TEXT NOT NULL,
+      serial TEXT NOT NULL,
+      customer_id INTEGER,
+      rx_power REAL,
+      tx_power REAL,
+      status TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_onu_optical_history_serial ON onu_optical_history(serial,id DESC);
+    CREATE INDEX IF NOT EXISTS idx_onu_optical_history_customer ON onu_optical_history(customer_id,id DESC);
     """)
     cols = [x['name'] for x in c.execute("PRAGMA table_info(onu_optical_readings)").fetchall()]
     if 'customer_id' not in cols:
@@ -100,6 +113,13 @@ def optical_batch():
             if cid:
                 c.execute("UPDATE onu_optical_readings SET customer_id=? WHERE olt_ip=? AND index_key=? AND customer_id IS NULL",
                           (cid, olt, idx))
+            current = c.execute("SELECT customer_id FROM onu_optical_readings WHERE olt_ip=? AND index_key=?",
+                                (olt, idx)).fetchone()
+            history_cid = current['customer_id'] if current else cid
+            c.execute("""INSERT INTO onu_optical_history
+                         (olt_ip,index_key,serial,customer_id,rx_power,tx_power,status,created_at)
+                         VALUES(?,?,?,?,?,?,?,?)""",
+                      (olt, idx, serial, history_cid, rxv, txv, status, now))
             # Keep manually linked ONU inventory fresh when the same serial exists there.
             c.execute("""UPDATE onu_devices SET rx_power=?,tx_power=?,status=?,last_seen=?
                          WHERE UPPER(REPLACE(REPLACE(REPLACE(serial,':',''),'-',''),' ',''))=?""",
@@ -161,7 +181,7 @@ def onu_live_page():
                            f'<button class="btn green" type="submit">Guardar</button></form>')
         trs.append(f'<tr><td>{client_cell}</td><td>{bs.esc(r["serial"])}</td><td>{bs.esc(r["index_key"])}</td>'
                    f'<td><b>{rx}</b></td><td>{tx}</td><td><span class="tag {cls}">{status}</span></td>'
-                   f'<td>{bs.esc(r["last_seen"])}</td></tr>')
+                   f'<td>{bs.esc(r["last_seen"])}</td><td><a class="btn" href="{url_for("onu_optical_history",reading_id=r["id"])}">Historial</a></td></tr>')
 
     body = f"""<div class="head"><div><h1>OLT / ONU</h1><p>Potencia óptica en vivo · Hioso HA7304VX</p></div>
     <a class="btn green" href="{url_for('onu_optical_script')}">Activar monitor OLT</a></div>
@@ -172,8 +192,8 @@ def onu_live_page():
       <div class="kpi blue1"><div class="label">ONU leídas</div><div class="value">{len(rows)}</div><div class="sub">Última: {bs.esc(last)}</div></div>
     </div>
     <div class="panel"><div class="notice" style="margin-bottom:12px">Las lecturas se reciben desde el CCR2116 por SNMP de solo lectura. Una ONU con RX menor de -27 dBm queda marcada en rojo.</div>
-    <table class="table"><tr><th>Cliente</th><th>Serial</th><th>PON / ONU</th><th>RX</th><th>TX</th><th>Estado</th><th>Actualizado</th></tr>
-    {''.join(trs) or '<tr><td colspan=7 class=muted>Aún no hay lecturas. Pulsa “Activar monitor OLT”.</td></tr>'}</table></div>
+    <table class="table"><tr><th>Cliente</th><th>Serial</th><th>PON / ONU</th><th>RX</th><th>TX</th><th>Estado</th><th>Actualizado</th><th></th></tr>
+    {''.join(trs) or '<tr><td colspan=8 class=muted>Aún no hay lecturas. Pulsa “Activar monitor OLT”.</td></tr>'}</table></div>
     <script>setTimeout(function(){{location.reload()}},30000)</script>"""
     return base.shell('OLT / ONU', body, 'onu_page')
 
@@ -193,6 +213,8 @@ def associate_onu():
     cu = c.execute("SELECT id,name FROM customers WHERE id=?", (cid,)).fetchone()
     if r and cu:
         c.execute("UPDATE onu_optical_readings SET customer_id=? WHERE id=?", (cid, rid))
+        c.execute("UPDATE onu_optical_history SET customer_id=? WHERE olt_ip=? AND index_key=? AND serial=? AND customer_id IS NULL",
+                  (cid, r['olt_ip'], r['index_key'], r['serial']))
         found = c.execute("""SELECT id FROM onu_devices
                              WHERE customer_id=? AND UPPER(REPLACE(REPLACE(REPLACE(serial,':',''),'-',''),' ',''))=?""",
                           (cid, _norm(r['serial']))).fetchone()
@@ -210,6 +232,66 @@ def associate_onu():
         c.commit()
     c.close()
     return redirect(url_for('onu_page'))
+
+
+def optical_history_page(reading_id):
+    if not base.logged_in():
+        return redirect(url_for('login'))
+    c = base.db()
+    ensure_schema(c)
+    r = c.execute("SELECT * FROM onu_optical_readings WHERE id=?", (reading_id,)).fetchone()
+    if not r:
+        c.close()
+        return redirect(url_for('onu_page'))
+    cu = c.execute("SELECT name FROM customers WHERE id=?", (r['customer_id'],)).fetchone() if r['customer_id'] else None
+    hist = c.execute("""SELECT * FROM onu_optical_history
+                        WHERE olt_ip=? AND index_key=? AND serial=?
+                        ORDER BY id DESC LIMIT 144""",
+                     (r['olt_ip'], r['index_key'], r['serial'])).fetchall()
+    c.close()
+    rows = []
+    for h in hist:
+        status, cls = _level(h['rx_power'])
+        rx = '-' if h['rx_power'] is None else f"{float(h['rx_power']):.2f} dBm"
+        tx = '-' if h['tx_power'] is None else f"{float(h['tx_power']):.2f} dBm"
+        rows.append(f'<tr><td>{bs.esc(h["created_at"])}</td><td><b>{rx}</b></td><td>{tx}</td>'
+                    f'<td><span class="tag {cls}">{status}</span></td></tr>')
+    title = cu['name'] if cu else r['serial']
+    body = f"""<div class="head"><div><h1>Historial óptico</h1>
+      <p>{bs.esc(title)} · {bs.esc(r['serial'])} · PON/ONU {bs.esc(r['index_key'])}</p></div>
+      <a class="btn" href="{url_for('onu_page')}">← OLT / ONU</a></div>
+      <div class="panel"><div class="notice" style="margin-bottom:12px">Se conserva cada lectura del monitor para detectar degradación de la fibra. Se muestran las últimas 144 lecturas.</div>
+      <table class="table"><tr><th>Fecha</th><th>RX</th><th>TX</th><th>Estado</th></tr>
+      {''.join(rows) or '<tr><td colspan=4 class=muted>Aún no hay historial suficiente.</td></tr>'}</table></div>"""
+    return base.shell('Historial óptico', body, 'onu_page')
+
+
+def dashboard_with_optical(original_dashboard):
+    def view():
+        html = original_dashboard()
+        c = base.db()
+        ensure_schema(c)
+        crit = c.execute("""SELECT o.*,cu.name customer FROM onu_optical_readings o
+                            LEFT JOIN customers cu ON cu.id=o.customer_id
+                            WHERE o.rx_power IS NOT NULL AND (o.rx_power < -27 OR o.rx_power > -8)
+                            ORDER BY o.rx_power ASC LIMIT 12""").fetchall()
+        warn = c.execute("""SELECT COUNT(*) n FROM onu_optical_readings
+                            WHERE rx_power >= -27 AND rx_power < -25""").fetchone()['n']
+        c.close()
+        if not crit and not warn:
+            return html
+        trs = ''.join(
+            f'<tr><td>{bs.esc(x["customer"] or "Sin asociar")}</td><td>{bs.esc(x["serial"])}</td>'
+            f'<td><b>{float(x["rx_power"]):.2f} dBm</b></td><td><span class="tag bad">CRÍTICA</span></td></tr>'
+            for x in crit
+        )
+        alert = f"""<div class="panel" style="margin-top:16px;border-color:#8b2635">
+          <div class="head" style="margin-bottom:10px"><div><h3 style="margin:0">⚠ Alertas ópticas ONU</h3>
+          <p>{len(crit)} crítica(s) · {warn} en alerta</p></div><a class="btn" href="{url_for('onu_page')}">Ver OLT / ONU</a></div>
+          <table class="table"><tr><th>Cliente</th><th>Serial</th><th>RX</th><th>Estado</th></tr>{trs}</table></div>"""
+        return html.replace('</section>', alert + '</section>')
+    view.__name__ = 'dashboard_with_optical'
+    return view
 
 def optical_script():
     if not base.logged_in():
@@ -275,4 +357,7 @@ def setup(app):
     app.add_url_rule('/api/olt/optical-batch', endpoint='onu_optical_batch', view_func=optical_batch, methods=['POST'])
     app.add_url_rule('/onu/monitor-script', endpoint='onu_optical_script', view_func=optical_script, methods=['GET'])
     app.add_url_rule('/onu/associate', endpoint='onu_optical_associate', view_func=associate_onu, methods=['POST'])
+    app.add_url_rule('/onu/history/<int:reading_id>', endpoint='onu_optical_history', view_func=optical_history_page, methods=['GET'])
     app.view_functions['onu_page'] = onu_live_page
+    if 'dashboard' in app.view_functions:
+        app.view_functions['dashboard'] = dashboard_with_optical(app.view_functions['dashboard'])

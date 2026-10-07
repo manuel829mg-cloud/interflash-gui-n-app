@@ -509,6 +509,8 @@ def settings_page():
     webhook_url = url_for('greenapi_webhook', _external=True, _scheme='https')
     body += f'''<div class="panel"><h3>Estado de recepción</h3><p>{esc(reception)}</p><p class="muted">Webhook: {esc(webhook_url)}</p></div>
     <div class="panel"><h3>Prueba de envío</h3><form method="post" action="{url_for('whatsapp_send')}" class="toolbar"><input class="field" name="phone" placeholder="Número de otro teléfono, ej. 18095551234" required><input class="field" name="body" value="Hola, esta es una prueba de INTER Flash." required><button class="btn green">Enviar prueba</button></form><p class="muted">Comprueba la llegada en el teléfono destinatario. Se aplican los límites de tu plan.</p></div>'''
+    import whatsapp_menu
+    body = whatsapp_menu.panel() + body
     return base.shell('Configuración WhatsApp',body,'whatsapp_inbox')
 
 
@@ -585,6 +587,8 @@ def setup(app):
     ultra.setup(app)
     whapi.setup(app)
     greenapi.setup(app)
+    import whatsapp_menu
+    whatsapp_menu.setup(app)
     import greenapi_chats
     greenapi_chats.setup(app)
     app.add_url_rule('/whatsapp',endpoint='whatsapp_inbox',view_func=inbox,methods=['GET'])

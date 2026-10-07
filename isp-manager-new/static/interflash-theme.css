@@ -111,3 +111,6 @@ body .clients-table .ico.warnx{background:#352631;border-color:#614052;color:#ef
 body .clients-table .ico.good{background:#15362f;border-color:#2f6456;color:#79dbb8}
 body .clients-table .ico:hover{background:#203d50;border-color:#4c8f91;color:#82e3cf;box-shadow:none}
 body .clients-table .ico.warnx:hover,body .clients-table .ico.danger:hover{background:#472b37;border-color:#916073;color:#ffb1bf}
+
+/* Slight icon reduction; preserve the comfortable button target. */
+body .clients-table .ico svg.reference-icon{width:16px;height:16px}

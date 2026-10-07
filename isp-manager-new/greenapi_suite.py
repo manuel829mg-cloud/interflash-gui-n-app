@@ -180,6 +180,8 @@ def webhook():
                     c.execute("INSERT INTO whatsapp_messages(thread_id,direction,message_type,body,provider_id,status,created_at) VALUES(?,'IN',?,?,?,'RECIBIDO',?)", (t['id'], str(data.get('typeMessage', 'textMessage'))[:40], body, pid, wa._now()))
                     c.execute('UPDATE whatsapp_threads SET last_message=?,last_at=?,unread=unread+1 WHERE id=?', (body[:500], wa._now(), t['id']))
                     c.execute('UPDATE whatsapp_webhook_health SET last_event=?,last_incoming=? WHERE id=1', (wa._now(), wa._now()))
+                    import whatsapp_menu
+                    whatsapp_menu.enqueue(c, t, body, pid, cfg['channel'])
         elif kind == 'outgoingMessageStatus' and payload.get('sendByApi') is True:
             mapped = {'sent': 'ENVIADO', 'delivered': 'ENTREGADO', 'read': 'LEÍDO', 'failed': 'ERROR', 'noAccount': 'ERROR', 'suspended': 'ERROR', 'yellowCard': 'ERROR', 'notInGroup': 'ERROR'}.get(payload.get('status'))
             mid = payload.get('idMessage')

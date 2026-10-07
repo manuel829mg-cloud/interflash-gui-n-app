@@ -235,13 +235,20 @@ def zones_page():
       .zone-search{{width:230px;height:44px;border-radius:12px;border:1px solid rgba(130,166,219,.26);background:rgba(6,17,32,.75);color:#fff;padding:0 13px}}
       .zone-search::placeholder{{color:#7890ad}}
       .zone-table-wrap{{overflow:auto;border-radius:15px;border:1px solid rgba(113,147,196,.18)}}
-      .zones-table{{width:100%;border-collapse:collapse;min-width:930px}}
-      .zones-table th{{padding:14px 16px;text-align:left;font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:#a9bdd8;background:rgba(18,39,69,.72);border-bottom:1px solid rgba(121,151,194,.20)}}
-      .zones-table td{{padding:15px 16px;border-bottom:1px solid rgba(115,145,184,.12);color:#e7eef8}}
+      .zones-table{{width:100%;border-collapse:collapse;min-width:0}}
+      .zones-table th{{padding:10px 8px;text-align:left;font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:#a9bdd8;background:rgba(18,39,69,.72);border-bottom:1px solid rgba(121,151,194,.20)}}
+      .zones-table td{{padding:10px 8px;font-size:13px;line-height:1.35;border-bottom:1px solid rgba(115,145,184,.12);color:#e7eef8}}
       .zones-table tr:last-child td{{border-bottom:0}}
       .zones-table tbody tr:hover{{background:rgba(19,91,168,.08)}}
-      .zone-name{{display:flex;align-items:center;gap:10px}}
-      .zone-pin{{width:28px;height:28px;border-radius:9px;display:grid;place-items:center;background:linear-gradient(145deg,#0b7dff,#734cff);color:#fff;font-size:11px;transform:rotate(45deg)}}
+      .zone-name{{display:flex;align-items:center;gap:6px}}
+      .zone-name b{{overflow-wrap:anywhere}}
+      .zones-table th:not(:first-child),.zones-table td:not(:first-child){{width:1%}}
+      .zones-table td:nth-child(4),.zones-table td:nth-child(5){{white-space:nowrap}}
+      .zones-table .client-pill,.zones-table .time-pill{{white-space:nowrap;padding:4px 7px}}
+      .zones-table .zone-actions{{gap:5px}}
+      .zones-table .zone-actions form{{margin:0}}
+      .zones-table .edit-btn,.zones-table .delete-btn{{height:32px;padding:0 8px;font-size:12px}}
+      .zone-pin{{width:22px;height:22px;flex-shrink:0;border-radius:7px;display:grid;place-items:center;background:linear-gradient(145deg,#0b7dff,#734cff);color:#fff;font-size:11px;transform:rotate(45deg)}}
       .zone-pin::first-letter{{transform:rotate(-45deg)}}
       .client-pill{{display:inline-flex;align-items:center;gap:5px;padding:6px 10px;border-radius:999px;background:rgba(147,79,255,.11);border:1px solid rgba(147,79,255,.28);color:#d9c7ff;font-weight:900}}
       .time-pill{{display:inline-flex;padding:6px 10px;border-radius:999px;background:rgba(29,128,255,.10);border:1px solid rgba(29,128,255,.22);color:#cfe5ff;font-weight:800}}

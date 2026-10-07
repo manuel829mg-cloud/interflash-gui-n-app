@@ -91,6 +91,15 @@ def setup():
         '''
         script='''
         <script>
+        function toggleMobileMenu(force){
+          const open=typeof force==='boolean'?force:!document.body.classList.contains('menu-open');
+          document.body.classList.toggle('menu-open',open);
+          const button=document.querySelector('.menu-toggle');
+          button.setAttribute('aria-expanded',String(open));
+          button.setAttribute('aria-label',open?'Cerrar menú':'Abrir menú');
+          if(!open) button.focus();
+        }
+        document.addEventListener('keydown',event=>{if(event.key==='Escape'&&document.body.classList.contains('menu-open'))toggleMobileMenu(false)});
         function toggleSideGroup(key,el){
           const menu=document.getElementById('group-'+key);
           const arrow=el.querySelector('.nav-arrow');
@@ -100,11 +109,11 @@ def setup():
         }
         </script>'''
         return base.render_template_string('''<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{title}} · INTER Flash</title><style>{{css}}{{extra_css}}</style></head><body><div class="app">
-        <aside class="side"><div class="brand"><div class="brandmark">IF</div><div class="txt"><b>INTER Flash</b><small>ISP Manager</small></div></div>
+        <button class="menu-shade" aria-label="Cerrar menú" onclick="toggleMobileMenu(false)"></button><aside class="side" id="main-menu"><div class="brand"><div class="brandmark">IF</div><div class="txt"><b>INTER Flash</b><small>ISP Manager</small></div></div>
         <div class="side-user"><div class="side-avatar">{{initial}}</div><div class="txt"><b>{{user}}</b><small>{{role}}</small></div></div>
         <nav class="nav">{{links|safe}}<div class="nav-divider"></div><a class="nav-single" href="{{url_for('logout')}}"><span class="menu-icon">↪</span><span class="txt">Salir</span></a></nav>
         <div class="side-footer">© 2026 INTER Flash Management</div></aside>
-        <main class="main"><header class="top"><input class="search" placeholder="Buscar clientes, facturas, ONU, IP..." onkeydown="if(event.key==='Enter'){location.href='{{url_for('customers')}}?q='+encodeURIComponent(this.value)}"><div class="user">{{role}} · {{user}}</div></header><section class="content">{{msgs|safe}}{{body|safe}}</section></main>
+        <main class="main"><header class="top"><button type="button" class="btn menu-toggle" aria-label="Abrir menú" aria-controls="main-menu" aria-expanded="false" onclick="toggleMobileMenu()">☰</button><input class="search" placeholder="Buscar clientes, facturas, ONU, IP..." onkeydown="if(event.key==='Enter'){location.href='{{url_for('customers')}}?q='+encodeURIComponent(this.value)}"><div class="user">{{role}} · {{user}}</div></header><section class="content">{{msgs|safe}}{{body|safe}}</section></main>
         </div>{{script|safe}}</body></html>''',title=title,css=base.BASE_CSS,extra_css=extra_css,links=links_html,body=body,user=user,role=role_label,initial=(user[:1] or 'M').upper(),msgs=msgs,script=script)
 
     base.shell=grouped_shell

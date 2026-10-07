@@ -88,7 +88,7 @@ def settings():
         try:
             if request.form.get('action') == 'meta':
                 c = base.db()
-                c.execute('UPDATE whapi_config SET active=0'); c.execute('UPDATE ultramsg_config SET active=0')
+                c.execute('UPDATE whapi_config SET active=0'); c.execute('UPDATE ultramsg_config SET active=0'); c.execute('UPDATE greenapi_config SET active=0')
                 c.commit(); c.close(); flash('El envío vuelve a utilizar Meta.')
                 return redirect(url_for('whapi_settings'))
             token = request.form.get('token', '').strip() or cfg['token']
@@ -119,7 +119,7 @@ def settings():
             if not re.fullmatch(r'[1-9][0-9]{7,14}', phone): phone = ''
             c = base.db()
             c.execute('UPDATE whapi_config SET channel=?,token=?,hook=?,phone=?,active=1 WHERE id=1', (channel, encrypted, hook, phone))
-            c.execute('UPDATE ultramsg_config SET active=0 WHERE id=1'); c.commit(); c.close()
+            c.execute('UPDATE ultramsg_config SET active=0 WHERE id=1'); c.execute('UPDATE greenapi_config SET active=0'); c.commit(); c.close()
             flash('Whapi.Cloud configurado. Falta comprobar un envío y un mensaje entrante real.')
         except (ValueError, APIError) as exc: flash(str(exc))
         return redirect(url_for('whapi_settings'))

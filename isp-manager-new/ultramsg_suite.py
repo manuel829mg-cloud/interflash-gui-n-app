@@ -116,7 +116,7 @@ def settings():
         action=request.form.get('action','save')
         try:
             if action=='meta':
-                c=base.db();c.execute('UPDATE ultramsg_config SET active=0 WHERE id=1');c.commit();c.close()
+                c=base.db();c.execute('UPDATE ultramsg_config SET active=0 WHERE id=1');c.execute('UPDATE whapi_config SET active=0 WHERE id=1');c.commit();c.close()
                 flash('El envío vuelve a utilizar Meta.');return redirect(url_for('ultramsg_settings'))
             instance=request.form.get('instance','').strip()
             if instance.isdigit(): instance='instance'+instance
@@ -135,13 +135,13 @@ def settings():
                 'webhook_message_create':'false','webhook_message_download_media':'false'},new)
             verify=api('instance/settings',cfg=new)
             if verify.get('webhook_url')!=callback: raise APIError('No se pudo confirmar la recepción en UltraMsg. Intenta conectar nuevamente.')
-            c=base.db();c.execute('UPDATE ultramsg_config SET instance=?,token=?,hook=?,active=1 WHERE id=1',(instance,ciphertext,hook));c.commit();c.close()
+            c=base.db();c.execute('UPDATE ultramsg_config SET instance=?,token=?,hook=?,active=1 WHERE id=1',(instance,ciphertext,hook));c.execute('UPDATE whapi_config SET active=0 WHERE id=1');c.commit();c.close()
             flash('UltraMsg conectado. Ya puedes probar el envío y la recepción en tu bandeja.')
         except (ValueError,APIError) as exc: flash(str(exc))
         return redirect(url_for('ultramsg_settings'))
     csrf=session.setdefault('ultra_csrf',secrets.token_urlsafe(32))
     body=f'''<div class="head"><div><h1>Conectar UltraMsg</h1><p>Vincula tu WhatsApp por QR en UltraMsg y conecta esa instancia a INTER Flash.</p></div><a class="btn" href="/whatsapp">Volver a WhatsApp</a></div>
-    <div class="panel"><b>Proveedor de envío: {'UltraMsg' if cfg['active'] else 'Meta'}</b><p>Primero escanea el QR en tu cuenta de UltraMsg. Luego completa estos campos.</p>
+    <div class="panel"><b>Proveedor de envío: {wa.esc(wa._provider_label())}</b><p>Primero escanea el QR en tu cuenta de UltraMsg. Luego completa estos campos.</p>
     <form method="post"><input type="hidden" name="csrf" value="{wa.esc(csrf)}"><div class="formgrid">
     <label>ID de instancia<input name="instance" value="{wa.esc(cfg['instance'])}" placeholder="instance193640" required></label>
     <label>Token de UltraMsg<input type="password" name="token" autocomplete="new-password" placeholder="{'Guardado; deja vacío para conservarlo' if cfg['token'] else 'Pega aquí el token'}"></label></div>

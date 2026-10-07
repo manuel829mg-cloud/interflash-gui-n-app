@@ -168,7 +168,13 @@ def traffic_script_v2(name):
     :local sync [/tool fetch url=$url http-method=post http-header-field=$headers http-data=$data output=user as-value check-certificate=yes];
     :do {{
       :local syncObj [:deserialize from=json value=($sync->"data")];
-      :foreach pppoe in=($syncObj->"pppoe_watch") do={{
+      :local watched ($syncObj->"pppoe_watch");
+      :if ([:len $watched] > 0) do={{
+        /system scheduler set [find where name="interflash-traffic-scheduler"] interval=1s;
+      }} else={{
+        /system scheduler set [find where name="interflash-traffic-scheduler"] interval=2s;
+      }}
+      :foreach pppoe in=$watched do={{
         :foreach session in=[/ppp active print stats as-value proplist=name,bytes where name=$pppoe] do={{
           :local record [:serialize to=json value=$session options=json.no-string-conversion];
           :local pppData ("{{\"router\":\"{name}\",\"kind\":\"pppoe-traffic\",\"items\":[" . $record . "]}}");
@@ -197,7 +203,7 @@ def traffic_script_v2(name):
 /system script run interflash-wan-health
 '''
 
-    body = f'''<div class="head"><div><h1>Activar consumo MikroTik</h1><p>Monitor: 4 WAN y PPPoE cada 2 segundos; ping de las 4 líneas cada 10 segundos. El tráfico individual se consulta al abrir la ficha del cliente.</p></div><a class="btn" href="{url_for('router_push_traffic',name=name)}">← Volver</a></div>
+    body = f'''<div class="head"><div><h1>Activar consumo MikroTik</h1><p>Monitor: 4 WAN y PPPoE cada 2 segundos; al abrir una ficha, los contadores consultados pasan a 1 segundo y vuelven a 2 al cerrarla. Ping de las 4 líneas cada 10 segundos.</p></div><a class="btn" href="{url_for('router_push_traffic',name=name)}">← Volver</a></div>
     <div class="panel"><div style="padding:11px;border-radius:8px;background:#063f2a;color:#9ff0c8;margin-bottom:12px"><b>Monitor v6.2 · Tráfico PPPoE individual bajo demanda + 4 líneas con ping real.</b> Pega este bloque completo una sola vez. Reemplaza automáticamente el monitor anterior y mantiene las cuatro WAN en una sola petición. Solo envía contadores PPPoE de las fichas abiertas.</div><textarea class="field" style="width:100%;height:440px;font-family:Consolas,monospace">{push_sync.escape(script)}</textarea></div>'''
     return base.shell('Activar consumo MikroTik', body, 'routers')
 

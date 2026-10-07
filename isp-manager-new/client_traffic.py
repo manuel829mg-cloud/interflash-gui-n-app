@@ -4,7 +4,7 @@ from flask import jsonify, redirect, url_for
 
 import app as base
 
-WATCH_TTL_SECONDS = 8
+WATCH_TTL_SECONDS = 4
 
 
 def ensure_schema():

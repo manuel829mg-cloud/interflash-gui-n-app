@@ -33,7 +33,11 @@ def invoices_plus():
     rows=c.execute("""SELECT i.*,cu.name customer FROM invoices i JOIN customers cu ON cu.id=i.customer_id ORDER BY i.id DESC LIMIT 500""").fetchall()
     c.close()
     today=date.today().isoformat(); period=date.today().strftime('%Y-%m')
-    opts=''.join(f'<option value="{x["id"]}" data-search="{esc(str(x["name"] or "")+" "+str(x["code"] or "")+" "+str(x["phone"] or "")+" "+str(x["pppoe"] or ""))}" data-price="{float(x["price"] or 0):.2f}">{esc(x["name"])} · {esc(x["code"] or x["id"])} · {esc(x["plan_name"] or "Sin plan")} · RD&#36;{float(x["price"] or 0):,.0f}</option>' for x in customers)
+    selected_id=request.args.get('customer_id',type=int)
+    selected_customer=next((x for x in customers if x['id']==selected_id),None)
+    selected_amount=f"{float(selected_customer['price'] or 0):.2f}" if selected_customer else ''
+    selected_notice=('Cliente seleccionado: '+selected_customer['name']) if selected_customer else ''
+    opts=''.join(f'<option value="{x["id"]}" {'selected' if selected_customer and x["id"]==selected_customer["id"] else ''} data-search="{esc(str(x["name"] or "")+" "+str(x["code"] or "")+" "+str(x["phone"] or "")+" "+str(x["pppoe"] or ""))}" data-price="{float(x["price"] or 0):.2f}">{esc(x["name"])} · {esc(x["code"] or x["id"])} · {esc(x["plan_name"] or "Sin plan")} · RD&#36;{float(x["price"] or 0):,.0f}</option>' for x in customers)
     trs=[]
     for r in rows:
         paid=(r['status'] or '').upper()=='PAGADA'; overdue=(not paid and (r['due_date'] or '') < today)
@@ -41,14 +45,14 @@ def invoices_plus():
         collect='' if paid else f'<a class="btn green" href="{url_for("invoice_detail",id=r["id"])}#registrar-pago">Cobrar</a>'
         trs.append(f'<tr><td><b>IF-{r["id"]:06d}</b></td><td>{esc(r["customer"])}</td><td>{esc(r["period"] or "-")}</td><td>{esc(r["concept"])}</td><td>RD&#36;{float(r["amount"]):,.2f}</td><td>{esc(r["issue_date"])}</td><td>{esc(r["due_date"])}</td><td><span class="tag {cls}">{esc(status)}</span></td><td style="white-space:nowrap"><a class="btn blue" href="{url_for("invoice_detail",id=r["id"])}">Ver</a> {collect}</td></tr>')
     body=f'''<div class="head"><div><h1>Facturas</h1><p>Facturación, impresión, cobros y comprobantes</p></div></div>
-    <div class="panel"><h3>Nueva factura</h3><form class="toolbar" method="post">
+    <div class="panel" id="nueva-factura"><h3>Nueva factura</h3><form class="toolbar" method="post">
     <div class="invoice-client-picker" style="flex:1 1 100%;min-width:0">
     <label for="invoice-client-search">Buscar cliente</label>
     <input class="field" id="invoice-client-search" type="search" placeholder="Nombre, código, teléfono o PPPoE…" autocomplete="off" aria-controls="invoice-customer" style="width:100%;margin:6px 0">
     <select class="field" id="invoice-customer" name="customer_id" required aria-label="Seleccionar cliente" style="width:100%" onchange="var o=this.options[this.selectedIndex];document.getElementById('invoice-amount').value=o.dataset.price||''"><option value="">Selecciona un cliente</option>{opts}</select>
-    <small id="invoice-client-results" role="status" aria-live="polite"></small>
+    <small id="invoice-client-results" role="status" aria-live="polite">{esc(selected_notice)}</small>
     </div>
-    <input class="field" name="concept" value="Servicio de Internet" required><input class="field" id="invoice-amount" type="number" step="0.01" name="amount" placeholder="Monto" required>
+    <input class="field" name="concept" value="Servicio de Internet" required><input class="field" id="invoice-amount" value="{esc(selected_amount)}" type="number" step="0.01" name="amount" placeholder="Monto" required>
     <input class="field" type="month" name="period" value="{period}" required><input class="field" type="date" name="issue_date" value="{today}" required><input class="field" type="date" name="due_date" value="{today}" required>
     <button class="btn green">Crear factura</button></form></div>
     <div class="panel"><table class="table"><tr><th>Factura</th><th>Cliente</th><th>Período</th><th>Concepto</th><th>Monto</th><th>Emisión</th><th>Vence</th><th>Estado</th><th>Acciones</th></tr>{''.join(trs) or '<tr><td colspan="9" class="muted">No hay facturas.</td></tr>'}</table></div>'''

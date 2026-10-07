@@ -13,6 +13,6 @@ class ChatTests(GreenTests):
   with patch.object(g,'api',return_value=[item]):
    for _ in range(2):self.client.post('/whatsapp/greenapi/chat/'+str(t),data={'csrf':'sync','action':'history'})
   c=base.db();self.assertEqual(c.execute('SELECT COUNT(*) FROM whatsapp_messages').fetchone()[0],1);self.assertEqual(c.execute('SELECT COUNT(*) FROM whatsapp_queue').fetchone()[0],0);c.close()
-  page=self.client.get('/whatsapp').get_data(as_text=True);self.assertIn('Sincronizar chats',page);self.assertIn('Anterior',page)
+  page=self.client.get('/whatsapp').get_data(as_text=True);self.assertIn('>Chats</button>',page);self.assertIn('Anterior',page)
   with patch.object(g,'api',return_value={'urlAvatar':'https://evil.example/a.jpg'}):self.client.post('/whatsapp/greenapi/chat/'+str(t),data={'csrf':'sync','action':'avatar'})
   self.assertNotIn('evil.example',self.client.get('/whatsapp').get_data(as_text=True))

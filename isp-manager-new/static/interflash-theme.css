@@ -73,3 +73,17 @@ body .clients-table .c-actions{width:218px;min-width:218px}
 @media(max-width:780px){body .clients-table .c-actions{min-width:0}}
 
 body .clients-table .ico svg.object-icon{width:27px;height:27px;filter:drop-shadow(0 2px 1px #0004)}
+
+/* Compact, neutral action controls with restrained object details. */
+body .clients-table .ico,
+body .clients-table .ico.wa,
+body .clients-table .ico[title="Editar"],
+body .clients-table .ico.warnx,
+body .clients-table .ico.good,
+body .clients-table .ico.danger{width:29px;height:30px;border-radius:6px;background:linear-gradient(180deg,#233246,#172436);border:1px solid #3a4a5e;color:#c7d0dc;box-shadow:inset 0 1px 0 #ffffff09;transform:none}
+body .clients-table .ico svg.object-icon{width:19px;height:19px;filter:drop-shadow(0 1px 0 #0005)}
+body .clients-table .ico:hover{background:#2c4057;border-color:#74879c;filter:none;transform:none;box-shadow:none}
+body .clients-table .ico.danger:hover{background:#472631;border-color:#a86a77}
+body .clients-table .icon-actions{gap:5px}
+body .clients-table .c-actions{width:184px;min-width:184px}
+@media(max-width:780px){body .clients-table .c-actions{min-width:0}}

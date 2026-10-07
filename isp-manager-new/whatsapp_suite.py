@@ -4,7 +4,7 @@ import urllib.request
 import urllib.error
 from datetime import datetime
 from html import escape
-from flask import request, redirect, url_for, flash, jsonify, current_app
+from flask import session, request, redirect, url_for, flash, jsonify, current_app
 import app as base
 import ultramsg_suite as ultra
 import whapi_suite as whapi
@@ -334,7 +334,7 @@ def inbox():
         thread=c.execute('''SELECT wt.*,cu.name customer_name FROM whatsapp_threads wt LEFT JOIN customers cu ON cu.id=wt.customer_id WHERE wt.id=?''',(int(selected),)).fetchone()
         if thread:
             c.execute('UPDATE whatsapp_threads SET unread=0 WHERE id=?',(thread['id'],))
-            messages=c.execute('SELECT * FROM whatsapp_messages WHERE thread_id=? ORDER BY id DESC LIMIT 120',(thread['id'],)).fetchall()[::-1]
+            messages=c.execute('SELECT * FROM whatsapp_messages WHERE thread_id=? ORDER BY created_at DESC,id DESC LIMIT 120',(thread['id'],)).fetchall()[::-1]
             c.commit()
     queue_pending=c.execute("SELECT COUNT(*) c FROM whatsapp_queue WHERE status IN ('PENDIENTE','EN_PROCESO')").fetchone()['c']
     queue_error=c.execute("SELECT COUNT(*) c FROM whatsapp_queue WHERE status='ERROR'").fetchone()['c']
@@ -344,11 +344,23 @@ def inbox():
     customer_card = _customer_card(c, thread)
     c.close()
 
+    import secrets
+    sync_csrf = session.setdefault('green_sync_csrf', secrets.token_urlsafe(32))
+    sync_button = ''; history_button = ''; avatars = {}
+    if greenapi.enabled():
+        c = base.db()
+        avatars = {r['thread_id']: r['avatar'] for r in c.execute('SELECT * FROM greenapi_chat_profiles WHERE instance=?', (greenapi.config()['channel'],)).fetchall()}
+        c.close()
+        if session.get('role') == 'ADMIN':
+            sync_button = f'<form method="post" action="{url_for("greenapi_sync")}"><input type="hidden" name="csrf" value="{esc(sync_csrf)}"><button class="btn green">Sincronizar chats</button></form>'
+            if thread:
+                history_button = f'<form method="post" action="{url_for("greenapi_chat_load",thread_id=thread["id"])}" style="display:flex;gap:8px;padding:10px"><input type="hidden" name="csrf" value="{esc(sync_csrf)}"><button class="btn" name="action" value="history">Cargar historial</button><button class="btn" name="action" value="avatar">Cargar foto</button></form>'
     trows=[]
     for t in threads:
         label=t['customer_name'] or t['display_name'] or t['phone']
         unread_badge=f'<span class="wa-unread">{int(t["unread"] or 0)}</span>' if t['unread'] else ''
-        trows.append(f'''<a class="wa-thread {'on' if thread and t['id']==thread['id'] else ''}" href="{url_for('whatsapp_inbox',thread=t['id'],q=q)}"><div class="wa-avatar">{esc((label or '?')[:1].upper())}</div><div class="wa-thread-main"><b>{esc(label)}</b><small>{esc(t['phone'])}</small><span>{esc((t['last_message'] or 'Sin mensajes')[:78])}</span></div>{unread_badge}</a>''')
+        avatar = f'<img src="{esc(avatars[t["id"]])}" alt="" referrerpolicy="no-referrer" loading="lazy" style="width:42px;height:42px;object-fit:cover;border-radius:50%">' if avatars.get(t['id']) else esc((label or '?')[:1].upper())
+        trows.append(f'''<a class="wa-thread {'on' if thread and t['id']==thread['id'] else ''}" href="{url_for('whatsapp_inbox',thread=t['id'],q=q)}"><div class="wa-avatar">{avatar}</div><div class="wa-thread-main"><b>{esc(label)}</b><small>{esc(t['phone'])}</small><span>{esc((t['last_message'] or 'Sin mensajes')[:78])}</span></div>{unread_badge}</a>''')
     bubbles=[]
     for m in messages:
         out=m['direction']=='OUT'
@@ -359,7 +371,7 @@ def inbox():
     composer='''<div class="wa-empty">Selecciona una conversación o inicia una nueva.</div>'''
     if thread:
         composer=f'''<div class="wa-chat-head"><div><b>{esc(thread['customer_name'] or thread['display_name'] or thread['phone'])}</b><small>{esc(thread['phone'])}</small></div><span class="tag {'ok' if _meta_ready() else 'warn'}">{'Credenciales cargadas' if _meta_ready() else 'Conexión pendiente'}</span></div>
-        {customer_card}<div class="wa-messages">{''.join(bubbles) or '<div class="wa-empty">Todavía no hay mensajes.</div>'}</div>
+        {customer_card}{history_button}<div class="wa-messages">{''.join(bubbles) or '<div class="wa-empty">Todavía no hay mensajes.</div>'}</div>
         <form class="wa-compose" method="post" action="{url_for('whatsapp_send')}"><input type="hidden" name="thread_id" value="{thread['id']}"><input type="hidden" name="phone" value="{esc(thread['phone'])}"><select class="field" onchange="if(this.value){{this.form.body.value=this.value;this.selectedIndex=0}}"><option value="">Plantillas rápidas…</option>{template_opts}</select><textarea class="field" name="body" rows="2" placeholder="Escribe un mensaje…" required></textarea><button class="btn green">Enviar</button></form>'''
 
     configured='Credenciales de envío cargadas. La entrega se confirma por mensaje.' if _meta_ready() else 'Faltan WHATSAPP_ACCESS_TOKEN y WHATSAPP_PHONE_NUMBER_ID en Railway.'
@@ -378,7 +390,7 @@ def inbox():
     .wa-kpis{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}}.wa-layout{{display:grid;grid-template-columns:360px 1fr;gap:14px;min-height:640px}}.wa-side,.wa-chat{{background:#0d1a29;border:1px solid #22374e;border-radius:12px;overflow:hidden}}.wa-side-head{{padding:14px;border-bottom:1px solid #22374e}}.wa-side-head form{{display:flex;gap:7px}}.wa-side-head input{{width:100%}}.wa-threads{{max-height:590px;overflow:auto}}.wa-thread{{display:grid;grid-template-columns:44px 1fr auto;gap:10px;padding:12px;border-bottom:1px solid #1b3045;align-items:center}}.wa-thread:hover,.wa-thread.on{{background:#122438}}.wa-avatar{{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;background:#075e54;color:#fff;font-weight:900}}.wa-thread-main{{min-width:0}}.wa-thread-main b,.wa-thread-main small,.wa-thread-main span{{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.wa-thread-main small{{color:#7f94aa;margin:2px 0}}.wa-thread-main span{{color:#9fb0c0;font-size:12px}}.wa-unread{{min-width:22px;height:22px;padding:0 6px;border-radius:999px;background:#16c784;color:#052d1f;display:grid;place-items:center;font-size:11px;font-weight:900}}.wa-chat{{display:flex;flex-direction:column}}.wa-chat-head{{padding:14px 16px;border-bottom:1px solid #22374e;display:flex;justify-content:space-between;align-items:center}}.wa-chat-head small{{display:block;color:#8397aa;margin-top:3px}}.wa-messages{{height:520px;min-height:240px;flex:1;overflow:auto;padding:18px;background:radial-gradient(circle at 30% 10%,#10243a,#0a1522 55%)}}.wa-msg{{max-width:72%;padding:10px 12px;border-radius:11px;margin:8px 0;line-height:1.35}}.wa-msg.in{{background:#182a3d;margin-right:auto}}.wa-msg.out{{background:#075e54;margin-left:auto}}.wa-msg small{{display:block;color:#b9c8d5;font-size:10px;margin-top:6px;text-align:right}}.wa-compose{{padding:12px;border-top:1px solid #22374e;display:grid;grid-template-columns:190px 1fr auto;gap:8px;align-items:end}}.wa-compose textarea{{resize:vertical;min-height:44px}}.wa-empty{{padding:40px;text-align:center;color:#8397aa}}.wa-config{{display:grid;grid-template-columns:1fr 1fr;gap:12px}}@media(max-width:950px){{.wa-layout{{grid-template-columns:1fr}}.wa-side{{max-height:360px}}.wa-kpis{{grid-template-columns:repeat(2,1fr)}}}}@media(max-width:650px){{.wa-compose{{grid-template-columns:1fr}}.wa-config{{grid-template-columns:1fr}}.wa-kpis{{grid-template-columns:1fr}}}}
     .wa-kpis .kpi{{padding:12px}}.wa-kpis .value{{font-size:24px}}.wa-status{{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:12px 0;color:#aebdcb;font-size:12px}}.wa-customer{{padding:14px 16px;background:#102237;border-bottom:1px solid #22374e}}.wa-customer h3{{margin:0 0 8px;font-size:13px;color:#9fb0c0}}.wa-customer>.tag{{margin-left:10px}}.wa-facts{{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0}}.wa-facts small{{display:block;color:#9fb0c0;margin-bottom:4px}}.wa-actions{{display:flex;flex-wrap:wrap;gap:7px;margin:12px 0 8px}}.wa-actions .btn{{font-size:12px;padding:8px 10px}}.wa-msg>div{{white-space:pre-wrap;overflow-wrap:anywhere}}.wa-messages{{height:420px}}@media(max-width:650px){{.wa-facts{{grid-template-columns:1fr}}.wa-msg{{max-width:90%}}}}
     </style>
-    <div class="head"><div><h1>WhatsApp</h1><p>Bandeja de chats y cola de mensajes · {esc(_provider_label())}.</p></div><div style="display:flex;gap:8px"><a class="btn" href="{url_for('whatsapp_queue')}">Cola</a><a class="btn green" href="{url_for('greenapi_settings')}">GREEN-API</a><a class="btn blue" href="{url_for('whatsapp_settings')}">Configuración</a></div></div>
+    <div class="head"><div><h1>WhatsApp</h1><p>Bandeja de chats y cola de mensajes · {esc(_provider_label())}.</p></div><div style="display:flex;gap:8px;flex-wrap:wrap">{sync_button}<a class="btn" href="{url_for('whatsapp_queue')}">Cola</a><a class="btn green" href="{url_for('greenapi_settings')}">GREEN-API</a><a class="btn blue" href="{url_for('whatsapp_settings')}">Configuración</a></div></div>
     <div class="wa-status"><span class="tag">{esc(_provider_label())}</span><span id="wa-reception">{esc(reception)}</span><small id="wa-sync">Actualización automática</small></div><div class="wa-kpis"><div class="kpi green1"><div class="label">Conexión</div><div class="value" style="font-size:18px">{'CONFIGURADA' if _meta_ready() else 'PENDIENTE'}</div><div class="sub">{esc(_provider_label())}</div></div><div class="kpi blue1"><div class="label">Chats</div><div class="value">{len(threads)}</div><div class="sub">Cargados</div></div><div class="kpi orange1"><div class="label">No leídos</div><div class="value">{unread}</div><div class="sub">Mensajes</div></div><div class="kpi red1"><div class="label">Cola</div><div class="value">{queue_pending}</div><div class="sub">Pendientes · {queue_error} error(es)</div></div></div>
     <details class="panel"><summary class="btn">+ Nueva conversación</summary><form method="post" action="{url_for('whatsapp_new_thread')}" class="toolbar" style="margin:0"><input class="field" name="phone" placeholder="Número para nueva conversación" required><input class="field" name="name" placeholder="Nombre (opcional)"><button class="btn green">Crear conversación</button></form></details>
     <div class="wa-layout"><div class="wa-side"><div class="wa-side-head"><form method="get"><input class="field" name="q" value="{esc(q)}" placeholder="Buscar nombre o número"><button class="btn">Buscar</button></form></div><div class="wa-threads">{''.join(trows) or '<div class="wa-empty">Sin conversaciones todavía.</div>'}</div></div><div class="wa-chat">{composer}</div></div>'''
@@ -572,6 +584,8 @@ def setup(app):
     ultra.setup(app)
     whapi.setup(app)
     greenapi.setup(app)
+    import greenapi_chats
+    greenapi_chats.setup(app)
     app.add_url_rule('/whatsapp',endpoint='whatsapp_inbox',view_func=inbox,methods=['GET'])
     app.add_url_rule('/whatsapp/revision',endpoint='whatsapp_revision',view_func=revision,methods=['GET'])
     app.add_url_rule('/whatsapp/new',endpoint='whatsapp_new_thread',view_func=new_thread,methods=['POST'])

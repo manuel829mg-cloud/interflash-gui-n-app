@@ -443,22 +443,33 @@ def dashboard_plus():
     if router_bad: alerts.append(('bad',f'{router_bad} router/agente no está ONLINE',url_for('routers')))
     if not wan_rows: alerts.append(('warn','Todavía no hay lecturas WAN en el monitor',url_for('routers')))
     alert_html=''.join(f'<a href="{u}" style="display:block;padding:11px 12px;margin:7px 0;border-radius:9px;background:{"#4a161b" if cls=="bad" else "#4e3707"};color:{"#fecaca" if cls=="bad" else "#ffe6a3"}">{esc(txt)}</a>' for cls,txt,u in alerts) or '<div style="padding:12px;border-radius:9px;background:#063f2a;color:#b8f6d6">Sin alertas operativas importantes.</div>'
-    if optical_alert_rows:
-        optical_detail=[]
-        for x in optical_alert_rows:
-            critical=(float(x['rx_power']) < -27 or float(x['rx_power']) > -8)
-            cls='bad' if critical else 'warn'
-            state='CRÍTICA' if critical else 'ALERTA'
-            who=esc(x['customer'] or 'Sin asociar')
-            if x['customer_id']:
-                who=f'<a href="{url_for("customer_profile",id=x["customer_id"])}" style="color:inherit;font-weight:800">{who}</a>'
-            optical_detail.append(
-                f'<tr><td>{who}<br><span class="muted">{esc(x["serial"])}</span></td>'
-                f'<td><b>{float(x["rx_power"]):.2f} dBm</b></td><td>{esc(x["index_key"])}</td>'
-                f'<td><span class="tag {cls}">{state}</span></td></tr>')
-        alert_html += (f'<div style="margin-top:12px"><b>ONU que requieren revisión</b>'
-                       f'<table class="table" style="margin-top:8px"><tr><th>Cliente</th><th>RX</th><th>PON / ONU</th><th>Estado</th></tr>'
-                       f'{"".join(optical_detail)}</table></div>')
+    traffic_rows=[]
+    fresh_rx=0.0; fresh_tx=0.0; fresh_count=0
+    for w in wan_rows:
+        fresh=False
+        try:
+            age=(now-datetime.fromisoformat(w['updated_at'])).total_seconds()
+            fresh=0 <= age <= 180
+        except (ValueError,TypeError):
+            pass
+        rx=max(0,float(w['rx_bps'] or 0)); tx=max(0,float(w['tx_bps'] or 0))
+        if fresh:
+            fresh_rx+=rx; fresh_tx+=tx; fresh_count+=1
+        rx_text=f'{rx/1000000:,.2f} Mbps' if fresh else '—'
+        tx_text=f'{tx/1000000:,.2f} Mbps' if fresh else '—'
+        state='Actualizado' if fresh else 'Sin lectura reciente'
+        traffic_rows.append(f'<tr><td><b>{esc(w["interface_name"])}</b><br><small class="muted">{esc(w["router_name"])}</small></td><td style="color:#75d2ff">{rx_text}</td><td style="color:#70edbd">{tx_text}</td><td><span class="muted">{state}</span><br><small>{esc(w["updated_at"] or "Sin datos")}</small></td></tr>')
+    rx_total=f'{fresh_rx/1000000:,.2f}' if fresh_count else '—'
+    tx_total=f'{fresh_tx/1000000:,.2f}' if fresh_count else '—'
+    traffic_html=f'''<section id="dashboard-traffic" style="margin-top:22px">
+    <h3>Tráfico MikroTik</h3><p class="muted">Descarga y subida por interfaces WAN · Actualización cada 15 segundos</p>
+    <div style="display:flex;flex-wrap:wrap;gap:14px;margin:16px 0">
+    <div style="flex:1;min-width:150px;padding:16px;background:#122d43;border:1px solid #2b5974;border-radius:12px"><span>↓ Descarga</span><div style="font-size:28px;font-weight:750;color:#75d2ff">{rx_total} <small style="font-size:13px">Mbps</small></div></div>
+    <div style="flex:1;min-width:150px;padding:16px;background:#12372f;border:1px solid #2c6554;border-radius:12px"><span>↑ Subida</span><div style="font-size:28px;font-weight:750;color:#70edbd">{tx_total} <small style="font-size:13px">Mbps</small></div></div></div>
+    <p class="muted">{fresh_count} de {len(wan_rows)} interfaces con lectura reciente. Totales de lecturas recientes.</p>
+    <div style="overflow-x:auto"><table class="table"><tr><th>Interfaz</th><th>Descarga</th><th>Subida</th><th>Última lectura</th></tr>{''.join(traffic_rows) or '<tr><td colspan="4">Todavía no se reciben datos de tráfico del MikroTik.</td></tr>'}</table></div>
+    <small class="muted" id="traffic-refresh-status" role="status"></small></section>'''
+    alert_html += traffic_html
     rows=''.join(f'<tr><td>{esc(r["name"])}</td><td>RD${float(r["amount"]):,.2f}</td><td>{esc(r["due_date"])}</td><td><span class="tag {"ok" if r["status"]=="PAGADA" else "warn"}">{esc(r["status"])}</span></td></tr>' for r in recent)
     body=f'''<div class="head"><div><h1>Dashboard</h1><p>Operación diaria de INTER Flash</p></div><div style="display:flex;gap:8px"><a class="btn" href="{url_for('onu_overview')}">ONU / ONT</a><a class="btn green" href="{url_for('customer_new')}">+ Nuevo cliente</a></div></div><style>
 body .dashboard-stats{{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:14px;margin-bottom:24px}}
@@ -477,6 +488,7 @@ body .dashboard-stat .online-dot{{width:7px;height:7px;border-radius:50%;backgro
 @media(max-width:1350px){{body .dashboard-stats{{grid-template-columns:repeat(3,minmax(0,1fr))}}body .dashboard-stat .stat-heading{{flex-direction:row;align-items:center}}body .dashboard-stat .label{{min-height:0}}body .dashboard-stats .dashboard-stat{{min-height:158px}}}}
 @media(max-width:560px){{body .dashboard-stats{{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}}body .dashboard-stats .dashboard-stat{{padding:14px 12px}}body .dashboard-stat .stat-heading{{flex-direction:column;align-items:flex-start;gap:8px}}body .dashboard-stat .label{{min-height:33px}}body .dashboard-stat .value{{font-size:32px}}}}
 </style><div class="grid6 dashboard-stats">{cards}</div><div class="cards2"><div class="panel"><h3>Alertas operativas</h3>{alert_html}</div><div class="panel"><h3>Accesos rápidos</h3><p><a class="btn" href="{url_for('customers')}">Clientes</a></p><p><a class="btn" href="{url_for('mikrotik_commands')}">Cola MikroTik</a></p><p><a class="btn" href="{url_for('customer_trash')}">Papelera</a></p></div></div><div class="panel"><h3>Facturas recientes</h3><table class="table"><tr><th>Cliente</th><th>Monto</th><th>Vence</th><th>Estado</th></tr>{rows or '<tr><td colspan="4" class="muted">Sin facturas.</td></tr>'}</table></div>'''
+    body += "<script>\n(() => {\nlet busy=false;\nsetInterval(async () => {\n if (busy || document.hidden) return;\n busy=true;\n try {\n  const response=await fetch(window.location.pathname, {credentials:'same-origin',cache:'no-store'});\n  if (!response.ok) throw new Error('refresh');\n  const doc=new DOMParser().parseFromString(await response.text(),'text/html');\n  const next=doc.getElementById('dashboard-traffic');\n  const current=document.getElementById('dashboard-traffic');\n  if (!next || !current) throw new Error('refresh');\n  current.replaceWith(next);\n } catch (_) {\n  const status=document.getElementById('traffic-refresh-status');\n  if(status) status.textContent='No se pudo actualizar. Mostrando la última lectura disponible.';\n } finally { busy=false; }\n},15000);\n})();\n</script>"
     return base.shell('Dashboard',body,'dashboard')
 
 

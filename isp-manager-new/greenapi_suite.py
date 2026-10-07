@@ -63,7 +63,7 @@ def api(path, values=None, cfg=None):
     except Exception:
         # Provider URLs contain the credential: never return or log exception strings.
         raise APIError('No se pudo confirmar la respuesta de GREEN-API. Revisa su panel antes de reenviar para evitar duplicados.') from None
-    if not isinstance(result, dict) or result.get('error'):
+    if not isinstance(result, (dict, list)) or (isinstance(result, dict) and result.get('error')):
         raise APIError('GREEN-API no aceptó la solicitud.')
     return result
 

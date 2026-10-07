@@ -48,3 +48,13 @@ body .loginbox{border-radius:24px;background:#102035e8;padding:36px;border-color
 @media(max-width:520px){body .content{padding:15px}body .panel{padding:16px}body .head{gap:14px}body .head>div{min-width:0;max-width:100%}body .kpi,body .wa-kpis .kpi{padding:14px;min-height:110px}body .kpi .value{font-size:24px}body .wa-compose{grid-template-columns:1fr}body .wa-config,body .formgrid,body .cards2{grid-template-columns:1fr}body .toolbar .field{min-width:0;max-width:100%}body .wa-side-head input{min-width:0}body .wa-empty{padding:25px}body .wa-msg{max-width:92%}}
 @media(prefers-reduced-motion:reduce){body *,body *:before,body *:after{transition:none!important;scroll-behavior:auto!important}}
 @media print{body .menu-toggle,body .menu-shade{display:none!important}}
+
+/* Keep every customer action in one horizontal row. */
+body .clients-panel{overflow-x:auto}
+body .clients-table{table-layout:auto}
+body .clients-table .c-actions{width:204px;min-width:204px;white-space:nowrap}
+body .clients-table .icon-actions{display:flex;flex-flow:row nowrap;gap:6px;width:max-content;align-items:center}
+body .clients-table .icon-actions>*{flex:0 0 auto}
+body .clients-table .icon-actions form{display:flex;margin:0}
+body .clients-table .ico{width:34px;height:36px;flex-shrink:0}
+@media(max-width:780px){body .clients-table .c-actions{min-width:0;white-space:normal}}

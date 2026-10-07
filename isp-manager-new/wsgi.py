@@ -201,3 +201,6 @@ operations_health.setup(app)
 
 import whatsapp_events
 whatsapp_events.setup(app)
+
+import invoice_void
+invoice_void.setup(app)

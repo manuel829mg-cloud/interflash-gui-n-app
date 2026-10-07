@@ -198,3 +198,6 @@ import payment_flow
 payment_flow.setup(app)
 import operations_health
 operations_health.setup(app)
+
+import whatsapp_events
+whatsapp_events.setup(app)

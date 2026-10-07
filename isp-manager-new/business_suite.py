@@ -98,7 +98,15 @@ def customer_profile(id):
 def promise_new(customer_id):
     if not base.logged_in(): return redirect(url_for('login'))
     if request.method=='POST':
-        c=base.db(); c.execute('INSERT INTO payment_promises(customer_id,invoice_id,promise_date,amount,status,notes,created_at) VALUES(?,?,?,?,?,?,?)',(customer_id,request.form.get('invoice_id') or None,request.form.get('promise_date'),float(request.form.get('amount') or 0),'PENDIENTE',request.form.get('notes'),datetime.now().isoformat(timespec='seconds'))); c.commit(); c.close(); flash('Promesa registrada.'); return redirect(url_for('customer_profile',id=customer_id))
+        if (session.get('role') or 'ADMIN').upper() not in ('ADMIN','CAJA','COBRADOR'): return 'Sin permiso.',403
+        from whatsapp_events import create_promise
+        try:
+            create_promise(customer_id,request.form.get('invoice_id') or None,request.form.get('promise_date') or '',request.form.get('amount') or '0',request.form.get('notes') or '')
+            flash('Promesa registrada.')
+            return redirect(url_for('customer_profile',id=customer_id))
+        except (ValueError,TypeError) as exc:
+            flash(str(exc))
+            return redirect(url_for('promise_new',customer_id=customer_id))
     c=base.db(); inv=c.execute("SELECT * FROM invoices WHERE customer_id=? AND status='PENDIENTE'",(customer_id,)).fetchall(); c.close(); opts=''.join(f'<option value="{x["id"]}">#{x["id"]} · RD${x["amount"]:,.2f}</option>' for x in inv); return base.shell('Promesa',f'''<div class="head"><div><h1>Promesa de pago</h1></div></div><form class="panel formgrid" method="post"><label>Factura<select name="invoice_id"><option value="">General</option>{opts}</select></label><label>Fecha<input type="date" name="promise_date" required></label><label>Monto<input type="number" step="0.01" name="amount"></label><label>Notas<input name="notes"></label><div class="full"><button class="btn green">Guardar</button></div></form>''','customers')
 
 def portal_toggle(id):

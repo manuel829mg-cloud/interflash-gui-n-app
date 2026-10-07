@@ -155,10 +155,15 @@ def control_result_compat():
     result = str(p.get('result') or '')[:500]
 
     c = base.db()
+    c.execute('BEGIN IMMEDIATE')
     cmd = c.execute('SELECT * FROM router_commands WHERE id=?', (cid,)).fetchone()
     if not cmd:
         c.close()
         return jsonify(ok=False, error='not-found'), 404
+
+    if cmd['status'] in ('COMPLETADO', 'CANCELADO'):
+        c.close()
+        return jsonify(ok=True)
 
     status = 'COMPLETADO' if ok else 'ERROR'
     c.execute(
@@ -176,6 +181,9 @@ def control_result_compat():
             c.execute("UPDATE customers SET status='SUSPENDIDO',service_status='SUSPENDIDO' WHERE id=?", (cmd['customer_id'],))
         elif cmd['action'] == 'REACTIVATE':
             c.execute("UPDATE customers SET status='ACTIVO',service_status='ACTIVO' WHERE id=?", (cmd['customer_id'],))
+    if ok and cmd['customer_id']:
+        from whatsapp_events import command_notice
+        command_notice(c, cmd)
     c.commit()
     c.close()
     return jsonify(ok=True)

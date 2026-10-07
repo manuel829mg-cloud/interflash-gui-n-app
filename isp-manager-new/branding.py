@@ -21,7 +21,7 @@ def _apply_branding(html):
     logo = f'<div class="brandmark brandmark-logo"><img src="{LOGO_URL}" alt="Inter Flash"></div>'
     html = html.replace('<div class="brandmark">IF</div>', logo)
     if _EXTRA_CSS not in html:
-        html = html.replace('</head>', _EXTRA_CSS + '</head>')
+        html = html.replace('</head>', _EXTRA_CSS + '<link rel="stylesheet" href="/static/interflash-theme.css?v=20261007"></head>')
     return html
 
 

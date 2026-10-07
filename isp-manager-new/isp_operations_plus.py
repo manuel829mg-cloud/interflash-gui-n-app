@@ -1,3 +1,4 @@
+import json
 from customers_responsive import device_ip_links
 import re
 import calendar
@@ -245,6 +246,51 @@ def change_plan(id):
     return redirect(url_for('customer_profile',id=id))
 
 
+def _client_traffic_refresh_script(endpoint):
+    return """<script>
+(() => {
+  const endpoint = __ENDPOINT__;
+  const rate = value => {
+    const mbps = Math.max(0, Number(value || 0)) / 1000000;
+    return mbps >= 100 ? mbps.toFixed(0) + ' Mbps' : mbps.toFixed(2) + ' Mbps';
+  };
+  const bytes = value => {
+    let n = Math.max(0, Number(value || 0));
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let i = 0;
+    while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+    return (i === 0 ? n.toFixed(0) : n.toFixed(2)) + ' ' + units[i];
+  };
+  let timer;
+  async function updateTraffic() {
+    if (document.hidden) return;
+    try {
+      const response = await fetch(endpoint, {credentials:'same-origin', cache:'no-store'});
+      if (!response.ok) throw new Error('No se pudo leer el tráfico');
+      const data = await response.json();
+      document.getElementById('client-traffic-download').textContent = rate(data.download_bps);
+      document.getElementById('client-traffic-upload').textContent = rate(data.upload_bps);
+      document.getElementById('client-traffic-down-total').textContent = bytes(data.download_bytes);
+      document.getElementById('client-traffic-up-total').textContent = bytes(data.upload_bytes);
+      const state = document.getElementById('client-traffic-state');
+      state.textContent = data.online ? 'CONECTADO' : (data.has_pppoe ? 'ESPERANDO LECTURA' : 'SIN PPPoE');
+      state.className = 'tag ' + (data.online ? 'ok' : 'warn');
+      document.getElementById('client-traffic-updated').textContent = data.updated_at
+        ? 'Última lectura: ' + data.updated_at + ' · pantalla consultada cada segundo'
+        : (data.has_pppoe ? 'Esperando los contadores del monitor MikroTik…' : 'Este cliente no tiene un usuario PPPoE asociado.');
+    } catch (error) {
+      document.getElementById('client-traffic-state').textContent = 'SIN DATOS';
+      document.getElementById('client-traffic-state').className = 'tag warn';
+    }
+  }
+  updateTraffic();
+  timer = window.setInterval(updateTraffic, 1000);
+  document.addEventListener('visibilitychange', updateTraffic);
+  window.addEventListener('pagehide', () => window.clearInterval(timer), {once:true});
+})();
+</script>""".replace('__ENDPOINT__', json.dumps(endpoint))
+
+
 def customer_profile_plus(id):
     if not base.logged_in(): return redirect(url_for('login'))
     c=base.db()
@@ -260,10 +306,6 @@ def customer_profile_plus(id):
     profiles=c.execute('SELECT DISTINCT name FROM push_ppp_profiles WHERE COALESCE(name,"")<>"" ORDER BY name').fetchall() if _table_exists(c,'push_ppp_profiles') else []
     active=c.execute('SELECT * FROM push_pppoe_active WHERE name=? ORDER BY id DESC LIMIT 1',(cu['pppoe'],)).fetchone() if _table_exists(c,'push_pppoe_active') and cu['pppoe'] else None
     secret=c.execute('SELECT * FROM push_pppoe_secrets WHERE name=? ORDER BY id DESC LIMIT 1',(cu['pppoe'],)).fetchone() if _table_exists(c,'push_pppoe_secrets') and cu['pppoe'] else None
-    traffic=None
-    if _table_exists(c,'push_router_traffic') and cu['pppoe']:
-        traffic=c.execute('''SELECT * FROM push_router_traffic WHERE router_name=? AND LOWER(interface_name) LIKE ? ORDER BY updated_at DESC LIMIT 1''',
-                          (cu['router_name'] or 'CCR2116','%'+str(cu['pppoe']).lower()+'%')).fetchone()
     debt=float(c.execute("SELECT COALESCE(SUM(amount),0) s FROM invoices WHERE customer_id=? AND status='PENDIENTE'",(id,)).fetchone()['s'] or 0)
     oldest=c.execute("SELECT MIN(due_date) d FROM invoices WHERE customer_id=? AND status='PENDIENTE'",(id,)).fetchone()['d']
     last_payment=c.execute('SELECT MAX(paid_at) p FROM payments WHERE customer_id=?',(id,)).fetchone()['p']
@@ -294,8 +336,6 @@ def customer_profile_plus(id):
     active_names={cu['pppoe']} if active else set(); disabled={cu['pppoe']: str(secret['disabled'] or '').lower() in ('yes','true','1')} if secret and cu['pppoe'] else {}
     state, state_cls=_real_state(cu,active_names,disabled)
     due=oldest or _due_date_for(cu['due_day']).isoformat(); overdue=bool(oldest and oldest < date.today().isoformat() and debt>0)
-    rx_mbps=(float(traffic['rx_bps'] or 0)/1_000_000) if traffic else 0.0
-    tx_mbps=(float(traffic['tx_bps'] or 0)/1_000_000) if traffic else 0.0
     wa=_phone_wa(cu['phone'])
     plan_opts=''.join(f'<option value="{p["id"]}" {"selected" if str(cu["plan_id"] or "")==str(p["id"]) else ""}>{esc(p["name"])} · {p["download_mbps"]}/{p["upload_mbps"]} Mbps · RD${p["price"]:,.0f}</option>' for p in plans)
     profile_names=[x['name'] for x in profiles]
@@ -349,15 +389,16 @@ def customer_profile_plus(id):
     wa_btn=f'<a class="btn" style="border-color:#168a57;color:#70ebb0" target="_blank" href="https://wa.me/{wa}">WhatsApp</a>' if wa else ''
 
     body=f'''<style>.profile-kpis{{display:grid;grid-template-columns:repeat(5,minmax(140px,1fr));gap:10px}}.mini{{background:#0d1a29;border:1px solid #22374e;border-radius:11px;padding:13px}}.mini small{{display:block;color:#89a0b7;text-transform:uppercase;font-weight:800;font-size:10px}}.mini b{{display:block;font-size:19px;margin-top:5px}}.actionline{{display:flex;gap:7px;flex-wrap:wrap;align-items:center}}.split2{{display:grid;grid-template-columns:1fr 1fr;gap:14px}}@media(max-width:1000px){{.profile-kpis{{grid-template-columns:repeat(2,1fr)}}.split2{{grid-template-columns:1fr}}}}</style>
-    <div class="head"><div><h1>{esc(cu['name'])}</h1><p>{esc(cu['code'])} · {esc(cu['pppoe'] or 'Sin PPPoE')} · {esc(cu['zone_name'] or cu['zone'] or 'Sin zona')}</p></div><div class="actionline"><a class="btn" href="{url_for('customers')}">← Clientes</a>{wa_btn}<a class="btn blue" href="{url_for('customer_edit',id=id)}">Editar</a></div></div>
+    <div class="head"><div><h1>{esc(cu['name'])}</h1><p>{esc(cu['code'])} · {esc(cu['pppoe'] or 'Sin PPPoE')} · {esc(cu['zone_name'] or cu['zone'] or 'Sin zona')}</p></div><div class="actionline"><a class="btn" href="{url_for('customers')}">← Clientes</a><a class="btn" href="#client-traffic">Tráfico</a>{wa_btn}<a class="btn blue" href="{url_for('customer_edit',id=id)}">Editar</a></div></div>
     <div class="profile-kpis"><div class="mini"><small>PPPoE real</small><b><span class="tag {state_cls}">{esc(state)}</span></b><span class="muted">{esc(active['address'] if active else cu['ip_address'] or '-')}</span></div><div class="mini"><small>Deuda</small><b style="color:{'#ff7b86' if debt else '#57e6a0'}">RD${debt:,.0f}</b><span class="muted">{'Vencida' if overdue else 'Pendiente' if debt else 'Al día'}</span></div><div class="mini"><small>Vencimiento</small><b>{esc(due)}</b><span class="muted">Día {esc(cu['due_day'])}</span></div><div class="mini"><small>Último pago</small><b>{esc((last_payment or '-')[:10])}</b><span class="muted">{esc(cu['plan_name'] or '-')}</span></div><div class="mini"><small>ONU / ONT</small><b><span class="tag {onu_cls}">{esc(onu_state)}</span></b><span class="muted">RX {esc(onu_latest['rx_power'] if onu_latest else '-')}</span></div></div>
     <div class="panel"><div class="actionline"><form method="post" action="{url_for('customer_service_action',id=id,action=service_action)}"><button class="btn {'green' if service_action=='REACTIVATE' else ''}" onclick="return confirm('¿{service_label} este cliente?')">{service_label}</button></form><form method="post" action="{url_for('restart_pppoe',id=id)}"><button class="btn" onclick="return confirm('¿Reiniciar la sesión PPPoE de este cliente?')">Reiniciar PPPoE</button></form><a class="btn" href="{url_for('promise_new',customer_id=id)}">Promesa de pago</a><a class="btn" href="{url_for('customer_service_info',id=id)}">Servicio / mapa</a></div></div>
     <div class="split2"><div class="panel"><h3>Cambiar plan / perfil</h3><form method="post" action="{url_for('change_customer_plan',id=id)}" class="formgrid"><label>Plan comercial<select name="plan_id"><option value="">Sin plan</option>{plan_opts}</select></label><label>Perfil MikroTik<select name="mikrotik_profile"><option value="">Sin cambiar perfil</option>{prof_opts}</select></label><div class="full"><button class="btn blue">Guardar cambio</button></div></form></div>
-    <div class="panel"><h3>Consumo / sesión PPPoE</h3><div class="profile-kpis" style="grid-template-columns:repeat(2,1fr)"><div class="mini"><small>Descarga actual</small><b>{rx_mbps:.2f} Mbps</b><span class="muted">{esc(traffic['interface_name'] if traffic else 'Sin contador sincronizado')}</span></div><div class="mini"><small>Subida actual</small><b>{tx_mbps:.2f} Mbps</b><span class="muted">Uptime {esc(active['uptime'] if active else '-')}</span></div></div></div></div>
+    <style>.client-traffic-grid{{grid-template-columns:repeat(4,minmax(120px,1fr))}}@media(max-width:700px){{.client-traffic-grid{{grid-template-columns:repeat(2,minmax(120px,1fr))}}}}</style><div class="panel client-traffic-panel" id="client-traffic"><div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap"><div><h3 style="margin:0">Tráfico del cliente</h3><p class="muted" style="margin:5px 0 0">Lectura de la sesión PPPoE · solo se consulta mientras esta ficha esté abierta</p></div><span id="client-traffic-state" class="tag warn">Cargando…</span></div><div class="profile-kpis client-traffic-grid" style="margin-top:12px"><div class="mini"><small>Descarga actual</small><b id="client-traffic-download">—</b><span class="muted">Velocidad recibida por el cliente</span></div><div class="mini"><small>Subida actual</small><b id="client-traffic-upload">—</b><span class="muted">Velocidad enviada por el cliente</span></div><div class="mini"><small>Descargado en esta sesión</small><b id="client-traffic-down-total">—</b></div><div class="mini"><small>Subido en esta sesión</small><b id="client-traffic-up-total">—</b></div></div><p id="client-traffic-updated" class="muted" style="margin:12px 0 0">Esperando la primera lectura del MikroTik…</p></div>
     <div class="panel"><h3>Historial de conexión PPPoE</h3><div class="profile-kpis" style="grid-template-columns:repeat(4,minmax(140px,1fr));margin-bottom:14px"><div class="mini"><small>Sesión actual</small><b>{esc(current_session)}</b><span class="muted">{esc(state)}</span></div><div class="mini"><small>Última conexión</small><b style="font-size:14px">{esc(last_on_text)}</b></div><div class="mini"><small>Última desconexión</small><b style="font-size:14px">{esc(last_off_text)}</b></div><div class="mini"><small>Microcortes 24h</small><b>{int(microcuts24 or 0)}</b><span class="muted">Reconexión ≤ 2 min</span></div></div><table class="table"><tr><th>Fecha</th><th>Evento</th><th>Detalle</th></tr>{connr}</table></div>
     <div class="panel"><h3>ONU / ONT</h3><table class="table"><tr><th>Equipo</th><th>Serial</th><th>OLT / PON</th><th>RX</th><th>TX</th><th>Estado</th><th>Última lectura</th></tr>{onur}</table></div>
     <div class="split2"><div class="panel"><h3>Facturas</h3><table class="table"><tr><th>#</th><th>Concepto</th><th>Monto</th><th>Vence</th><th>Estado</th></tr>{invr}</table></div><div class="panel"><h3>Pagos</h3><table class="table"><tr><th>Fecha</th><th>Monto</th><th>Método</th><th>Ref.</th></tr>{payr}</table></div></div>
     <div class="split2"><div class="panel"><h3>Historial de acciones</h3><table class="table"><tr><th>Fecha</th><th>Acción</th><th>Quién</th><th>Detalle</th></tr>{evr}</table></div><div class="panel"><h3>Comandos MikroTik</h3><table class="table"><tr><th>Fecha</th><th>Acción</th><th>Estado</th><th>Resultado</th></tr>{cmdr}</table></div></div>'''
+    body += _client_traffic_refresh_script(url_for('customer_traffic_api', id=id))
     return base.shell('Ficha cliente',body,'customers')
 
 

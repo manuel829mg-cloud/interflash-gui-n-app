@@ -191,6 +191,10 @@ print('INTERFLASH_FULL_ISP_SUITE_ENABLED', flush=True)
 import mobile_app
 mobile_app.setup(app)
 
+# On-demand PPPoE customer traffic endpoint and watch table.
+import client_traffic
+client_traffic.setup(app)
+
 import whatsapp_menu
 whatsapp_menu.start_worker(app)
 

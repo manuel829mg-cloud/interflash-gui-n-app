@@ -64,6 +64,18 @@ def ensure_schema():
       UNIQUE(router_name, interface_name)
     );
     CREATE INDEX IF NOT EXISTS idx_push_router_traffic_router ON push_router_traffic(router_name);
+    CREATE TABLE IF NOT EXISTS push_pppoe_traffic(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      router_name TEXT NOT NULL,
+      pppoe TEXT NOT NULL,
+      download_bytes INTEGER DEFAULT 0,
+      upload_bytes INTEGER DEFAULT 0,
+      download_bps REAL DEFAULT 0,
+      upload_bps REAL DEFAULT 0,
+      updated_at TEXT,
+      UNIQUE(router_name, pppoe)
+    );
+    CREATE INDEX IF NOT EXISTS idx_push_pppoe_traffic_router ON push_pppoe_traffic(router_name, pppoe);
     ''')
     c.commit(); c.close()
 
@@ -168,6 +180,10 @@ def sync_api():
             _touch(c,name,status='SYNCING')
         elif kind=='traffic':
             _save_traffic(c, name, items)
+            _touch(c,name,status='ONLINE')
+        elif kind=='pppoe-traffic':
+            import client_traffic
+            client_traffic.save_samples(c, name, items)
             _touch(c,name,status='ONLINE')
         elif kind=='finish':
             total=c.execute('SELECT COUNT(*) c FROM push_pppoe_secrets WHERE router_name=?',(name,)).fetchone()['c']

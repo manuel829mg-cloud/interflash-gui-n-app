@@ -117,6 +117,15 @@ def traffic_batch():
             )
 
         push_sync._save_traffic(c, name, items)
+        pppoe_watch = []
+        try:
+            if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='client_traffic_watch'").fetchone():
+                pppoe_watch = [r['pppoe'] for r in c.execute(
+                    'SELECT pppoe FROM client_traffic_watch WHERE router_name=? AND expires_at>=? ORDER BY pppoe',
+                    (name, now_s)
+                ).fetchall() if r['pppoe']]
+        except Exception:
+            pppoe_watch = []
         c.execute('DELETE FROM push_pppoe_active WHERE router_name=?', (name,))
         for active_name in sorted(current):
             c.execute(
@@ -127,7 +136,7 @@ def traffic_batch():
         c.commit()
     finally:
         c.close()
-    return jsonify(ok=True, received=len(items), active=len(current))
+    return jsonify(ok=True, received=len(items), active=len(current), pppoe_watch=pppoe_watch)
 
 
 def traffic_script_v2(name):
@@ -144,7 +153,9 @@ def traffic_script_v2(name):
 /system scheduler remove [find where name="interflash-traffic-scheduler"]
 /system script add name="interflash-traffic" policy=read,test source={{
   :local url "{root}/api/mikrotik/traffic-batch";
+  :local relayUrl "{root}/api/mikrotik/relay-sync";
   :local headers "Content-Type:application/x-www-form-urlencoded,X-InterFlash-Relay: {push_sync.TOKEN}";
+  :local jsonHeaders "Content-Type:application/json,X-InterFlash-Relay: {push_sync.TOKEN}";
   :local samples "";\n  :local active "";\n  :foreach session in=[/ppp active print as-value proplist=name] do={{\n    :local u ($session->"name");\n    :if ([:len $active] > 0) do={{ :set active ($active . "|"); }}\n    :set active ($active . $u);\n  }}\n  :foreach item in=[/interface print stats as-value where name~"WAN"] do={{
     :local n ($item->"name");
     :local rx ($item->"rx-byte");
@@ -154,7 +165,17 @@ def traffic_script_v2(name):
   }}
   :if ([:len $samples] > 0) do={{
     :local data ("router={name}&samples=" . $samples . "&active=" . $active);
-    /tool fetch url=$url http-method=post http-header-field=$headers http-data=$data output=none check-certificate=yes;
+    :local sync [/tool fetch url=$url http-method=post http-header-field=$headers http-data=$data output=user as-value check-certificate=yes];
+    :do {{
+      :local syncObj [:deserialize from=json value=($sync->"data")];
+      :foreach pppoe in=($syncObj->"pppoe_watch") do={{
+        :foreach session in=[/ppp active print stats as-value proplist=name,bytes where name=$pppoe] do={{
+          :local record [:serialize to=json value=$session options=json.no-string-conversion];
+          :local pppData ("{{\"router\":\"{name}\",\"kind\":\"pppoe-traffic\",\"items\":[" . $record . "]}}");
+          /tool fetch url=$relayUrl http-method=post http-header-field=$jsonHeaders http-data=$pppData output=none check-certificate=yes;
+        }}
+      }}
+    }} on-error={{}}
   }}
 }}
 /system script remove [find where name="interflash-wan-health"]
@@ -176,8 +197,8 @@ def traffic_script_v2(name):
 /system script run interflash-wan-health
 '''
 
-    body = f'''<div class="head"><div><h1>Activar consumo MikroTik</h1><p>Monitor en tiempo casi real: WAN y estado PPPoE cada 2 segundos; ping real de las 4 líneas cada 10 segundos.</p></div><a class="btn" href="{url_for('router_push_traffic',name=name)}">← Volver</a></div>
-    <div class="panel"><div style="padding:11px;border-radius:8px;background:#063f2a;color:#9ff0c8;margin-bottom:12px"><b>Monitor v6.1 · PPPoE + 4 líneas con ping real.</b> Pega este bloque completo una sola vez. Reemplaza automáticamente el monitor anterior y envía las 4 WAN juntas en una sola petición para no cargar el CCR2116.</div><textarea class="field" style="width:100%;height:440px;font-family:Consolas,monospace">{push_sync.escape(script)}</textarea></div>'''
+    body = f'''<div class="head"><div><h1>Activar consumo MikroTik</h1><p>Monitor: 4 WAN y PPPoE cada 2 segundos; ping de las 4 líneas cada 10 segundos. El tráfico individual se consulta al abrir la ficha del cliente.</p></div><a class="btn" href="{url_for('router_push_traffic',name=name)}">← Volver</a></div>
+    <div class="panel"><div style="padding:11px;border-radius:8px;background:#063f2a;color:#9ff0c8;margin-bottom:12px"><b>Monitor v6.2 · Tráfico PPPoE individual bajo demanda + 4 líneas con ping real.</b> Pega este bloque completo una sola vez. Reemplaza automáticamente el monitor anterior y mantiene las cuatro WAN en una sola petición. Solo envía contadores PPPoE de las fichas abiertas.</div><textarea class="field" style="width:100%;height:440px;font-family:Consolas,monospace">{push_sync.escape(script)}</textarea></div>'''
     return base.shell('Activar consumo MikroTik', body, 'routers')
 
 

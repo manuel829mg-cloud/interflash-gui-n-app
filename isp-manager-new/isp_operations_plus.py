@@ -1,3 +1,4 @@
+from customers_responsive import device_ip_links
 import re
 import calendar
 from datetime import date, datetime, timedelta
@@ -147,6 +148,7 @@ def customers_plus():
     sql += 'ORDER BY cu.id DESC'
     rows = c.execute(sql, args).fetchall()
     active_names = {r['name'] for r in c.execute('SELECT name FROM push_pppoe_active').fetchall()} if _table_exists(c, 'push_pppoe_active') else set()
+    active_ips = {(str(a['router_name'] or 'CCR2116').strip(), str(a['name'] or '').strip()): a['address'] for a in c.execute('SELECT router_name,name,address FROM push_pppoe_active')} if _table_exists(c, 'push_pppoe_active') else {}
     secret_disabled = {}
     if _table_exists(c, 'push_pppoe_secrets'):
         for s in c.execute('SELECT name,disabled FROM push_pppoe_secrets').fetchall():
@@ -164,6 +166,8 @@ def customers_plus():
     today = date.today()
     for r in rows:
         state, cls = _real_state(r, active_names, secret_disabled)
+        device_ip = active_ips.get((str(r['router_name'] or 'CCR2116').strip(), str(r['pppoe'] or '').strip())) or r['ip_address']
+        ip_html = device_ip_links(device_ip)
         debt = float(r['debt'] or 0)
         oldest_due = r['oldest_due'] or ''
         overdue = bool(oldest_due and oldest_due < today.isoformat() and debt > 0)
@@ -185,7 +189,7 @@ def customers_plus():
           <td class="c-client"><b>{esc(r['name'])}</b><br><span class="muted">{' · '.join(client_extra)}</span></td>
           <td class="c-plan">{esc(r['plan_name'] or '-')}</td>
           <td class="c-zone">{esc(r['zone_name'] or r['zone'] or '-')}</td>
-          <td class="c-pppoe"><span>{esc(r['pppoe'] or '-')}</span><br><span class="tag {cls}">{esc(state)}</span></td>
+          <td class="c-pppoe"><span>{esc(r['pppoe'] or '-')}</span><br><span class="tag {cls}">{esc(state)}</span>{ip_html}</td>
           <td class="c-due"><span class="{'danger-text' if overdue else ''}">{esc(due)}</span>{'<br><small class="danger-text">VENCIDO</small>' if overdue else ''}</td>
           <td class="c-debt"><b class="{'danger-text' if debt>0 else 'good-text'}">RD${debt:,.0f}</b></td>
           <td class="c-pay">{esc((r['last_payment'] or '-')[:10])}</td>
@@ -199,6 +203,8 @@ def customers_plus():
         </tr>''')
 
     css='''<style>
+    .device-ip{display:flex;flex-direction:column;gap:3px;margin-top:7px}.device-ip-main{color:#53c8ff;font-weight:700;font-size:13px;overflow-wrap:anywhere}.device-ip-https{font-size:10px;color:#8bdac9}.device-ip a:hover{text-decoration:underline}.device-ip-empty{display:block;margin-top:5px;font-size:10px}
+
     .clients-panel{overflow:hidden}.clients-table{width:100%;border-collapse:collapse;table-layout:fixed}.clients-table th,.clients-table td{padding:10px 7px;border-bottom:1px solid #1b3045;text-align:left;vertical-align:middle;font-size:12px;overflow-wrap:anywhere}.clients-table th{font-size:10px;color:#92a5b8;text-transform:uppercase}.c-code{width:8%}.c-client{width:20%}.c-plan{width:11%}.c-zone{width:10%}.c-pppoe{width:14%}.c-due{width:10%}.c-debt{width:9%}.c-pay{width:9%}.c-actions{width:17%}.c-code span,.c-pppoe>span:first-child{white-space:nowrap}.icon-actions{display:flex;gap:5px;align-items:center;flex-wrap:wrap}.icon-actions form{margin:0}.ico{width:34px;height:34px;border:1px solid #2a4058;background:#132336;color:#b9c7d6;border-radius:7px;display:inline-grid;place-items:center;cursor:pointer;padding:0}.ico:hover{background:#1b3149;color:#fff}.ico svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.ico.wa{color:#3ee38f}.ico.warnx{color:#ffcb69}.ico.good{color:#6af0ac}.ico.danger{color:#ff8791}.danger-text{color:#ff7b86}.good-text{color:#5ce3a0}.overdue-row{background:#3b15192e;box-shadow:inset 3px 0 #e34855}.toolbar2{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}.toolbar2 .field{flex:1;min-width:250px}.quick-links{display:flex;gap:8px;flex-wrap:wrap}
     @media(max-width:1300px){.c-zone,.c-pay{display:none}.c-client{width:24%}.c-actions{width:20%}}
     @media(max-width:1050px){.c-plan{display:none}.c-client{width:27%}.c-pppoe{width:18%}.c-actions{width:25%}}
@@ -206,7 +212,7 @@ def customers_plus():
     </style>'''
     body=f'''{css}<div class="head"><div><h1>Clientes</h1><p>Estado PPPoE real, facturación, ONU y acciones rápidas</p></div><div class="quick-links"><a class="btn" href="{url_for('onu_overview')}">ONU / ONT</a><a class="btn" href="{url_for('customer_trash')}">Papelera</a><a class="btn green" href="{url_for('customer_new')}">+ Nuevo cliente</a></div></div>
     <div class="panel clients-panel"><form class="toolbar2" method="get"><input class="field" name="q" value="{esc(q)}" placeholder="Buscar cliente, teléfono, cédula, PPPoE, IP, ONU"><button class="btn blue">Buscar</button><a class="btn" href="{url_for('customers')}">Limpiar</a></form>
-    <table class="clients-table"><thead><tr><th>Código</th><th>Cliente</th><th>Plan</th><th>Zona</th><th>PPPoE / estado</th><th>Vence</th><th>Deuda</th><th>Último pago</th><th>Acciones</th></tr></thead><tbody>{''.join(trs) or '<tr><td colspan="9" class="muted">No hay clientes.</td></tr>'}</tbody></table></div>'''
+    <table class="clients-table"><thead><tr><th>Código</th><th>Cliente</th><th>Plan</th><th>Zona</th><th>PPPoE / estado / IP</th><th>Vence</th><th>Deuda</th><th>Último pago</th><th>Acciones</th></tr></thead><tbody>{''.join(trs) or '<tr><td colspan="9" class="muted">No hay clientes.</td></tr>'}</tbody></table></div>'''
     return base.shell('Clientes', body, 'customers')
 
 

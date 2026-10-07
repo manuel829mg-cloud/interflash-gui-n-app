@@ -40,7 +40,7 @@ class TrafficSamplingTests(unittest.TestCase):
         self.assertEqual(measured['rx_bps'], 400_000_000)
         self.assertEqual(self.report(2.4, 100_000_000), measured)
         self.assertEqual(self.report(3, 150_000_000), measured)
-        self.assertEqual(self.report(4, 200_000_000)['rx_bps'], 400_000_000)
+        self.assertAlmostEqual(self.report(3.1, 155_000_000)['rx_bps'], 400_000_000, places=5)
     def test_real_zero_is_not_hidden(self):
         self.report(0, 0)
         self.report(2, 100_000_000)

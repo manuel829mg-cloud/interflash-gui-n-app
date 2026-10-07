@@ -105,12 +105,12 @@ def _save_traffic(c, name, items):
                 seconds = max((now - before).total_seconds(), 0.0)
                 # Router counters can repeat between refreshes, and concurrent
                 # reporters can arrive only fractions of a second apart.
-                # Measure over at least the monitor's two-second interval;
+                # Measure over at least the requested 1.1-second interval;
                 # keep BOTH the timestamp and counters until then so bytes
                 # are neither lost nor divided by a tiny arrival interval.
-                if seconds < 2.0:
+                if seconds < 1.1:
                     continue
-                if seconds >= 2.0:
+                if seconds >= 1.1:
                     prev_rx = int(prev['rx_bytes']); prev_tx = int(prev['tx_bytes'])
                     if rx >= prev_rx:
                         rx_bps = ((rx - prev_rx) * 8.0) / seconds

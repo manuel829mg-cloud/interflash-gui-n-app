@@ -6,6 +6,7 @@ from datetime import datetime
 from html import escape
 from flask import request, redirect, url_for, flash, jsonify, current_app
 import app as base
+import whatsapp_qr as qr
 
 GRAPH_VERSION = os.getenv('WHATSAPP_GRAPH_VERSION', 'v23.0').strip() or 'v23.0'
 ACCESS_TOKEN = os.getenv('WHATSAPP_ACCESS_TOKEN', '').strip()
@@ -103,7 +104,10 @@ def ensure_schema():
 
 
 def _meta_ready():
-    return bool(ACCESS_TOKEN and PHONE_NUMBER_ID)
+    return qr.configured() if qr.enabled() else bool(ACCESS_TOKEN and PHONE_NUMBER_ID)
+
+def _provider_label():
+    return 'WhatsApp por QR' if qr.enabled() else 'Meta Cloud API'
 
 
 def _thread_for_phone(c, phone, display_name='', customer_id=None):
@@ -160,6 +164,8 @@ def _meta_post(payload):
 
 
 def _send_text(phone, body):
+    if qr.enabled():
+        return qr.send_text(_wa_phone(phone), body)
     if not _meta_ready():
         return False, '', 'Meta Cloud API no está configurada todavía.'
     payload = {
@@ -178,6 +184,8 @@ def _send_text(phone, body):
 
 
 def _send_template(phone, name, language='es'):
+    if qr.enabled():
+        return False, '', 'Las plantillas de Meta requieren la conexión Meta. Usa una respuesta rápida de texto.'
     if not _meta_ready():
         return False, '', 'Meta Cloud API no está configurada todavía.'
     payload = {
@@ -298,14 +306,16 @@ def inbox():
         <form class="wa-compose" method="post" action="{url_for('whatsapp_send')}"><input type="hidden" name="thread_id" value="{thread['id']}"><input type="hidden" name="phone" value="{esc(thread['phone'])}"><select class="field" onchange="if(this.value){{this.form.body.value=this.value;this.selectedIndex=0}}"><option value="">Plantillas rápidas…</option>{template_opts}</select><textarea class="field" name="body" rows="2" placeholder="Escribe un mensaje…" required></textarea><button class="btn green">Enviar</button></form>'''
 
     configured='Credenciales de envío cargadas. La entrega se confirma por mensaje.' if _meta_ready() else 'Faltan WHATSAPP_ACCESS_TOKEN y WHATSAPP_PHONE_NUMBER_ID en Railway.'
+    if qr.enabled():
+        configured='Conexión QR configurada. Consulta su estado en Conectar por QR.' if qr.configured() else 'Falta activar el servicio QR.'
     webhook_state='Token de verificación listo.' if VERIFY_TOKEN else 'Falta WHATSAPP_VERIFY_TOKEN para activar el webhook.'
     body=f'''<style>
     .wa-kpis{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}}.wa-layout{{display:grid;grid-template-columns:360px 1fr;gap:14px;min-height:640px}}.wa-side,.wa-chat{{background:#0d1a29;border:1px solid #22374e;border-radius:12px;overflow:hidden}}.wa-side-head{{padding:14px;border-bottom:1px solid #22374e}}.wa-side-head form{{display:flex;gap:7px}}.wa-side-head input{{width:100%}}.wa-threads{{max-height:590px;overflow:auto}}.wa-thread{{display:grid;grid-template-columns:44px 1fr auto;gap:10px;padding:12px;border-bottom:1px solid #1b3045;align-items:center}}.wa-thread:hover,.wa-thread.on{{background:#122438}}.wa-avatar{{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;background:#075e54;color:#fff;font-weight:900}}.wa-thread-main{{min-width:0}}.wa-thread-main b,.wa-thread-main small,.wa-thread-main span{{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.wa-thread-main small{{color:#7f94aa;margin:2px 0}}.wa-thread-main span{{color:#9fb0c0;font-size:12px}}.wa-unread{{min-width:22px;height:22px;padding:0 6px;border-radius:999px;background:#16c784;color:#052d1f;display:grid;place-items:center;font-size:11px;font-weight:900}}.wa-chat{{display:flex;flex-direction:column}}.wa-chat-head{{padding:14px 16px;border-bottom:1px solid #22374e;display:flex;justify-content:space-between;align-items:center}}.wa-chat-head small{{display:block;color:#8397aa;margin-top:3px}}.wa-messages{{height:520px;min-height:240px;flex:1;overflow:auto;padding:18px;background:radial-gradient(circle at 30% 10%,#10243a,#0a1522 55%)}}.wa-msg{{max-width:72%;padding:10px 12px;border-radius:11px;margin:8px 0;line-height:1.35}}.wa-msg.in{{background:#182a3d;margin-right:auto}}.wa-msg.out{{background:#075e54;margin-left:auto}}.wa-msg small{{display:block;color:#b9c8d5;font-size:10px;margin-top:6px;text-align:right}}.wa-compose{{padding:12px;border-top:1px solid #22374e;display:grid;grid-template-columns:190px 1fr auto;gap:8px;align-items:end}}.wa-compose textarea{{resize:vertical;min-height:44px}}.wa-empty{{padding:40px;text-align:center;color:#8397aa}}.wa-config{{display:grid;grid-template-columns:1fr 1fr;gap:12px}}@media(max-width:950px){{.wa-layout{{grid-template-columns:1fr}}.wa-side{{max-height:360px}}.wa-kpis{{grid-template-columns:repeat(2,1fr)}}}}@media(max-width:650px){{.wa-compose{{grid-template-columns:1fr}}.wa-config{{grid-template-columns:1fr}}.wa-kpis{{grid-template-columns:1fr}}}}
     </style>
-    <div class="head"><div><h1>WhatsApp</h1><p>Bandeja de chats, cola de mensajes y conexión con Meta Cloud API.</p></div><div style="display:flex;gap:8px"><a class="btn" href="{url_for('whatsapp_queue')}">Cola</a><a class="btn blue" href="{url_for('whatsapp_settings')}">Configuración</a></div></div>
-    <div class="wa-kpis"><div class="kpi green1"><div class="label">Conexión</div><div class="value" style="font-size:18px">{'CONFIGURADA' if _meta_ready() else 'PENDIENTE'}</div><div class="sub">Meta Cloud API</div></div><div class="kpi blue1"><div class="label">Chats</div><div class="value">{len(threads)}</div><div class="sub">Cargados</div></div><div class="kpi orange1"><div class="label">No leídos</div><div class="value">{unread}</div><div class="sub">Mensajes</div></div><div class="kpi red1"><div class="label">Cola</div><div class="value">{queue_pending}</div><div class="sub">Pendientes · {queue_error} error(es)</div></div></div>
-    <div class="panel"><b>Recepción de mensajes</b><p id="wa-reception">{esc(reception)}</p><span id="wa-sync" class="muted">Actualización automática cada 5 segundos.</span></div><div class="panel wa-config"><div><b>{esc(configured)}</b><div class="muted" style="margin-top:5px">Número: {esc(BUSINESS_NUMBER or 'por configurar')}</div></div><div><b>{esc(webhook_state)}</b><div class="muted" style="margin-top:5px">Webhook: {esc(_public_webhook_url())}</div></div></div>
-    <div class="panel"><div style="font-weight:900;margin-bottom:9px">Prueba rápida de WhatsApp</div><form method="post" action="{url_for('whatsapp_send')}" class="toolbar" style="margin:0"><input class="field" name="phone" placeholder="Número de prueba, ej. 18097079216" required><input class="field" name="body" value="Hola, esta es una prueba de INTER Flash." placeholder="Mensaje de prueba" required><button class="btn green">Enviar prueba</button></form><div class="muted" style="margin-top:8px">Con el número de prueba de Meta, el destinatario debe estar autorizado en la lista de prueba.</div></div>
+    <div class="head"><div><h1>WhatsApp</h1><p>Bandeja de chats y cola de mensajes · {esc(_provider_label())}.</p></div><div style="display:flex;gap:8px"><a class="btn" href="{url_for('whatsapp_queue')}">Cola</a><a class="btn" href="{url_for('whatsapp_qr_page')}">Conectar por QR</a><a class="btn blue" href="{url_for('whatsapp_settings')}">Configuración</a></div></div>
+    <div class="wa-kpis"><div class="kpi green1"><div class="label">Conexión</div><div class="value" style="font-size:18px">{'CONFIGURADA' if _meta_ready() else 'PENDIENTE'}</div><div class="sub">{esc(_provider_label())}</div></div><div class="kpi blue1"><div class="label">Chats</div><div class="value">{len(threads)}</div><div class="sub">Cargados</div></div><div class="kpi orange1"><div class="label">No leídos</div><div class="value">{unread}</div><div class="sub">Mensajes</div></div><div class="kpi red1"><div class="label">Cola</div><div class="value">{queue_pending}</div><div class="sub">Pendientes · {queue_error} error(es)</div></div></div>
+    <div class="panel"><b>Recepción de mensajes</b><p id="wa-reception">{esc(reception)}</p><span id="wa-sync" class="muted">Actualización automática cada 5 segundos.</span></div><div class="panel wa-config"><div><b>{esc(configured)}</b><div class="muted" style="margin-top:5px">Número: {esc('Consulta el número vinculado en tu celular' if qr.enabled() else BUSINESS_NUMBER or 'por configurar')}</div></div><div><b>{esc(webhook_state)}</b><div class="muted" style="margin-top:5px">Webhook: {esc(qr.PUBLIC_URL if qr.enabled() else _public_webhook_url())}</div></div></div>
+    <div class="panel"><div style="font-weight:900;margin-bottom:9px">Prueba rápida de WhatsApp</div><form method="post" action="{url_for('whatsapp_send')}" class="toolbar" style="margin:0"><input class="field" name="phone" placeholder="Número de prueba, ej. 18097079216" required><input class="field" name="body" value="Hola, esta es una prueba de INTER Flash." placeholder="Mensaje de prueba" required><button class="btn green">Enviar prueba</button></form><div class="muted" style="margin-top:8px">{'Envía una prueba después de vincular tu WhatsApp.' if qr.enabled() else 'Con el número de prueba de Meta, el destinatario debe estar autorizado en la lista de prueba.'}</div></div>
     <div class="panel"><form method="post" action="{url_for('whatsapp_new_thread')}" class="toolbar" style="margin:0"><input class="field" name="phone" placeholder="Número para nueva conversación" required><input class="field" name="name" placeholder="Nombre (opcional)"><button class="btn green">+ Nueva conversación</button></form></div>
     <div class="wa-layout"><div class="wa-side"><div class="wa-side-head"><form method="get"><input class="field" name="q" value="{esc(q)}" placeholder="Buscar nombre o número"><button class="btn">Buscar</button></form></div><div class="wa-threads">{''.join(trows) or '<div class="wa-empty">Sin conversaciones todavía.</div>'}</div></div><div class="wa-chat">{composer}</div></div>'''
     body += r"""<script>
@@ -370,7 +380,7 @@ def send():
                      VALUES(?,?,?,?,?,'PENDIENTE',?)''',(t['id'],t['customer_id'],phone,'text',body,_now()))
     qrow=c.execute('SELECT * FROM whatsapp_queue WHERE id=?',(cur.lastrowid,)).fetchone(); c.commit()
     ok,err=_process_queue_item(c,qrow); c.close()
-    if ok: flash('Meta aceptó el mensaje. Esperando confirmación de entrega.')
+    if ok: flash('El proveedor aceptó el mensaje. Esperando confirmación de entrega.')
     else: flash('Mensaje guardado, pero no pudo enviarse: '+err)
     return redirect(url_for('whatsapp_inbox',thread=t['id']))
 
@@ -408,7 +418,7 @@ def settings_page():
         ('WHATSAPP_GRAPH_VERSION',bool(GRAPH_VERSION),f'Actual: {GRAPH_VERSION}'),
     ]
     vr=''.join(f'''<tr><td><code>{esc(n)}</code></td><td><span class="tag {'ok' if ok else 'warn'}">{'CARGADO' if ok else 'OPCIONAL' if n=='WHATSAPP_BUSINESS_NUMBER' else 'FALTA'}</span></td><td>{esc(desc)}</td></tr>''' for n,ok,desc in vars_rows)
-    body=f'''<div class="head"><div><h1>Configuración WhatsApp</h1><p>Primera fase: Meta Cloud API oficial, bandeja, webhook y cola de mensajes.</p></div><a class="btn" href="{url_for('whatsapp_inbox')}">← WhatsApp</a></div><div class="panel"><h3>Conexión Meta</h3><div class="notice" style="background:#17304b;color:#bfdbfe">Los tokens no se guardan en la base de datos. Se configuran como variables privadas en Railway.</div><table class="table"><tr><th>Variable</th><th>Estado</th><th>Uso</th></tr>{vr}</table><p class="muted">Webhook público: <code>{esc(_public_webhook_url())}</code></p></div><div class="panel"><h3>Plantillas internas</h3><p class="muted">Estas sirven como respuestas rápidas. Más adelante se podrán mapear con plantillas aprobadas de Meta para mensajes fuera de la ventana de atención.</p><table class="table"><tr><th>Nombre</th><th>Código</th><th>Texto</th><th>Plantilla Meta</th></tr>{trs}</table></div>'''
+    body=f'''<div class="head"><div><h1>Configuración WhatsApp</h1><p>Primera fase: Meta Cloud API oficial, bandeja, webhook y cola de mensajes.</p></div><a class="btn" href="{url_for('whatsapp_inbox')}">← WhatsApp</a></div><div class="panel"><h3>Conexión Meta</h3><div class="notice" style="background:#17304b;color:#bfdbfe">Los tokens no se guardan en la base de datos. Se configuran como variables privadas en Railway.</div><table class="table"><tr><th>Variable</th><th>Estado</th><th>Uso</th></tr>{vr}</table><p class="muted">Webhook público: <code>{esc(qr.PUBLIC_URL if qr.enabled() else _public_webhook_url())}</code></p></div><div class="panel"><h3>Plantillas internas</h3><p class="muted">Estas sirven como respuestas rápidas. Más adelante se podrán mapear con plantillas aprobadas de Meta para mensajes fuera de la ventana de atención.</p><table class="table"><tr><th>Nombre</th><th>Código</th><th>Texto</th><th>Plantilla Meta</th></tr>{trs}</table></div>'''
     return base.shell('Configuración WhatsApp',body,'whatsapp_inbox')
 
 
@@ -482,6 +492,7 @@ def webhook():
 
 def setup(app):
     ensure_schema()
+    qr.setup(app)
     app.add_url_rule('/whatsapp',endpoint='whatsapp_inbox',view_func=inbox,methods=['GET'])
     app.add_url_rule('/whatsapp/revision',endpoint='whatsapp_revision',view_func=revision,methods=['GET'])
     app.add_url_rule('/whatsapp/new',endpoint='whatsapp_new_thread',view_func=new_thread,methods=['POST'])

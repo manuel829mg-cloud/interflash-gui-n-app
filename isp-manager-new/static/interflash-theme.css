@@ -87,3 +87,16 @@ body .clients-table .ico.danger:hover{background:#472631;border-color:#a86a77}
 body .clients-table .icon-actions{gap:5px}
 body .clients-table .c-actions{width:184px;min-width:184px}
 @media(max-width:780px){body .clients-table .c-actions{min-width:0}}
+
+/* Match the supplied reference: compact light square line-icon buttons. */
+body .clients-table .ico,
+body .clients-table .ico.wa,
+body .clients-table .ico[title="Editar"],
+body .clients-table .ico.good,
+body .clients-table .ico.danger{width:30px;height:30px;border-radius:3px;background:#eef2f5;border:1px solid #d8e0e7;color:#4f687c;box-shadow:0 1px 2px #0002;transform:none}
+body .clients-table .ico.warnx{width:30px;height:30px;border-radius:3px;background:#fbe8eb;border:1px solid #e9b9c1;color:#c8586b;box-shadow:0 1px 2px #0002}
+body .clients-table .ico.good{color:#39846a;background:#e9f4ef;border-color:#bddbce}
+body .clients-table .ico svg.reference-icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;filter:none}
+body .clients-table .ico:hover{background:#fff;border-color:#9caebd;color:#29495f;filter:none;transform:none;box-shadow:0 1px 3px #0003}
+body .clients-table .ico.warnx:hover,body .clients-table .ico.danger:hover{background:#fbe1e5;color:#b5354e;border-color:#d998a5}
+body .clients-table .icon-actions{gap:4px}

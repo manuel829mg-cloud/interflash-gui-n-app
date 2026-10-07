@@ -100,3 +100,14 @@ body .clients-table .ico svg.reference-icon{width:18px;height:18px;fill:none;str
 body .clients-table .ico:hover{background:#fff;border-color:#9caebd;color:#29495f;filter:none;transform:none;box-shadow:0 1px 3px #0003}
 body .clients-table .ico.warnx:hover,body .clients-table .ico.danger:hover{background:#fbe1e5;color:#b5354e;border-color:#d998a5}
 body .clients-table .icon-actions{gap:4px}
+
+/* Match action buttons to the platform's navy and teal theme. */
+body .clients-table .ico,
+body .clients-table .ico.wa,
+body .clients-table .ico[title="Editar"],
+body .clients-table .ico.danger{background:#15283d;border-color:#304960;color:#b9cedf;box-shadow:inset 0 1px 0 #ffffff05}
+body .clients-table .ico.wa{color:#65d6b7}
+body .clients-table .ico.warnx{background:#352631;border-color:#614052;color:#efa1ad;box-shadow:none}
+body .clients-table .ico.good{background:#15362f;border-color:#2f6456;color:#79dbb8}
+body .clients-table .ico:hover{background:#203d50;border-color:#4c8f91;color:#82e3cf;box-shadow:none}
+body .clients-table .ico.warnx:hover,body .clients-table .ico.danger:hover{background:#472b37;border-color:#916073;color:#ffb1bf}

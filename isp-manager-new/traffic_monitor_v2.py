@@ -151,7 +151,7 @@ def traffic_script_v2(name):
 
     script = f'''/system script remove [find where name="interflash-traffic"]
 /system scheduler remove [find where name="interflash-traffic-scheduler"]
-/system script add name="interflash-traffic" policy=read,test source={{
+/system script add name="interflash-traffic" policy=ftp,read,write,test source={{
   :local url "{root}/api/mikrotik/traffic-batch";
   :local relayUrl "{root}/api/mikrotik/relay-sync";
   :local headers "Content-Type:application/x-www-form-urlencoded,X-InterFlash-Relay: {push_sync.TOKEN}";
@@ -186,7 +186,7 @@ def traffic_script_v2(name):
 }}
 /system script remove [find where name="interflash-wan-health"]
 /system scheduler remove [find where name="interflash-wan-health-scheduler"]
-/system script add name="interflash-wan-health" policy=read,test source={{
+/system script add name="interflash-wan-health" policy=ftp,read,test source={{
   :local url "{root}/api/mikrotik/wan-health";
   :local headers "Content-Type:application/x-www-form-urlencoded,X-InterFlash-Relay: {push_sync.TOKEN}";
   :local r1 [/tool ping address=4.2.2.1 interface=WAN1-CLARO count=3 interval=200ms];
@@ -197,8 +197,8 @@ def traffic_script_v2(name):
   :local data ("router={name}&health=" . $health);
   /tool fetch url=$url http-method=post http-header-field=$headers http-data=$data output=none check-certificate=yes;
 }}
-/system scheduler add name="interflash-traffic-scheduler" interval=2s on-event="/system script run interflash-traffic" policy=read,test start-time=startup
-/system scheduler add name="interflash-wan-health-scheduler" interval=10s on-event="/system script run interflash-wan-health" policy=read,test start-time=startup
+/system scheduler add name="interflash-traffic-scheduler" interval=2s on-event="/system script run interflash-traffic" policy=ftp,read,write,test start-time=startup
+/system scheduler add name="interflash-wan-health-scheduler" interval=10s on-event="/system script run interflash-wan-health" policy=ftp,read,test start-time=startup
 /system script run interflash-traffic
 /system script run interflash-wan-health
 '''

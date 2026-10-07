@@ -352,7 +352,7 @@ def inbox():
         avatars = {r['thread_id']: r['avatar'] for r in c.execute('SELECT * FROM greenapi_chat_profiles WHERE instance=?', (greenapi.config()['channel'],)).fetchall()}
         c.close()
         if session.get('role') == 'ADMIN':
-            sync_button = f'<form method="post" action="{url_for("greenapi_sync")}"><input type="hidden" name="csrf" value="{esc(sync_csrf)}"><button class="btn green">Sincronizar chats</button></form>'
+            sync_button = f'<form method="post" action="{url_for("greenapi_sync")}"><input type="hidden" name="csrf" value="{esc(sync_csrf)}"><button class="btn green">Chats</button></form>'
             if thread:
                 history_button = f'<form method="post" action="{url_for("greenapi_chat_load",thread_id=thread["id"])}" style="display:flex;gap:8px;padding:10px"><input type="hidden" name="csrf" value="{esc(sync_csrf)}"><button class="btn" name="action" value="history">Cargar historial</button><button class="btn" name="action" value="avatar">Cargar foto</button></form>'
     trows=[]

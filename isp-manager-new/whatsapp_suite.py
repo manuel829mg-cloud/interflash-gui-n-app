@@ -277,6 +277,45 @@ def revision():
         c.close()
 
 
+def _customer_card(c, thread):
+    if not thread:
+        return ''
+    customer = None
+    if thread['customer_id']:
+        customer = c.execute("SELECT * FROM customers WHERE id=? AND COALESCE(status,'')<>'ELIMINADO'", (thread['customer_id'],)).fetchone()
+    if not customer:
+        match = _customer_by_phone(c, thread['phone'])
+        if match: customer = c.execute('SELECT * FROM customers WHERE id=?', (match['id'],)).fetchone()
+    actions = []
+    def draft(label, text):
+        return f'<button type="button" class="btn wa-draft" data-message="{esc(text)}">{esc(label)}</button>'
+    if customer:
+        plan = c.execute('SELECT name FROM plans WHERE id=?', (customer['plan_id'],)).fetchone()
+        invoices = c.execute('''SELECT i.*, COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id=i.id),0) paid
+            FROM invoices i WHERE i.customer_id=? AND i.status IN ('PENDIENTE','VENCIDA') ORDER BY i.due_date,i.id''', (customer['id'],)).fetchall()
+        pending = [(i, max(0, float(i['amount'] or 0)-float(i['paid'] or 0))) for i in invoices]
+        pending = [(i, amount) for i, amount in pending if amount > 0.005]
+        balance = sum(amount for _, amount in pending)
+        due = pending[0][0]['due_date'] if pending else 'Sin facturas pendientes'
+        profile = url_for('customer_profile', id=customer['id']) if 'customer_profile' in current_app.view_functions else url_for('customers')
+        details = f'''<b>{esc(customer['name'])}</b><span class="tag">{esc(customer['status'])}</span>
+        <div class="wa-facts"><div><small>Plan</small>{esc(plan['name'] if plan else 'Sin plan asignado')}</div><div><small>Saldo de facturas</small>RD${balance:,.2f}</div><div><small>Vencimiento más próximo</small>{esc(due)}</div></div>
+        <a class="btn" href="{profile}">Ver ficha completa</a>'''
+        if pending:
+            inv, amount = pending[0]
+            actions.append(draft('Resumen de factura', f"Hola, {customer['name']}. Tu factura #{inv['id']} de INTER Flash: {inv['concept']}. Saldo pendiente: RD${amount:,.2f}. Vencimiento: {inv['due_date']}."))
+            actions.append(draft('Recordar pago', f"Hola, {customer['name']}. Te recordamos que tienes RD${balance:,.2f} pendientes en facturas de INTER Flash. Vencimiento más próximo: {due}. Si ya pagaste, envíanos el comprobante para revisarlo. Gracias."))
+    else:
+        details = '<b>Contacto sin cliente asociado</b><p class="muted">No encontramos un cliente activo registrado con este número.</p>'
+    if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='bank_accounts'").fetchone():
+        banks = c.execute("SELECT * FROM bank_accounts WHERE active=1 AND COALESCE(account_number,'')<>'' ORDER BY id").fetchall()
+        if banks:
+            text = 'Cuentas para pagos de INTER Flash:\n' + '\n\n'.join(f"{b['bank']} · {b['account_type'] or ''}\nCuenta: {b['account_number']}\n{b['label'] or ''}" for b in banks) + '\n\nEnvíanos tu comprobante después de pagar.'
+            actions.append(draft('Cuentas bancarias', text))
+    actions.append(draft('Solicitar comprobante', 'Hola, por favor envíanos el comprobante de pago y el nombre del titular del servicio para revisarlo. Gracias por elegir INTER Flash.'))
+    return f'<div class="wa-customer"><h3>Ficha del cliente</h3>{details}<div class="wa-actions">{"".join(actions)}</div><small class="muted">Los botones preparan un borrador. Revísalo antes de enviar.</small></div>'
+
+
 def inbox():
     if not base.logged_in(): return redirect(url_for('login'))
     ensure_schema()
@@ -302,6 +341,7 @@ def inbox():
     unread=c.execute('SELECT COALESCE(SUM(unread),0) c FROM whatsapp_threads').fetchone()['c']
     templates=c.execute('SELECT * FROM whatsapp_local_templates WHERE active=1 ORDER BY id').fetchall()
     reception = _reception_summary(c)
+    customer_card = _customer_card(c, thread)
     c.close()
 
     trows=[]
@@ -318,8 +358,8 @@ def inbox():
     template_opts=''.join(f'<option value="{esc(x["body"])}">{esc(x["title"])}</option>' for x in templates)
     composer='''<div class="wa-empty">Selecciona una conversación o inicia una nueva.</div>'''
     if thread:
-        composer=f'''<div class="wa-chat-head"><div><b>{esc(thread['customer_name'] or thread['display_name'] or thread['phone'])}</b><small>{esc(thread['phone'])}</small></div><span class="tag {'ok' if _meta_ready() else 'warn'}">{'Credenciales cargadas' if _meta_ready() else 'Falta configurar Meta'}</span></div>
-        <div class="wa-messages">{''.join(bubbles) or '<div class="wa-empty">Todavía no hay mensajes.</div>'}</div>
+        composer=f'''<div class="wa-chat-head"><div><b>{esc(thread['customer_name'] or thread['display_name'] or thread['phone'])}</b><small>{esc(thread['phone'])}</small></div><span class="tag {'ok' if _meta_ready() else 'warn'}">{'Credenciales cargadas' if _meta_ready() else 'Conexión pendiente'}</span></div>
+        {customer_card}<div class="wa-messages">{''.join(bubbles) or '<div class="wa-empty">Todavía no hay mensajes.</div>'}</div>
         <form class="wa-compose" method="post" action="{url_for('whatsapp_send')}"><input type="hidden" name="thread_id" value="{thread['id']}"><input type="hidden" name="phone" value="{esc(thread['phone'])}"><select class="field" onchange="if(this.value){{this.form.body.value=this.value;this.selectedIndex=0}}"><option value="">Plantillas rápidas…</option>{template_opts}</select><textarea class="field" name="body" rows="2" placeholder="Escribe un mensaje…" required></textarea><button class="btn green">Enviar</button></form>'''
 
     configured='Credenciales de envío cargadas. La entrega se confirma por mensaje.' if _meta_ready() else 'Faltan WHATSAPP_ACCESS_TOKEN y WHATSAPP_PHONE_NUMBER_ID en Railway.'
@@ -336,15 +376,21 @@ def inbox():
         webhook_state='Recepción de GREEN-API configurada.'
     body=f'''<style>
     .wa-kpis{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}}.wa-layout{{display:grid;grid-template-columns:360px 1fr;gap:14px;min-height:640px}}.wa-side,.wa-chat{{background:#0d1a29;border:1px solid #22374e;border-radius:12px;overflow:hidden}}.wa-side-head{{padding:14px;border-bottom:1px solid #22374e}}.wa-side-head form{{display:flex;gap:7px}}.wa-side-head input{{width:100%}}.wa-threads{{max-height:590px;overflow:auto}}.wa-thread{{display:grid;grid-template-columns:44px 1fr auto;gap:10px;padding:12px;border-bottom:1px solid #1b3045;align-items:center}}.wa-thread:hover,.wa-thread.on{{background:#122438}}.wa-avatar{{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;background:#075e54;color:#fff;font-weight:900}}.wa-thread-main{{min-width:0}}.wa-thread-main b,.wa-thread-main small,.wa-thread-main span{{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.wa-thread-main small{{color:#7f94aa;margin:2px 0}}.wa-thread-main span{{color:#9fb0c0;font-size:12px}}.wa-unread{{min-width:22px;height:22px;padding:0 6px;border-radius:999px;background:#16c784;color:#052d1f;display:grid;place-items:center;font-size:11px;font-weight:900}}.wa-chat{{display:flex;flex-direction:column}}.wa-chat-head{{padding:14px 16px;border-bottom:1px solid #22374e;display:flex;justify-content:space-between;align-items:center}}.wa-chat-head small{{display:block;color:#8397aa;margin-top:3px}}.wa-messages{{height:520px;min-height:240px;flex:1;overflow:auto;padding:18px;background:radial-gradient(circle at 30% 10%,#10243a,#0a1522 55%)}}.wa-msg{{max-width:72%;padding:10px 12px;border-radius:11px;margin:8px 0;line-height:1.35}}.wa-msg.in{{background:#182a3d;margin-right:auto}}.wa-msg.out{{background:#075e54;margin-left:auto}}.wa-msg small{{display:block;color:#b9c8d5;font-size:10px;margin-top:6px;text-align:right}}.wa-compose{{padding:12px;border-top:1px solid #22374e;display:grid;grid-template-columns:190px 1fr auto;gap:8px;align-items:end}}.wa-compose textarea{{resize:vertical;min-height:44px}}.wa-empty{{padding:40px;text-align:center;color:#8397aa}}.wa-config{{display:grid;grid-template-columns:1fr 1fr;gap:12px}}@media(max-width:950px){{.wa-layout{{grid-template-columns:1fr}}.wa-side{{max-height:360px}}.wa-kpis{{grid-template-columns:repeat(2,1fr)}}}}@media(max-width:650px){{.wa-compose{{grid-template-columns:1fr}}.wa-config{{grid-template-columns:1fr}}.wa-kpis{{grid-template-columns:1fr}}}}
+    .wa-kpis .kpi{{padding:12px}}.wa-kpis .value{{font-size:24px}}.wa-status{{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:12px 0;color:#aebdcb;font-size:12px}}.wa-customer{{padding:14px 16px;background:#102237;border-bottom:1px solid #22374e}}.wa-customer h3{{margin:0 0 8px;font-size:13px;color:#9fb0c0}}.wa-customer>.tag{{margin-left:10px}}.wa-facts{{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0}}.wa-facts small{{display:block;color:#9fb0c0;margin-bottom:4px}}.wa-actions{{display:flex;flex-wrap:wrap;gap:7px;margin:12px 0 8px}}.wa-actions .btn{{font-size:12px;padding:8px 10px}}.wa-msg>div{{white-space:pre-wrap;overflow-wrap:anywhere}}.wa-messages{{height:420px}}@media(max-width:650px){{.wa-facts{{grid-template-columns:1fr}}.wa-msg{{max-width:90%}}}}
     </style>
     <div class="head"><div><h1>WhatsApp</h1><p>Bandeja de chats y cola de mensajes · {esc(_provider_label())}.</p></div><div style="display:flex;gap:8px"><a class="btn" href="{url_for('whatsapp_queue')}">Cola</a><a class="btn green" href="{url_for('greenapi_settings')}">GREEN-API</a><a class="btn blue" href="{url_for('whatsapp_settings')}">Configuración</a></div></div>
-    <div class="wa-kpis"><div class="kpi green1"><div class="label">Conexión</div><div class="value" style="font-size:18px">{'CONFIGURADA' if _meta_ready() else 'PENDIENTE'}</div><div class="sub">{esc(_provider_label())}</div></div><div class="kpi blue1"><div class="label">Chats</div><div class="value">{len(threads)}</div><div class="sub">Cargados</div></div><div class="kpi orange1"><div class="label">No leídos</div><div class="value">{unread}</div><div class="sub">Mensajes</div></div><div class="kpi red1"><div class="label">Cola</div><div class="value">{queue_pending}</div><div class="sub">Pendientes · {queue_error} error(es)</div></div></div>
-    <div class="panel"><b>Recepción de mensajes</b><p id="wa-reception">{esc(reception)}</p><span id="wa-sync" class="muted">Actualización automática cada 5 segundos.</span></div><div class="panel wa-config"><div><b>{esc(configured)}</b><div class="muted" style="margin-top:5px">Número: {esc((greenapi.config()['phone'] or 'Vinculado en GREEN-API') if greenapi.enabled() else (whapi.config()['phone'] or 'Vinculado en Whapi.Cloud') if whapi.enabled() else 'Vinculado en UltraMsg' if ultra.enabled() else BUSINESS_NUMBER or 'por configurar')}</div></div><div><b>{esc(webhook_state)}</b><div class="muted" style="margin-top:5px">Webhook: {esc(url_for('greenapi_webhook',_external=True,_scheme='https') if greenapi.enabled() else url_for('whapi_webhook',_external=True,_scheme='https') if whapi.enabled() else url_for('ultramsg_webhook',_external=True,_scheme='https') if ultra.enabled() else _public_webhook_url())}</div></div></div>
-    <div class="panel"><div style="font-weight:900;margin-bottom:9px">Prueba rápida de WhatsApp</div><form method="post" action="{url_for('whatsapp_send')}" class="toolbar" style="margin:0"><input class="field" name="phone" placeholder="Número de prueba, ej. 18097079216" required><input class="field" name="body" value="Hola, esta es una prueba de INTER Flash." placeholder="Mensaje de prueba" required><button class="btn green">Enviar prueba</button></form><div class="muted" style="margin-top:8px">{'El plan Developer permite probar con 3 chats. Usa otro teléfono para comprobar la entrega.' if greenapi.enabled() else 'Envía a otro teléfono para comprobar la entrega con Whapi.Cloud.' if whapi.enabled() else 'Envía una prueba después de vincular tu WhatsApp en UltraMsg.' if ultra.enabled() else 'Con el número de prueba de Meta, el destinatario debe estar autorizado en la lista de prueba.'}</div></div>
-    <div class="panel"><form method="post" action="{url_for('whatsapp_new_thread')}" class="toolbar" style="margin:0"><input class="field" name="phone" placeholder="Número para nueva conversación" required><input class="field" name="name" placeholder="Nombre (opcional)"><button class="btn green">+ Nueva conversación</button></form></div>
+    <div class="wa-status"><span class="tag">{esc(_provider_label())}</span><span id="wa-reception">{esc(reception)}</span><small id="wa-sync">Actualización automática</small></div><div class="wa-kpis"><div class="kpi green1"><div class="label">Conexión</div><div class="value" style="font-size:18px">{'CONFIGURADA' if _meta_ready() else 'PENDIENTE'}</div><div class="sub">{esc(_provider_label())}</div></div><div class="kpi blue1"><div class="label">Chats</div><div class="value">{len(threads)}</div><div class="sub">Cargados</div></div><div class="kpi orange1"><div class="label">No leídos</div><div class="value">{unread}</div><div class="sub">Mensajes</div></div><div class="kpi red1"><div class="label">Cola</div><div class="value">{queue_pending}</div><div class="sub">Pendientes · {queue_error} error(es)</div></div></div>
+    <details class="panel"><summary class="btn">+ Nueva conversación</summary><form method="post" action="{url_for('whatsapp_new_thread')}" class="toolbar" style="margin:0"><input class="field" name="phone" placeholder="Número para nueva conversación" required><input class="field" name="name" placeholder="Nombre (opcional)"><button class="btn green">Crear conversación</button></form></details>
     <div class="wa-layout"><div class="wa-side"><div class="wa-side-head"><form method="get"><input class="field" name="q" value="{esc(q)}" placeholder="Buscar nombre o número"><button class="btn">Buscar</button></form></div><div class="wa-threads">{''.join(trows) or '<div class="wa-empty">Sin conversaciones todavía.</div>'}</div></div><div class="wa-chat">{composer}</div></div>'''
     body += r"""<script>
     (() => {
+      document.querySelectorAll('.wa-draft').forEach(button => button.addEventListener('click', () => {
+        const input = document.querySelector('.wa-compose textarea');
+        if (!input) return;
+        if (input.value.trim() && !confirm('¿Reemplazar el borrador actual?')) return;
+        input.value = button.dataset.message; input.focus();
+        input.scrollIntoView({behavior:'smooth', block:'center'});
+      }));
       let previous = null, busy = false;
       const box = document.querySelector('.wa-messages');
       if (box) box.scrollTop = box.scrollHeight;
@@ -444,6 +490,12 @@ def settings_page():
     ]
     vr=''.join(f'''<tr><td><code>{esc(n)}</code></td><td><span class="tag {'ok' if ok else 'warn'}">{'CARGADO' if ok else 'OPCIONAL' if n=='WHATSAPP_BUSINESS_NUMBER' else 'FALTA'}</span></td><td>{esc(desc)}</td></tr>''' for n,ok,desc in vars_rows)
     body=f'''<div class="head"><div><h1>Configuración WhatsApp</h1><p>Proveedor de envío: {esc(_provider_label())}.</p></div><a class="btn" href="{url_for('whatsapp_inbox')}">← WhatsApp</a></div><div class="panel"><h3>GREEN-API por QR</h3><p>Conecta tu instancia autorizada de GREEN-API.</p><a class="btn green" href="{url_for('greenapi_settings')}">Configurar GREEN-API</a></div><div class="panel"><h3>Plantillas internas</h3><p class="muted">Textos disponibles como respuestas rápidas en tus conversaciones.</p><table class="table"><tr><th>Nombre</th><th>Código</th><th>Texto</th></tr>{trs}</table></div>'''
+    c = base.db()
+    reception = _reception_summary(c)
+    c.close()
+    webhook_url = url_for('greenapi_webhook', _external=True, _scheme='https')
+    body += f'''<div class="panel"><h3>Estado de recepción</h3><p>{esc(reception)}</p><p class="muted">Webhook: {esc(webhook_url)}</p></div>
+    <div class="panel"><h3>Prueba de envío</h3><form method="post" action="{url_for('whatsapp_send')}" class="toolbar"><input class="field" name="phone" placeholder="Número de otro teléfono, ej. 18095551234" required><input class="field" name="body" value="Hola, esta es una prueba de INTER Flash." required><button class="btn green">Enviar prueba</button></form><p class="muted">Comprueba la llegada en el teléfono destinatario. Se aplican los límites de tu plan.</p></div>'''
     return base.shell('Configuración WhatsApp',body,'whatsapp_inbox')
 
 

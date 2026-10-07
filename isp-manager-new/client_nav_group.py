@@ -1,4 +1,5 @@
 import app as base
+import menu_icons
 
 def setup():
     base.NAV[:] = [item for item in base.NAV if item[0] != 'client_extract']
@@ -13,7 +14,7 @@ def setup():
             ic=icon or ic; lab=label or lab
             on=' on' if active==ep else ''
             cls='nav-subitem' if sub else 'nav-single'
-            return f'<a class="{cls}{on}" href="{base.url_for(ep)}"><span class="menu-icon">{ic}</span><span class="txt">{lab}</span></a>'
+            return f'<a class="{cls}{on}" href="{base.url_for(ep)}">{menu_icons.icon(ep, lab)}<span class="txt">{lab}</span></a>'
 
         def group(key, icon, label, endpoints):
             children=''.join(item(ep,sub=True) for ep in endpoints if ep in nav)
@@ -24,7 +25,7 @@ def setup():
             parent_on=' on' if is_open else ''
             return f'''<div class="nav-group">
               <a class="nav-parent{parent_on}" href="#" onclick="event.preventDefault();toggleSideGroup('{key}',this)">
-                <span class="menu-icon">{icon}</span><span class="txt">{label}</span><span class="nav-arrow txt">{arrow}</span>
+                {menu_icons.icon(key, label)}<span class="txt">{label}</span><span class="nav-arrow txt">{arrow}</span>
               </a>
               <div id="group-{key}" class="nav-sub" style="display:{display}">{children}</div>
             </div>'''
@@ -32,7 +33,7 @@ def setup():
         parts=[]
         parts.append(item('dashboard','▦','Dashboard'))
         if 'whatsapp_inbox' in nav:
-            parts.append(f'<a class="nav-single" href="{base.url_for("whatsapp_chatbot")}" title="IA / Automatización" aria-label="IA / Automatización"><span class="menu-icon">✧</span><span class="txt">IA / Automatización</span></a>')
+            parts.append(f'<a class="nav-single" href="{base.url_for("whatsapp_chatbot")}" title="IA / Automatización" aria-label="IA / Automatización">{menu_icons.icon("automation")}<span class="txt">IA / Automatización</span></a>')
         parts.append(group('clientes','♙','Clientes',['customers','client_extract','customer_trash']))
         parts.append(group('finanzas','▤','Finanzas',['invoices','payments','expenses_page','banks_page']))
         # Almacén se mostrará automáticamente cuando se agregue un módulo de inventario.
@@ -91,6 +92,7 @@ def setup():
           .nav-sub{margin-left:8px;padding-left:0;border:0}.nav .nav-subitem{padding:9px}.menu-icon{width:28px;min-width:28px}.side-footer{display:none}
         }
         '''
+        extra_css += menu_icons.CSS
         script='''
         <script>
         function toggleMobileMenu(force){
@@ -113,9 +115,9 @@ def setup():
         return base.render_template_string('''<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{title}} · INTER Flash</title><style>{{css}}{{extra_css}}</style></head><body><div class="app">
         <button class="menu-shade" aria-label="Cerrar menú" onclick="toggleMobileMenu(false)"></button><aside class="side" id="main-menu"><div class="brand"><div class="brandmark">IF</div><div class="txt"><b>INTER Flash</b><small>ISP Manager</small></div></div>
         <div class="side-user"><div class="side-avatar">{{initial}}</div><div class="txt"><b>{{user}}</b><small>{{role}}</small></div></div>
-        <nav class="nav">{{links|safe}}<div class="nav-divider"></div><a class="nav-single" href="{{url_for('logout')}}"><span class="menu-icon">↪</span><span class="txt">Salir</span></a></nav>
+        <nav class="nav">{{links|safe}}<div class="nav-divider"></div><a class="nav-single" href="{{url_for('logout')}}">{{logout_icon|safe}}<span class="txt">Salir</span></a></nav>
         <div class="side-footer">© 2026 INTER Flash Management</div></aside>
         <main class="main"><header class="top"><button type="button" class="btn menu-toggle" aria-label="Abrir menú" aria-controls="main-menu" aria-expanded="false" onclick="toggleMobileMenu()">☰</button><input class="search" placeholder="Buscar clientes, facturas, ONU, IP..." onkeydown="if(event.key==='Enter'){location.href='{{url_for('customers')}}?q='+encodeURIComponent(this.value)}"><div class="user">{{role}} · {{user}}</div></header><section class="content">{{msgs|safe}}{{body|safe}}</section></main>
-        </div>{{script|safe}}</body></html>''',title=title,css=base.BASE_CSS,extra_css=extra_css,links=links_html,body=body,user=user,role=role_label,initial=(user[:1] or 'M').upper(),msgs=msgs,script=script)
+        </div>{{script|safe}}</body></html>''',logout_icon=menu_icons.icon("logout"),title=title,css=base.BASE_CSS,extra_css=extra_css,links=links_html,body=body,user=user,role=role_label,initial=(user[:1] or 'M').upper(),msgs=msgs,script=script)
 
     base.shell=grouped_shell

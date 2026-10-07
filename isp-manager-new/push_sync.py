@@ -79,7 +79,7 @@ def _touch(c,name,identity='',version='',status='ONLINE'):
 
 def _save_traffic(c, name, items):
     now = datetime.now()
-    now_s = now.isoformat(timespec='seconds')
+    now_s = now.isoformat(timespec='microseconds')
     for x in items:
         if not isinstance(x, dict):
             continue
@@ -97,7 +97,11 @@ def _save_traffic(c, name, items):
             try:
                 before = datetime.fromisoformat(prev['updated_at'])
                 seconds = max((now - before).total_seconds(), 0.0)
-                if seconds >= 1:
+                # Closely spaced updates must not overwrite traffic with a false zero.
+                # Leave the baseline intact so the next reading includes these bytes.
+                if seconds < 0.1:
+                    continue
+                if seconds >= 0.1:
                     prev_rx = _int(prev['rx_bytes']); prev_tx = _int(prev['tx_bytes'])
                     if rx >= prev_rx:
                         rx_bps = ((rx - prev_rx) * 8.0) / seconds

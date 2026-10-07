@@ -28,12 +28,12 @@ def invoices_plus():
         try: base.audit('INVOICE_CREATE',f'#{iid} cliente {cid}')
         except Exception: pass
         flash('Factura creada.'); return redirect(url_for('invoice_detail',id=iid))
-    customers=c.execute("""SELECT cu.id,cu.name,p.name plan_name,p.price FROM customers cu LEFT JOIN plans p ON p.id=cu.plan_id
+    customers=c.execute("""SELECT cu.id,cu.name,cu.code,cu.phone,cu.pppoe,p.name plan_name,p.price FROM customers cu LEFT JOIN plans p ON p.id=cu.plan_id
                            WHERE COALESCE(cu.status,'ACTIVO')<>'ELIMINADO' ORDER BY cu.name""").fetchall()
     rows=c.execute("""SELECT i.*,cu.name customer FROM invoices i JOIN customers cu ON cu.id=i.customer_id ORDER BY i.id DESC LIMIT 500""").fetchall()
     c.close()
     today=date.today().isoformat(); period=date.today().strftime('%Y-%m')
-    opts=''.join(f'<option value="{x["id"]}" data-price="{float(x["price"] or 0):.2f}">{esc(x["name"])} · {esc(x["plan_name"] or "Sin plan")} · RD&#36;{float(x["price"] or 0):,.0f}</option>' for x in customers)
+    opts=''.join(f'<option value="{x["id"]}" data-search="{esc(str(x["name"] or "")+" "+str(x["code"] or "")+" "+str(x["phone"] or "")+" "+str(x["pppoe"] or ""))}" data-price="{float(x["price"] or 0):.2f}">{esc(x["name"])} · {esc(x["code"] or x["id"])} · {esc(x["plan_name"] or "Sin plan")} · RD&#36;{float(x["price"] or 0):,.0f}</option>' for x in customers)
     trs=[]
     for r in rows:
         paid=(r['status'] or '').upper()=='PAGADA'; overdue=(not paid and (r['due_date'] or '') < today)
@@ -42,11 +42,17 @@ def invoices_plus():
         trs.append(f'<tr><td><b>IF-{r["id"]:06d}</b></td><td>{esc(r["customer"])}</td><td>{esc(r["period"] or "-")}</td><td>{esc(r["concept"])}</td><td>RD&#36;{float(r["amount"]):,.2f}</td><td>{esc(r["issue_date"])}</td><td>{esc(r["due_date"])}</td><td><span class="tag {cls}">{esc(status)}</span></td><td style="white-space:nowrap"><a class="btn blue" href="{url_for("invoice_detail",id=r["id"])}">Ver</a> {collect}</td></tr>')
     body=f'''<div class="head"><div><h1>Facturas</h1><p>Facturación, impresión, cobros y comprobantes</p></div></div>
     <div class="panel"><h3>Nueva factura</h3><form class="toolbar" method="post">
-    <select class="field" id="invoice-customer" name="customer_id" required onchange="var o=this.options[this.selectedIndex];document.getElementById('invoice-amount').value=o.dataset.price||''"><option value="">Cliente</option>{opts}</select>
+    <div class="invoice-client-picker" style="flex:1 1 100%;min-width:0">
+    <label for="invoice-client-search">Buscar cliente</label>
+    <input class="field" id="invoice-client-search" type="search" placeholder="Nombre, código, teléfono o PPPoE…" autocomplete="off" aria-controls="invoice-customer" style="width:100%;margin:6px 0">
+    <select class="field" id="invoice-customer" name="customer_id" required aria-label="Seleccionar cliente" style="width:100%" onchange="var o=this.options[this.selectedIndex];document.getElementById('invoice-amount').value=o.dataset.price||''"><option value="">Selecciona un cliente</option>{opts}</select>
+    <small id="invoice-client-results" role="status" aria-live="polite"></small>
+    </div>
     <input class="field" name="concept" value="Servicio de Internet" required><input class="field" id="invoice-amount" type="number" step="0.01" name="amount" placeholder="Monto" required>
     <input class="field" type="month" name="period" value="{period}" required><input class="field" type="date" name="issue_date" value="{today}" required><input class="field" type="date" name="due_date" value="{today}" required>
     <button class="btn green">Crear factura</button></form></div>
     <div class="panel"><table class="table"><tr><th>Factura</th><th>Cliente</th><th>Período</th><th>Concepto</th><th>Monto</th><th>Emisión</th><th>Vence</th><th>Estado</th><th>Acciones</th></tr>{''.join(trs) or '<tr><td colspan="9" class="muted">No hay facturas.</td></tr>'}</table></div>'''
+    body += "\n    <script>\n    (() => {\n      const search = document.getElementById('invoice-client-search');\n      const select = document.getElementById('invoice-customer');\n      const status = document.getElementById('invoice-client-results');\n      const amount = document.getElementById('invoice-amount');\n      const options = Array.from(select.options).slice(1);\n      const normalize = value => value.normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().trim();\n      search.addEventListener('input', () => {\n        const query = normalize(search.value);\n        const terms = query.split(/\\s+/).filter(Boolean);\n        const selected = select.value;\n        const matches = options.filter(option => terms.every(term => normalize(option.dataset.search).includes(term)));\n        select.replaceChildren(new Option(matches.length ? 'Selecciona un cliente' : 'No se encontraron clientes', ''), ...matches);\n        if (selected && matches.some(option => option.value === selected)) select.value = selected;\n        else { select.value = ''; if (selected) amount.value = ''; }\n        select.size = query ? Math.min(6, matches.length + 1) : 1;\n        status.textContent = query ? matches.length + ' cliente(s) encontrado(s). Selecciona uno de la lista.' : '';\n      });\n      select.addEventListener('change', () => {\n        if (select.value) {\n          select.size = 1;\n          status.textContent = 'Cliente seleccionado: ' + select.selectedOptions[0].textContent;\n        }\n      });\n    })();\n    </script>\n"
     return base.shell('Facturas',body,'invoices')
 
 def invoice_detail(id):

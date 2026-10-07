@@ -58,3 +58,16 @@ body .clients-table .icon-actions>*{flex:0 0 auto}
 body .clients-table .icon-actions form{display:flex;margin:0}
 body .clients-table .ico{width:34px;height:36px;flex-shrink:0}
 @media(max-width:780px){body .clients-table .c-actions{min-width:0;white-space:normal}}
+
+/* Color-coded customer action tiles. */
+body .clients-table .ico{width:36px;height:38px;border-radius:11px;border:1px solid #639df0;background:linear-gradient(145deg,#347de4,#2156a8);color:#fff;box-shadow:inset 0 1px 0 #ffffff35,0 3px 8px #0003;transition:transform .15s,filter .15s,box-shadow .15s}
+body .clients-table .ico svg{width:21px;height:21px;stroke-width:2.2;filter:drop-shadow(0 1px 1px #0003)}
+body .clients-table .ico.wa{background:linear-gradient(145deg,#28be76,#13834d);border-color:#58d79a;color:#fff}
+body .clients-table .ico[title="Editar"]{background:linear-gradient(145deg,#9c6ced,#6942b5);border-color:#b38bf3;color:#fff}
+body .clients-table .ico.warnx{background:linear-gradient(145deg,#ffd36d,#e6a92e);border-color:#ffe39b;color:#49300b}
+body .clients-table .ico.good{background:linear-gradient(145deg,#46d4b6,#19967f);border-color:#73e5ce;color:#082f28}
+body .clients-table .ico.danger{background:linear-gradient(145deg,#ee687e,#b7314e);border-color:#ff96a6;color:#fff}
+body .clients-table .ico:hover{filter:brightness(1.14);transform:translateY(-2px);box-shadow:inset 0 1px 0 #ffffff45,0 5px 12px #0005}
+body .clients-table .ico:active{transform:translateY(0)}
+body .clients-table .c-actions{width:218px;min-width:218px}
+@media(max-width:780px){body .clients-table .c-actions{min-width:0}}

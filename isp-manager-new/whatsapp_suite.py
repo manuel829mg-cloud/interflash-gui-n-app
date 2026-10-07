@@ -345,6 +345,41 @@ def _customer_card(c, thread):
     return f'<div class="wa-customer"><h3>Ficha del cliente</h3>{details}<div class="wa-actions">{"".join(actions)}</div><small class="muted">Los botones preparan un borrador. Revísalo antes de enviar.</small></div>'
 
 
+def _tabs(active):
+    items = [('chat','whatsapp_inbox','Chat'), ('bot','whatsapp_chatbot','Chatbot'),
+             ('auto','whatsapp_automatics','Automáticos'), ('queue','whatsapp_queue','Cola de mensajes'),
+             ('general','whatsapp_settings','General')]
+    links=''.join(f'<a class="wa-tab {"selected" if key==active else ""}" href="{url_for(ep)}" {"aria-current=page" if key==active else ""}>{label}</a>' for key,ep,label in items)
+    return f'''<style>
+    .wa-tabs{{display:flex;gap:6px;flex-wrap:wrap;padding:7px;margin:0 0 18px;border:1px solid #25435c;border-radius:14px;background:#0c1b2c}}
+    .wa-tab{{padding:11px 17px;border-radius:9px;color:#acbed2;font-weight:700;text-decoration:none}}
+    .wa-tab:hover{{background:#19354b;color:#fff}}.wa-tab.selected{{background:#16bd85;color:#052b23}}
+    .wa-section-head{{margin-bottom:16px}}.wa-section-head h1{{margin-bottom:6px}}
+    .wa-auto-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}}
+    </style><nav class="wa-tabs" aria-label="Secciones de WhatsApp">{links}</nav>'''
+
+
+def chatbot_page():
+    if not base.logged_in(): return redirect(url_for('login'))
+    import whatsapp_menu
+    body = _tabs('bot') + '<div class="wa-section-head"><h1>Chatbot</h1><p>Controla las respuestas automáticas de INTER Flash.</p></div>'
+    body += '<div class="panel" id="wa-automation"><h3>Inteligencia artificial</h3><span class="tag warn">Sin configurar</span><p>El menú disponible responde mediante opciones predefinidas.</p></div>'
+    body += whatsapp_menu.panel()
+    return base.shell('Chatbot WhatsApp',body,'whatsapp_inbox')
+
+
+def automatics_page():
+    if not base.logged_in(): return redirect(url_for('login'))
+    import business_suite as business
+    enabled=business.setting('whatsapp_enabled','0')=='1'
+    body=_tabs('auto') + f'''<div class="wa-section-head"><h1>Automáticos</h1><p>Facturación, avisos y respuestas de INTER Flash.</p></div>
+    <div class="wa-auto-grid"><div class="panel"><h3>Avisos de facturación</h3><span class="tag {'ok' if enabled else 'warn'}">{'HABILITADOS' if enabled else 'DESACTIVADOS'}</span><p>Revisa la configuración de avisos del negocio.</p><a class="btn" href="{url_for('settings_page')}">Configurar avisos</a></div>
+    <div class="panel"><h3>Fechas por zona</h3><p>Consulta vencimientos y días de facturación y corte.</p><a class="btn" href="{url_for('zones_page')}">Ver zonas</a></div>
+    <div class="panel"><h3>Menú automático</h3><p>Administra las respuestas a HOLA, MENÚ y las opciones del cliente.</p><a class="btn" href="{url_for('whatsapp_chatbot')}">Configurar chatbot</a></div>
+    <div class="panel"><h3>Ejecuciones</h3><p>Consulta el estado de la automatización de facturas, cortes y reconexiones.</p><a class="btn" href="{url_for('automation_page')}">Ver automatización</a></div></div>'''
+    return base.shell('Automáticos WhatsApp',body,'whatsapp_inbox')
+
+
 def inbox():
     if not base.logged_in(): return redirect(url_for('login'))
     ensure_schema()
@@ -417,8 +452,6 @@ def inbox():
     if greenapi.enabled():
         configured='GREEN-API configurado. La entrega se confirma por mensaje.'
         webhook_state='Recepción de GREEN-API configurada.'
-    import whatsapp_menu
-    automation_panel = whatsapp_menu.panel()
     body=f'''<style>
     .wa-kpis{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}}.wa-layout{{display:grid;grid-template-columns:360px 1fr;gap:14px;min-height:640px}}.wa-side,.wa-chat{{background:#0d1a29;border:1px solid #22374e;border-radius:12px;overflow:hidden}}.wa-side-head{{padding:14px;border-bottom:1px solid #22374e}}.wa-side-head form{{display:flex;gap:7px}}.wa-side-head input{{width:100%}}.wa-threads{{max-height:590px;overflow:auto}}.wa-thread{{display:grid;grid-template-columns:44px 1fr auto;gap:10px;padding:12px;border-bottom:1px solid #1b3045;align-items:center}}.wa-thread:hover,.wa-thread.on{{background:#122438}}.wa-avatar{{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;background:#075e54;color:#fff;font-weight:900}}.wa-thread-main{{min-width:0}}.wa-thread-main b,.wa-thread-main small,.wa-thread-main span{{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.wa-thread-main small{{color:#7f94aa;margin:2px 0}}.wa-thread-main span{{color:#9fb0c0;font-size:12px}}.wa-unread{{min-width:22px;height:22px;padding:0 6px;border-radius:999px;background:#16c784;color:#052d1f;display:grid;place-items:center;font-size:11px;font-weight:900}}.wa-chat{{display:flex;flex-direction:column}}.wa-chat-head{{padding:14px 16px;border-bottom:1px solid #22374e;display:flex;justify-content:space-between;align-items:center}}.wa-chat-head small{{display:block;color:#8397aa;margin-top:3px}}.wa-messages{{height:520px;min-height:240px;flex:1;overflow:auto;padding:18px;background:radial-gradient(circle at 30% 10%,#10243a,#0a1522 55%)}}.wa-msg{{max-width:72%;padding:10px 12px;border-radius:11px;margin:8px 0;line-height:1.35}}.wa-msg.in{{background:#182a3d;margin-right:auto}}.wa-msg.out{{background:#075e54;margin-left:auto}}.wa-msg small{{display:block;color:#b9c8d5;font-size:10px;margin-top:6px;text-align:right}}.wa-compose{{padding:12px;border-top:1px solid #22374e;display:grid;grid-template-columns:190px 1fr auto;gap:8px;align-items:end}}.wa-compose textarea{{resize:vertical;min-height:44px}}.wa-empty{{padding:40px;text-align:center;color:#8397aa}}.wa-config{{display:grid;grid-template-columns:1fr 1fr;gap:12px}}@media(max-width:950px){{.wa-layout{{grid-template-columns:1fr}}.wa-side{{max-height:360px}}.wa-kpis{{grid-template-columns:repeat(2,1fr)}}}}@media(max-width:650px){{.wa-compose{{grid-template-columns:1fr}}.wa-config{{grid-template-columns:1fr}}.wa-kpis{{grid-template-columns:1fr}}}}
     .wa-kpis .kpi{{padding:12px}}.wa-kpis .value{{font-size:24px}}.wa-status{{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:12px 0;color:#aebdcb;font-size:12px}}.wa-customer{{padding:14px 16px;background:#102237;border-bottom:1px solid #22374e}}.wa-customer h3{{margin:0 0 8px;font-size:13px;color:#9fb0c0}}.wa-customer>.tag{{margin-left:10px}}.wa-facts{{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0}}.wa-facts small{{display:block;color:#9fb0c0;margin-bottom:4px}}.wa-actions{{display:flex;flex-wrap:wrap;gap:7px;margin:12px 0 8px}}.wa-actions .btn{{font-size:12px;padding:8px 10px}}.wa-msg>div{{white-space:pre-wrap;overflow-wrap:anywhere}}.wa-messages{{height:420px}}@media(max-width:650px){{.wa-facts{{grid-template-columns:1fr}}.wa-msg{{max-width:90%}}}}
@@ -426,7 +459,6 @@ def inbox():
     <div class="head"><div><h1>WhatsApp</h1><p>Bandeja de chats y cola de mensajes · {esc(_provider_label())}.</p></div><div style="display:flex;gap:8px;flex-wrap:wrap">{sync_button}<a class="btn" href="{url_for('whatsapp_queue')}">Cola</a><a class="btn green" href="{url_for('greenapi_settings')}">GREEN-API</a><a class="btn blue" href="{url_for('whatsapp_settings')}">Configuración</a></div></div>
     <div class="wa-status"><span class="tag">{esc(_provider_label())}</span><span id="wa-reception">{esc(reception)}</span><small id="wa-sync">Actualización automática</small></div><div class="wa-kpis"><div class="kpi green1"><div class="label">Conexión</div><div class="value" style="font-size:18px">{'CONFIGURADA' if _meta_ready() else 'PENDIENTE'}</div><div class="sub">{esc(_provider_label())}</div></div><div class="kpi blue1"><div class="label">Chats</div><div class="value">{len(threads)}</div><div class="sub">Cargados</div></div><div class="kpi orange1"><div class="label">No leídos</div><div class="value">{unread}</div><div class="sub">Mensajes</div></div><div class="kpi {'orange1' if queue_pending else 'green1'}"><div class="label">Cola pendiente</div><div class="value">{queue_pending}</div><div class="sub">{'En proceso o por enviar' if queue_pending else 'Sin mensajes pendientes'}</div></div></div>
     <div class="muted" style="margin:8px 0">{(str(queue_error) + ' envíos fallidos registrados en el historial. Consulta el detalle en Cola.') if queue_error else ''}</div>
-    <div id="wa-automation" class="panel"><b>Inteligencia artificial · Sin configurar</b><p class="muted">Esta versión dispone de un menú automático de respuestas predefinidas.</p>{automation_panel}</div>
     <details class="panel"><summary class="btn">+ Nueva conversación</summary><form method="post" action="{url_for('whatsapp_new_thread')}" class="toolbar" style="margin:0"><input class="field" name="phone" placeholder="Número para nueva conversación" required><input class="field" name="name" placeholder="Nombre (opcional)"><button class="btn green">Crear conversación</button></form></details>
     <div class="wa-layout"><div class="wa-side"><div class="wa-side-head"><form method="get"><input class="field" name="q" value="{esc(q)}" placeholder="Buscar nombre o número"><button class="btn">Buscar</button></form></div><div class="wa-threads">{''.join(trows) or '<div class="wa-empty">Sin conversaciones todavía.</div>'}</div></div><div class="wa-chat">{composer}</div></div>'''
     body += r"""<script>
@@ -485,7 +517,7 @@ def inbox():
       refresh(); setInterval(refresh, 5000);
     })();
     </script>"""
-    return base.shell('WhatsApp',body,'whatsapp_inbox')
+    return base.shell('WhatsApp',_tabs('chat')+body,'whatsapp_inbox')
 
 
 def new_thread():
@@ -527,7 +559,7 @@ def queue_page():
         retry=f'''<form method="post" action="{url_for('whatsapp_retry',id=r['id'])}"><button class="btn">Reintentar</button></form>''' if r['status']=='ERROR' else ''
         trs.append(f'''<tr><td>#{r['id']}</td><td>{esc(r['phone'])}</td><td>{esc((r['body'] or ('Plantilla: '+str(r['template_name'] or '')))[:100])}</td><td><span class="tag {cls}">{esc(r['status'])}</span></td><td>{r['attempts']}</td><td>{esc(r['last_error'] or '-')}</td><td>{esc(r['created_at'])}</td><td>{retry}</td></tr>''')
     body=f'''<div class="head"><div><h1>Cola de WhatsApp</h1><p>Historial de envíos: entregados, pendientes y fallidos.</p><p class="muted">Los errores conservan el resultado de cada intento anterior; no indican por sí solos que la conexión actual esté fallando. Reintentar envía el mensaje nuevamente.</p></div><a class="btn" href="{url_for('whatsapp_inbox')}">← WhatsApp</a></div><div class="panel"><table class="table"><tr><th>#</th><th>Número</th><th>Mensaje</th><th>Estado</th><th>Intentos</th><th>Error</th><th>Fecha</th><th></th></tr>{''.join(trs) or '<tr><td colspan="8" class="muted">Sin mensajes en cola.</td></tr>'}</table></div>'''
-    return base.shell('Cola WhatsApp',body,'whatsapp_inbox')
+    return base.shell('Cola WhatsApp',_tabs('queue')+body,'whatsapp_inbox')
 
 
 def retry(id):
@@ -558,9 +590,7 @@ def settings_page():
     webhook_url = url_for('greenapi_webhook', _external=True, _scheme='https')
     body += f'''<div class="panel"><h3>Estado de recepción</h3><p>{esc(reception)}</p><p class="muted">Webhook: {esc(webhook_url)}</p></div>
     <div class="panel"><h3>Prueba de envío</h3><form method="post" action="{url_for('whatsapp_send')}" class="toolbar"><input class="field" name="phone" placeholder="Número de otro teléfono, ej. 18095551234" required><input class="field" name="body" value="Hola, esta es una prueba de INTER Flash." required><button class="btn green">Enviar prueba</button></form><p class="muted">Comprueba la llegada en el teléfono destinatario. Se aplican los límites de tu plan.</p></div>'''
-    import whatsapp_menu
-    body = whatsapp_menu.panel() + body
-    return base.shell('Configuración WhatsApp',body,'whatsapp_inbox')
+    return base.shell('Configuración WhatsApp',_tabs('general')+body,'whatsapp_inbox')
 
 
 def _receive_webhook():
@@ -641,6 +671,8 @@ def setup(app):
     import greenapi_chats
     greenapi_chats.setup(app)
     app.add_url_rule('/whatsapp',endpoint='whatsapp_inbox',view_func=inbox,methods=['GET'])
+    app.add_url_rule('/whatsapp/chatbot',endpoint='whatsapp_chatbot',view_func=chatbot_page,methods=['GET'])
+    app.add_url_rule('/whatsapp/automatics',endpoint='whatsapp_automatics',view_func=automatics_page,methods=['GET'])
     app.add_url_rule('/whatsapp/revision',endpoint='whatsapp_revision',view_func=revision,methods=['GET'])
     app.add_url_rule('/whatsapp/new',endpoint='whatsapp_new_thread',view_func=new_thread,methods=['POST'])
     app.add_url_rule('/whatsapp/send',endpoint='whatsapp_send',view_func=send,methods=['POST'])

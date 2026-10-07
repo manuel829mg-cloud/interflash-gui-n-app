@@ -1,4 +1,5 @@
 import json
+from ipaddress import ip_address
 from datetime import datetime
 from html import escape
 from flask import request, redirect, url_for, flash, session
@@ -7,6 +8,18 @@ import app as base
 
 def esc(value):
     return escape('' if value is None else str(value))
+
+
+def device_ip_links(value):
+    raw = str(value or '').strip()
+    try:
+        address = ip_address(raw)
+        if address.is_unspecified or address.is_multicast:
+            raise ValueError('IP no utilizable')
+    except ValueError:
+        return '<span class="muted device-ip-empty">Sin IP de acceso</span>'
+    host = '[' + str(address) + ']' if address.version == 6 else str(address)
+    return f'''<div class="device-ip"><a class="device-ip-main" href="http://{host}" target="_blank" rel="noopener noreferrer" title="Abrir administración del equipo por HTTP">{esc(address)} ↗</a><a class="device-ip-https" href="https://{host}" target="_blank" rel="noopener noreferrer" title="Abrir administración del equipo por HTTPS">HTTPS ↗</a></div>'''
 
 
 def _table_exists(c, name):
@@ -101,20 +114,22 @@ def customers_responsive():
     if q:
         like = '%' + q + '%'
         sql += ''' AND (cu.name LIKE ? OR cu.phone LIKE ? OR cu.document LIKE ?
-                   OR cu.pppoe LIKE ? OR cu.onu_serial LIKE ? OR cu.code LIKE ?)'''
-        args = [like] * 6
+                   OR cu.pppoe LIKE ? OR cu.onu_serial LIKE ? OR cu.code LIKE ? OR cu.ip_address LIKE ?)'''
+        args = [like] * 7
     sql += ' ORDER BY cu.id DESC'
     rows = c.execute(sql, args).fetchall()
 
     active_names = set()
     active_pairs = set()
+    active_addresses = {}
     if _table_exists(c, 'push_pppoe_active'):
-        for a in c.execute('SELECT router_name,name FROM push_pppoe_active').fetchall():
+        for a in c.execute('SELECT router_name,name,address FROM push_pppoe_active').fetchall():
             pppoe_name = (a['name'] or '').strip()
             router_name = (a['router_name'] or 'CCR2116').strip()
             if pppoe_name:
                 active_names.add(pppoe_name)
                 active_pairs.add((router_name, pppoe_name))
+                active_addresses[(router_name, pppoe_name)] = a["address"]
     c.close()
 
     trs = []
@@ -150,6 +165,8 @@ def customers_responsive():
         else:
             cls = 'warn connection-offline'
 
+        access_ip = active_addresses.get((router_name, pppoe)) or r['ip_address']
+        ip_links = device_ip_links(access_ip)
         code = r['code'] or ('#' + str(r['id']))
 
         if state == 'SUSPENDIDO':
@@ -174,7 +191,7 @@ def customers_responsive():
           <td class="c-client" data-label="Cliente"><b>{esc(r['name'])}</b><br><span class="muted">{esc(r['phone'])}</span></td>
           <td class="c-plan" data-label="Plan">{esc(r['plan_name'] or '-')}</td>
           <td class="c-zone" data-label="Zona">{esc(r['zone_name'] or r['zone'] or '-')}</td>
-          <td class="c-pppoe" data-label="PPPoE">{esc(pppoe or '-')}</td>
+          <td class="c-pppoe" data-label="PPPoE / IP">{esc(pppoe or '-')}{ip_links}</td>
           <td class="c-state" data-label="Conexión">{state_html}</td>
           <td class="c-actions" data-label="Acciones">{actions}</td>
         </tr>''')
@@ -193,6 +210,11 @@ def customers_responsive():
       .clients-fit .c-pppoe{{width:15%;font-family:Consolas,monospace;font-size:12px;}}
       .clients-fit .c-state{{width:12%;}}
       .clients-fit .c-actions{{width:18%;}}
+      .device-ip{{display:flex;flex-direction:column;gap:4px;margin-top:7px;}}
+      .device-ip-main{{color:#53c8ff;font-weight:700;font-size:13px;overflow-wrap:anywhere;text-overflow:clip;}}
+      .device-ip-main:hover,.device-ip-https:hover{{text-decoration:underline;}}
+      .device-ip-https{{font-size:10px;color:#8bdac9;}}
+      .device-ip-empty{{display:block;margin-top:5px;font-size:10px;}}
       .client-actions{{display:flex;gap:0;align-items:center;flex-wrap:nowrap;}}
       .client-actions form{{margin:0;display:flex;}}
       .icon-btn{{width:42px;height:38px;display:inline-flex;align-items:center;justify-content:center;border:1px solid #33485d;background:#132231;color:#aebdcb;cursor:pointer;padding:0;margin:0 -1px 0 0;border-radius:0;transition:.15s ease;}}
@@ -254,12 +276,13 @@ def customers_responsive():
         <div class="connection-card"><span class="status-dot dot-none"></span>Sin PPPoE <b>{no_pppoe_count}</b></div>
       </div>
       <form class="clients-toolbar" method="get">
-        <input class="field" name="q" value="{esc(q)}" placeholder="Buscar cliente, teléfono, cédula, PPPoE, ONU">
+        <input class="field" name="q" value="{esc(q)}" placeholder="Buscar cliente, teléfono, cédula, PPPoE, IP, ONU">
         <button class="btn blue">Buscar</button>
         <a class="btn" href="{url_for('customers')}">Limpiar</a>
       </form>
+      <p class="muted">Pulsa la IP para abrir el router u ONU del cliente. Debes estar conectado a la red del ISP o a su VPN y el equipo debe permitir administración web.</p>
       <table class="clients-fit">
-        <thead><tr><th>Código</th><th>Cliente</th><th>Plan</th><th class="c-zone">Zona</th><th>PPPoE</th><th>Conexión</th><th>Acciones</th></tr></thead>
+        <thead><tr><th>Código</th><th>Cliente</th><th>Plan</th><th class="c-zone">Zona</th><th>PPPoE / IP del equipo</th><th>Conexión</th><th>Acciones</th></tr></thead>
         <tbody>{''.join(trs) or '<tr><td colspan="7" class="muted">No hay clientes.</td></tr>'}</tbody>
       </table>
     </div>

@@ -32,7 +32,7 @@ def setup():
         parts=[]
         parts.append(item('dashboard','▦','Dashboard'))
         if 'whatsapp_inbox' in nav:
-            parts.append(f'<a class="nav-single" href="{base.url_for("whatsapp_inbox")}#wa-automation" title="IA / Automatización" aria-label="IA / Automatización"><span class="menu-icon">✧</span><span class="txt">IA / Automatización</span></a>')
+            parts.append(f'<a class="nav-single" href="{base.url_for("whatsapp_chatbot")}" title="IA / Automatización" aria-label="IA / Automatización"><span class="menu-icon">✧</span><span class="txt">IA / Automatización</span></a>')
         parts.append(group('clientes','♙','Clientes',['customers','client_extract','customer_trash']))
         parts.append(group('finanzas','▤','Finanzas',['invoices','payments','expenses_page','banks_page']))
         # Almacén se mostrará automáticamente cuando se agregue un módulo de inventario.

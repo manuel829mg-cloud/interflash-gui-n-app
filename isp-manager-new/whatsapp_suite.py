@@ -3,6 +3,7 @@ import json
 import urllib.request
 import urllib.error
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from html import escape
 from flask import session, request, redirect, url_for, flash, jsonify, current_app
 import app as base
@@ -23,6 +24,34 @@ def esc(v):
 
 def _now():
     return datetime.now().isoformat(timespec='seconds')
+
+
+def _rd_time(value, short=False):
+    if not value:
+        return ''
+    try:
+        dt = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+        # Naive records were written by _now() in the application local timezone.
+        dt = dt.astimezone(ZoneInfo('America/Santo_Domingo'))
+        return dt.strftime('%I:%M %p' if short else '%d/%m/%Y %I:%M %p')
+    except (ValueError, TypeError):
+        return str(value)
+
+
+def _thread_names(c, rows):
+    names = {}
+    for customer in c.execute("SELECT name,phone FROM customers WHERE COALESCE(status,'')<>'ELIMINADO'"):
+        phone = _wa_phone(customer['phone'])
+        if phone:
+            names.setdefault(phone, []).append(customer['name'])
+    result = []
+    for row in rows:
+        row = dict(row)
+        matches = names.get(_wa_phone(row['phone']), [])
+        if not row['customer_name'] and len(matches) == 1:
+            row['customer_name'] = matches[0]
+        result.append(row)
+    return result
 
 
 def _digits(v):
@@ -255,7 +284,7 @@ def _public_webhook_url():
 def _reception_summary(c):
     row = c.execute('SELECT * FROM whatsapp_webhook_health WHERE id=1').fetchone()
     if row and row['last_incoming']:
-        return 'Última entrada recibida: ' + row['last_incoming'] + ' (hora del servidor)'
+        return 'Última entrada recibida: ' + _rd_time(row['last_incoming']) + ' (hora dominicana)'
     if row and row['last_event']:
         return 'Webhook recibido; todavía sin mensaje entrante registrado.'
     return 'Recepción sin comprobar: aún no se ha registrado un webhook con esta versión.'
@@ -323,16 +352,18 @@ def inbox():
     selected=request.args.get('thread')
     c=base.db()
     sql='''SELECT wt.*,cu.name customer_name FROM whatsapp_threads wt LEFT JOIN customers cu ON cu.id=wt.customer_id WHERE 1=1'''
-    args=[]
+    sql+=' ORDER BY COALESCE(wt.last_at,wt.created_at) DESC'
+    threads=_thread_names(c,c.execute(sql).fetchall())
     if q:
-        like='%'+q+'%'; sql+=' AND (wt.phone LIKE ? OR wt.display_name LIKE ? OR cu.name LIKE ?)'; args=[like,like,like]
-    sql+=' ORDER BY COALESCE(wt.last_at,wt.created_at) DESC LIMIT 200'
-    threads=c.execute(sql,args).fetchall()
+        term=q.casefold()
+        threads=[t for t in threads if any(term in str(t.get(key) or '').casefold() for key in ('phone','display_name','customer_name'))]
+    threads=threads[:200]
     if not selected and threads: selected=str(threads[0]['id'])
     thread=None; messages=[]
     if selected and str(selected).isdigit():
         thread=c.execute('''SELECT wt.*,cu.name customer_name FROM whatsapp_threads wt LEFT JOIN customers cu ON cu.id=wt.customer_id WHERE wt.id=?''',(int(selected),)).fetchone()
         if thread:
+            thread=_thread_names(c,[thread])[0]
             c.execute('UPDATE whatsapp_threads SET unread=0 WHERE id=?',(thread['id'],))
             messages=c.execute('SELECT * FROM whatsapp_messages WHERE thread_id=? ORDER BY created_at DESC,id DESC LIMIT 120',(thread['id'],)).fetchall()[::-1]
             c.commit()
@@ -364,7 +395,7 @@ def inbox():
     bubbles=[]
     for m in messages:
         out=m['direction']=='OUT'
-        meta=f"{esc((m['created_at'] or '')[11:16])} · {esc(m['status'] or '')}"
+        meta=f"{esc(_rd_time(m['created_at'], short=True))} · {esc(m['status'] or '')}"
         if m['error']: meta += ' · ' + esc(m['error'][:80])
         bubbles.append(f'''<div class="wa-msg {'out' if out else 'in'}"><div>{esc(m['body'] or '['+str(m['message_type'] or 'mensaje')+']')}</div><small>{meta}</small></div>''')
     template_opts=''.join(f'<option value="{esc(x["body"])}">{esc(x["title"])}</option>' for x in templates)
@@ -386,13 +417,16 @@ def inbox():
     if greenapi.enabled():
         configured='GREEN-API configurado. La entrega se confirma por mensaje.'
         webhook_state='Recepción de GREEN-API configurada.'
+    import whatsapp_menu
+    automation_panel = whatsapp_menu.panel()
     body=f'''<style>
     .wa-kpis{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}}.wa-layout{{display:grid;grid-template-columns:360px 1fr;gap:14px;min-height:640px}}.wa-side,.wa-chat{{background:#0d1a29;border:1px solid #22374e;border-radius:12px;overflow:hidden}}.wa-side-head{{padding:14px;border-bottom:1px solid #22374e}}.wa-side-head form{{display:flex;gap:7px}}.wa-side-head input{{width:100%}}.wa-threads{{max-height:590px;overflow:auto}}.wa-thread{{display:grid;grid-template-columns:44px 1fr auto;gap:10px;padding:12px;border-bottom:1px solid #1b3045;align-items:center}}.wa-thread:hover,.wa-thread.on{{background:#122438}}.wa-avatar{{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;background:#075e54;color:#fff;font-weight:900}}.wa-thread-main{{min-width:0}}.wa-thread-main b,.wa-thread-main small,.wa-thread-main span{{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.wa-thread-main small{{color:#7f94aa;margin:2px 0}}.wa-thread-main span{{color:#9fb0c0;font-size:12px}}.wa-unread{{min-width:22px;height:22px;padding:0 6px;border-radius:999px;background:#16c784;color:#052d1f;display:grid;place-items:center;font-size:11px;font-weight:900}}.wa-chat{{display:flex;flex-direction:column}}.wa-chat-head{{padding:14px 16px;border-bottom:1px solid #22374e;display:flex;justify-content:space-between;align-items:center}}.wa-chat-head small{{display:block;color:#8397aa;margin-top:3px}}.wa-messages{{height:520px;min-height:240px;flex:1;overflow:auto;padding:18px;background:radial-gradient(circle at 30% 10%,#10243a,#0a1522 55%)}}.wa-msg{{max-width:72%;padding:10px 12px;border-radius:11px;margin:8px 0;line-height:1.35}}.wa-msg.in{{background:#182a3d;margin-right:auto}}.wa-msg.out{{background:#075e54;margin-left:auto}}.wa-msg small{{display:block;color:#b9c8d5;font-size:10px;margin-top:6px;text-align:right}}.wa-compose{{padding:12px;border-top:1px solid #22374e;display:grid;grid-template-columns:190px 1fr auto;gap:8px;align-items:end}}.wa-compose textarea{{resize:vertical;min-height:44px}}.wa-empty{{padding:40px;text-align:center;color:#8397aa}}.wa-config{{display:grid;grid-template-columns:1fr 1fr;gap:12px}}@media(max-width:950px){{.wa-layout{{grid-template-columns:1fr}}.wa-side{{max-height:360px}}.wa-kpis{{grid-template-columns:repeat(2,1fr)}}}}@media(max-width:650px){{.wa-compose{{grid-template-columns:1fr}}.wa-config{{grid-template-columns:1fr}}.wa-kpis{{grid-template-columns:1fr}}}}
     .wa-kpis .kpi{{padding:12px}}.wa-kpis .value{{font-size:24px}}.wa-status{{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:12px 0;color:#aebdcb;font-size:12px}}.wa-customer{{padding:14px 16px;background:#102237;border-bottom:1px solid #22374e}}.wa-customer h3{{margin:0 0 8px;font-size:13px;color:#9fb0c0}}.wa-customer>.tag{{margin-left:10px}}.wa-facts{{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0}}.wa-facts small{{display:block;color:#9fb0c0;margin-bottom:4px}}.wa-actions{{display:flex;flex-wrap:wrap;gap:7px;margin:12px 0 8px}}.wa-actions .btn{{font-size:12px;padding:8px 10px}}.wa-msg>div{{white-space:pre-wrap;overflow-wrap:anywhere}}.wa-messages{{height:420px}}@media(max-width:650px){{.wa-facts{{grid-template-columns:1fr}}.wa-msg{{max-width:90%}}}}
     </style>
-    <div class="head"><div><h1>WhatsApp</h1><p>Bandeja de chats y cola de mensajes · {esc(_provider_label())}.</p></div><div style="display:flex;gap:8px;flex-wrap:wrap">{sync_button}<a class="btn" href="{url_for('whatsapp_queue')}">Cola</a><a class="btn green" href="{url_for('greenapi_settings')}">GREEN-API</a><a class="btn blue" href="{url_for('whatsapp_settings')}">Configuración</a></div></div>
+    <div class="head"><div><h1>WhatsApp</h1><p>Bandeja de chats y cola de mensajes · {esc(_provider_label())}.</p></div><div style="display:flex;gap:8px;flex-wrap:wrap">{sync_button}<a class="btn" href="#wa-automation">IA / Automatización</a><a class="btn" href="{url_for('whatsapp_queue')}">Cola</a><a class="btn green" href="{url_for('greenapi_settings')}">GREEN-API</a><a class="btn blue" href="{url_for('whatsapp_settings')}">Configuración</a></div></div>
     <div class="wa-status"><span class="tag">{esc(_provider_label())}</span><span id="wa-reception">{esc(reception)}</span><small id="wa-sync">Actualización automática</small></div><div class="wa-kpis"><div class="kpi green1"><div class="label">Conexión</div><div class="value" style="font-size:18px">{'CONFIGURADA' if _meta_ready() else 'PENDIENTE'}</div><div class="sub">{esc(_provider_label())}</div></div><div class="kpi blue1"><div class="label">Chats</div><div class="value">{len(threads)}</div><div class="sub">Cargados</div></div><div class="kpi orange1"><div class="label">No leídos</div><div class="value">{unread}</div><div class="sub">Mensajes</div></div><div class="kpi {'orange1' if queue_pending else 'green1'}"><div class="label">Cola pendiente</div><div class="value">{queue_pending}</div><div class="sub">{'En proceso o por enviar' if queue_pending else 'Sin mensajes pendientes'}</div></div></div>
     <div class="muted" style="margin:8px 0">{(str(queue_error) + ' envíos fallidos registrados en el historial. Consulta el detalle en Cola.') if queue_error else ''}</div>
+    <div id="wa-automation" class="panel"><b>Inteligencia artificial · Sin configurar</b><p class="muted">Esta versión dispone de un menú automático de respuestas predefinidas.</p>{automation_panel}</div>
     <details class="panel"><summary class="btn">+ Nueva conversación</summary><form method="post" action="{url_for('whatsapp_new_thread')}" class="toolbar" style="margin:0"><input class="field" name="phone" placeholder="Número para nueva conversación" required><input class="field" name="name" placeholder="Nombre (opcional)"><button class="btn green">Crear conversación</button></form></details>
     <div class="wa-layout"><div class="wa-side"><div class="wa-side-head"><form method="get"><input class="field" name="q" value="{esc(q)}" placeholder="Buscar nombre o número"><button class="btn">Buscar</button></form></div><div class="wa-threads">{''.join(trows) or '<div class="wa-empty">Sin conversaciones todavía.</div>'}</div></div><div class="wa-chat">{composer}</div></div>'''
     body += r"""<script>
@@ -443,7 +477,7 @@ def inbox():
             }
             previous = data.revision;
           }
-          document.querySelector('#wa-sync').textContent = 'Actualizado: ' + new Date().toLocaleTimeString();
+          document.querySelector('#wa-sync').textContent = 'Actualizado: ' + new Date().toLocaleTimeString('es-DO', {timeZone:'America/Santo_Domingo'}) + ' · RD';
         } catch (_) {
           document.querySelector('#wa-sync').textContent = 'No se pudo actualizar. Revisa la conexión o recarga la página.';
         } finally { busy = false; }

@@ -111,17 +111,19 @@ def _zone_join():
     )"""
 
 
-def process_zone_cuts(now=None):
+def process_zone_cuts(now=None, dry_run=False):
     """Queue SUSPEND only when the configured zone cut date AND time have arrived."""
-    if bs.setting('auto_suspend', '0') != '1':
+    if not dry_run and bs.setting('auto_suspend', '0') != '1':
         return 0
 
     now = now or datetime.now()
     c = base.db()
     try:
         if not _table_exists(c, 'zones') or not _table_exists(c, 'router_commands'):
-            return 0
+            return [] if dry_run else 0
 
+        if not dry_run:
+            c.execute('BEGIN IMMEDIATE')
         rows = c.execute(f'''SELECT
                 cu.id customer_id,
                 cu.name customer_name,
@@ -143,6 +145,7 @@ def process_zone_cuts(now=None):
                      z.id,z.name,z.cut_days_after,z.cut_time''').fetchall()
 
         queued = 0
+        preview = []
         retry_after = (now - timedelta(minutes=10)).isoformat(timespec='seconds')
 
         for row in rows:
@@ -159,6 +162,13 @@ def process_zone_cuts(now=None):
             cut_date = oldest_due + timedelta(days=cut_days)
             scheduled_at = datetime.combine(cut_date, _parse_cut_time(row['cut_time']))
             if now < scheduled_at:
+                continue
+
+            promise = c.execute("SELECT 1 FROM payment_promises WHERE customer_id=? AND status='PENDIENTE' AND promise_date>=? LIMIT 1", (row['customer_id'], now.date().isoformat())).fetchone()
+            if promise:
+                continue
+            if dry_run:
+                preview.append(dict(row, scheduled_at=scheduled_at.isoformat(timespec='minutes')))
                 continue
 
             # Never stack duplicate suspension commands. If a previous attempt
@@ -185,23 +195,18 @@ def process_zone_cuts(now=None):
                 'ZONA:' + str(row['zone_name'] or row['zone_id']),
             ))
             queued += 1
-
-            try:
-                base.audit(
-                    'ZONE_AUTO_SUSPEND',
-                    f"#{row['customer_id']} {row['customer_name']} · {row['zone_name']} · corte {row['cut_time']}"
-                )
-            except Exception:
-                pass
+            c.execute('INSERT INTO audit_log(action,detail,created_at) VALUES(?,?,?)', ('ZONE_AUTO_SUSPEND', f"Cliente #{row['customer_id']} · zona {row['zone_name']}", now.isoformat(timespec='seconds')))
 
         c.commit()
-        return queued
+        return preview if dry_run else queued
     finally:
         c.close()
 
 
 def run_billing():
     """Billing runner compatible with the old function, but zone-time aware."""
+    if bs.setting('billing_enabled', '1') != '1':
+        return 0, 0, 0
     today = date.today()
     period = today.strftime('%Y-%m')
     c = base.db()
@@ -209,6 +214,7 @@ def run_billing():
     overdue_customers = 0
 
     try:
+        c.execute('BEGIN IMMEDIATE')
         rows = c.execute(f'''SELECT
                 cu.*,
                 p.price plan_price,
@@ -222,56 +228,62 @@ def run_billing():
             LEFT JOIN plans p ON p.id=cu.plan_id
             LEFT JOIN zones z ON {_zone_join()}
             WHERE cu.plan_id IS NOT NULL
-              AND COALESCE(cu.status,'ACTIVO') <> 'ELIMINADO' ''').fetchall()
+              AND COALESCE(cu.status,'ACTIVO') <> 'ELIMINADO'
+              AND (z.id IS NULL OR COALESCE(z.active,1)=1) ''').fetchall()
 
         last_day = calendar.monthrange(today.year, today.month)[1]
 
         for cu in rows:
-            due_source = cu['zone_billing_day'] if cu['zone_billing_day'] is not None else cu['due_day']
-            try:
-                due_day = max(1, min(int(due_source or 30), last_day))
-            except Exception:
-                due_day = min(30, last_day)
+            # Include next month's cycle when its issue date falls this month.
+            next_month = (today.replace(day=28) + timedelta(days=4)).replace(day=1)
+            for cycle in (today.replace(day=1), next_month):
+                period = cycle.strftime('%Y-%m')
+                last_day = calendar.monthrange(cycle.year, cycle.month)[1]
+                due_source = cu['zone_billing_day'] if cu['zone_billing_day'] is not None else cu['due_day']
+                try:
+                    due_day = max(1, min(int(due_source or 30), last_day))
+                except Exception:
+                    due_day = min(30, last_day)
 
-            due = date(today.year, today.month, due_day)
-            try:
-                before = max(0, int(cu['invoice_days_before'] if cu['invoice_days_before'] is not None else 5))
-            except Exception:
-                before = 5
-            issue = due - timedelta(days=before)
+                due = date(cycle.year, cycle.month, due_day)
+                try:
+                    before = max(0, int(cu['invoice_days_before'] if cu['invoice_days_before'] is not None else 5))
+                except Exception:
+                    before = 5
+                issue = due - timedelta(days=before)
 
-            if today >= issue and not c.execute(
-                'SELECT id FROM invoices WHERE customer_id=? AND period=?',
-                (cu['id'], period)
-            ).fetchone():
-                c.execute('''INSERT INTO invoices(
-                               customer_id,concept,amount,issue_date,due_date,status,period,generated_by
-                             ) VALUES(?,?,?,?,?,?,?,?)''', (
-                    cu['id'],
-                    'Servicio de Internet ' + period,
-                    float(cu['plan_price'] or 0),
-                    today.isoformat(),
-                    due.isoformat(),
-                    'PENDIENTE',
-                    period,
-                    'AUTOMATICO',
-                ))
-                created += 1
+                if today >= issue and not c.execute(
+                    'SELECT id FROM invoices WHERE customer_id=? AND period=?',
+                    (cu['id'], period)
+                ).fetchone():
+                    c.execute('''INSERT INTO invoices(
+                                   customer_id,concept,amount,issue_date,due_date,status,period,generated_by
+                                 ) VALUES(?,?,?,?,?,?,?,?)''', (
+                        cu['id'],
+                        'Servicio de Internet ' + period,
+                        float(cu['plan_price'] or 0),
+                        today.isoformat(),
+                        due.isoformat(),
+                        'PENDIENTE',
+                        period,
+                        'AUTOMATICO',
+                    ))
+                    created += 1
 
-                if bs.setting('whatsapp_enabled', '0') == '1' and cu['phone']:
-                    t = c.execute("SELECT body FROM whatsapp_templates WHERE code='INVOICE'").fetchone()
-                    if t:
-                        msg = t['body'].format(
-                            name=cu['name'],
-                            amount='RD${:,.2f}'.format(float(cu['plan_price'] or 0)),
-                            due_date=due.isoformat(),
-                        )
-                        c.execute('''INSERT INTO whatsapp_outbox(
-                                       customer_id,phone,template_code,message,status,created_at
-                                     ) VALUES(?,?,?,?,?,?)''', (
-                            cu['id'], cu['phone'], 'INVOICE', msg, 'PENDIENTE',
-                            datetime.now().isoformat(timespec='seconds')
-                        ))
+                    if bs.setting('whatsapp_enabled', '0') == '1' and cu['phone']:
+                        t = c.execute("SELECT body FROM whatsapp_templates WHERE code='INVOICE' AND active=1").fetchone()
+                        if t:
+                            msg = t['body'].format(
+                                name=cu['name'],
+                                amount='RD${:,.2f}'.format(float(cu['plan_price'] or 0)),
+                                due_date=due.isoformat(),
+                            )
+                            c.execute('''INSERT INTO whatsapp_outbox(
+                                           customer_id,phone,template_code,message,status,created_at
+                                         ) VALUES(?,?,?,?,?,?)''', (
+                                cu['id'], cu['phone'], 'INVOICE', msg, 'PENDIENTE',
+                                datetime.now().isoformat(timespec='seconds')
+                            ))
 
             if c.execute("""SELECT 1 FROM invoices
                             WHERE customer_id=? AND status='PENDIENTE' AND due_date<?
@@ -318,12 +330,11 @@ def setup(app):
 
     ensure_zone_schema()
 
-    # The user explicitly configured zone cut times, so make the automatic
-    # suspension engine active. Configuration can still disable it later.
+    # Keep the saved suspension preference across deployments.
     c = base.db()
     try:
         c.execute('''INSERT INTO app_settings(key,value) VALUES('auto_suspend','1')
-                     ON CONFLICT(key) DO UPDATE SET value='1' ''')
+                     ON CONFLICT(key) DO NOTHING ''')
         c.commit()
     finally:
         c.close()
@@ -332,6 +343,6 @@ def setup(app):
     # so replace it with the time-aware version too.
     bs.run_billing = run_billing
 
-    if not _started:
+    if not _started and __import__('os').environ.get('INTERFLASH_TESTING') != '1':
         _started = True
         threading.Thread(target=_worker, name='interflash-zone-cut-worker', daemon=True).start()

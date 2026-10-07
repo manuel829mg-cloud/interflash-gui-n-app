@@ -1,7 +1,7 @@
 import os, re, sqlite3
 from datetime import date, datetime
 from html import escape
-from flask import request, redirect, url_for, flash, session, send_file, Response
+from flask import request, redirect, url_for, flash, session, send_file, Response, has_request_context
 from werkzeug.security import generate_password_hash
 import app as base
 
@@ -45,20 +45,22 @@ def _backup_dir():
 
 def _make_db_backup(label='auto'):
     ensure_schema()
-    stamp=datetime.now().strftime('%Y%m%d-%H%M%S')
+    stamp=datetime.now().strftime('%Y%m%d-%H%M%S-%f')
     filename=f'interflash-{label}-{stamp}.db'
     path=os.path.join(_backup_dir(),filename)
     src=sqlite3.connect(base.DB_PATH,timeout=20)
     dst=sqlite3.connect(path)
     try:
         src.backup(dst)
+        if dst.execute('PRAGMA integrity_check').fetchone()[0] != 'ok':
+            raise RuntimeError('La copia no pasó la verificación de integridad.')
     finally:
         dst.close(); src.close()
     c=base.db(); c.execute('INSERT INTO backup_runs(kind,filename,status,detail,created_at,created_by) VALUES(?,?,?,?,?,?)',
-        ('DATABASE',filename,'OK','Copia SQLite completa',datetime.now().isoformat(timespec='seconds'),session.get('user') or 'AUTOMATICO'))
+        ('DATABASE',filename,'OK','Copia SQLite completa',datetime.now().isoformat(timespec='seconds'),(session.get('user') if has_request_context() else None) or 'AUTOMATICO'))
     c.commit(); c.close()
     # Conservar las 30 copias más recientes.
-    files=sorted([x for x in os.listdir(_backup_dir()) if x.endswith('.db')],reverse=True)
+    files=sorted([x for x in os.listdir(_backup_dir()) if x.endswith('.db')], key=lambda x: os.path.getmtime(os.path.join(_backup_dir(),x)), reverse=True)
     for old in files[30:]:
         try: os.remove(os.path.join(_backup_dir(),old))
         except OSError: pass
@@ -250,7 +252,7 @@ def setup(app):
     for item in [('reports_admin','▥','Reportes'),('backup_center','⛁','Backups')]:
         if item[0] not in {x[0] for x in base.NAV}: base.NAV.append(item)
     app.before_request(role_guard_plus)
-    app.before_request(automatic_backup_tick)
+    # Daily backups run independently of requests in operations_health.
     app.add_url_rule('/users/<int:id>/update',endpoint='staff_update',view_func=staff_update,methods=['POST'])
     app.add_url_rule('/users/<int:id>/toggle',endpoint='staff_toggle',view_func=staff_toggle,methods=['POST'])
     app.add_url_rule('/backups',endpoint='backup_center',view_func=backup_center,methods=['GET'])

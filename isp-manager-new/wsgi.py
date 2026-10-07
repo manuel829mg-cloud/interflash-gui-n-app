@@ -193,3 +193,8 @@ mobile_app.setup(app)
 
 import whatsapp_menu
 whatsapp_menu.start_worker(app)
+
+import payment_flow
+payment_flow.setup(app)
+import operations_health
+operations_health.setup(app)

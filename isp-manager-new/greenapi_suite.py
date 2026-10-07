@@ -143,7 +143,7 @@ def settings():
     <button class="btn green" name="action" value="save">Comprobar y conectar GREEN-API</button></form>
     <p>Canal: {wa.esc(cfg['channel'] or 'Sin configurar')} · Número: {wa.esc(cfg['phone'] or 'Se detecta al conectar')}</p></div>
     <div class="panel"><p>Envía y recibe texto. Los archivos entrantes aparecen como avisos; no se descargan. Se aplican los límites de tu plan de GREEN-API.</p>
-    <form method="post"><input type="hidden" name="csrf" value="{wa.esc(csrf)}"><button class="btn" name="action" value="meta">Usar Meta para enviar</button></form></div>'''
+</div>'''
     response = current_app.make_response(base.shell('GREEN-API', body, 'whatsapp_inbox'))
     response.headers['Cache-Control'] = 'no-store'; response.headers['Referrer-Policy'] = 'no-referrer'
     return response

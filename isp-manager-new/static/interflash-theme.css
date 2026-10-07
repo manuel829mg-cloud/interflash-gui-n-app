@@ -71,3 +71,5 @@ body .clients-table .ico:hover{filter:brightness(1.14);transform:translateY(-2px
 body .clients-table .ico:active{transform:translateY(0)}
 body .clients-table .c-actions{width:218px;min-width:218px}
 @media(max-width:780px){body .clients-table .c-actions{min-width:0}}
+
+body .clients-table .ico svg.object-icon{width:27px;height:27px;filter:drop-shadow(0 2px 1px #0004)}

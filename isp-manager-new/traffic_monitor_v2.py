@@ -11,8 +11,8 @@ def traffic_sample():
     iface = (request.form.get('interface') or '')[:120].strip()
     if not iface:
         return jsonify(ok=False, error='missing-interface'), 400
-    rx = request.form.get('rx') or '0'
-    tx = request.form.get('tx') or '0'
+    rx = request.form.get('rx')
+    tx = request.form.get('tx')
     push_sync.ensure_schema()
     c = base.db()
     try:

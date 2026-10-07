@@ -86,8 +86,14 @@ def _save_traffic(c, name, items):
         iface = _safe(x.get('name') or x.get('interface'), 120).strip()
         if not iface:
             continue
-        rx = _int(x.get('rx-byte') if 'rx-byte' in x else x.get('rx_bytes'))
-        tx = _int(x.get('tx-byte') if 'tx-byte' in x else x.get('tx_bytes'))
+        # Missing/invalid counters are not a measurement of zero traffic.
+        try:
+            rx = int(str(x.get('rx-byte') if 'rx-byte' in x else x.get('rx_bytes')))
+            tx = int(str(x.get('tx-byte') if 'tx-byte' in x else x.get('tx_bytes')))
+            if rx < 0 or tx < 0:
+                continue
+        except (TypeError, ValueError):
+            continue
         prev = c.execute(
             'SELECT rx_bytes,tx_bytes,updated_at FROM push_router_traffic WHERE router_name=? AND interface_name=?',
             (name, iface)
@@ -97,12 +103,15 @@ def _save_traffic(c, name, items):
             try:
                 before = datetime.fromisoformat(prev['updated_at'])
                 seconds = max((now - before).total_seconds(), 0.0)
-                # Closely spaced updates must not overwrite traffic with a false zero.
-                # Leave the baseline intact so the next reading includes these bytes.
-                if seconds < 0.1:
+                # Router counters can repeat between refreshes, and concurrent
+                # reporters can arrive only fractions of a second apart.
+                # Measure over at least the monitor's two-second interval;
+                # keep BOTH the timestamp and counters until then so bytes
+                # are neither lost nor divided by a tiny arrival interval.
+                if seconds < 2.0:
                     continue
-                if seconds >= 0.1:
-                    prev_rx = _int(prev['rx_bytes']); prev_tx = _int(prev['tx_bytes'])
+                if seconds >= 2.0:
+                    prev_rx = int(prev['rx_bytes']); prev_tx = int(prev['tx_bytes'])
                     if rx >= prev_rx:
                         rx_bps = ((rx - prev_rx) * 8.0) / seconds
                     if tx >= prev_tx:

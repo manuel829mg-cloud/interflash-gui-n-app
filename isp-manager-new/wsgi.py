@@ -190,3 +190,6 @@ print('INTERFLASH_FULL_ISP_SUITE_ENABLED', flush=True)
 # Mobile application uses the existing administrator login and personal portals.
 import mobile_app
 mobile_app.setup(app)
+
+import whatsapp_menu
+whatsapp_menu.start_worker(app)

@@ -22,6 +22,9 @@ def _apply_branding(html):
     html = html.replace('<div class="brandmark">IF</div>', logo)
     if _EXTRA_CSS not in html:
         html = html.replace('</head>', _EXTRA_CSS + '<link rel="stylesheet" href="/static/interflash-theme.css?v=20261007"></head>')
+    favicon = '<link rel="icon" type="image/svg+xml" href="/static/interflash-logo.svg?v=20261007-tab">'
+    if favicon not in html:
+        html = html.replace('</head>', favicon + '</head>')
     return html
 
 

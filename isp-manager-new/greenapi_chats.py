@@ -1,9 +1,10 @@
 """Explicit, read-only provider imports into the local WhatsApp inbox."""
 import re
+import time
 import secrets
 from datetime import datetime
 from urllib.parse import urlsplit
-from flask import request, session, abort, redirect, url_for, flash
+from flask import request, session, abort, redirect, url_for, flash, jsonify
 import app as base
 import greenapi_suite as green
 
@@ -55,6 +56,19 @@ def load(thread_id):
     chat = t['phone']+'@c.us'
     try:
         if request.form.get('action') == 'avatar':
+            automatic = request.form.get('automatic') == '1'
+            if automatic:
+                c = base.db()
+                try:
+                    c.execute('BEGIN IMMEDIATE')
+                    cached = c.execute('SELECT checked FROM greenapi_avatar_checks WHERE instance=? AND thread_id=?', (cfg['channel'],thread_id)).fetchone()
+                    if cached and time.time()-cached['checked'] < 86400:
+                        profile = c.execute('SELECT avatar FROM greenapi_chat_profiles WHERE instance=? AND thread_id=?',(cfg['channel'],thread_id)).fetchone()
+                        c.commit()
+                        return jsonify(avatar=profile['avatar'] if profile else '')
+                    c.execute('INSERT INTO greenapi_avatar_checks(instance,thread_id,checked) VALUES(?,?,?) ON CONFLICT(instance,thread_id) DO UPDATE SET checked=excluded.checked',(cfg['channel'],thread_id,time.time()))
+                    c.commit()
+                finally: c.close()
             result = green.api('getAvatar', {'chatId':chat},cfg)
             url = str(result.get('urlAvatar') or '')
             parsed = urlsplit(url)
@@ -64,6 +78,7 @@ def load(thread_id):
             c = base.db()
             c.execute('INSERT INTO greenapi_chat_profiles(instance,thread_id,avatar) VALUES(?,?,?) ON CONFLICT(instance,thread_id) DO UPDATE SET avatar=excluded.avatar',(cfg['channel'],thread_id,url))
             c.commit();c.close()
+            if automatic: return jsonify(avatar=url)
             flash('Foto actualizada.' if url else 'Este contacto no tiene una foto disponible para mostrar.')
         else:
             rows = green.api('getChatHistory', {'chatId':chat,'count':100},cfg)
@@ -90,11 +105,17 @@ def load(thread_id):
                 c.rollback();raise
             finally:c.close()
             flash(f'{added} mensajes incorporados. Se cargan hasta 100 mensajes disponibles; los archivos se muestran como avisos.')
-    except green.APIError as exc: flash(str(exc))
+    except green.APIError as exc:
+        if request.form.get('automatic') == '1':
+            c=base.db()
+            c.execute('UPDATE greenapi_avatar_checks SET checked=? WHERE instance=? AND thread_id=?',(time.time()-85800,cfg['channel'],thread_id))
+            c.commit();c.close()
+            return jsonify(avatar='',error='Foto no disponible temporalmente'),502
+        flash(str(exc))
     return redirect(url_for('whatsapp_inbox',thread=thread_id))
 
 
 def setup(app):
-    c=base.db();c.execute('CREATE TABLE IF NOT EXISTS greenapi_chat_profiles(instance TEXT,thread_id INTEGER,avatar TEXT,PRIMARY KEY(instance,thread_id))');c.commit();c.close()
+    c=base.db();c.execute('CREATE TABLE IF NOT EXISTS greenapi_avatar_checks(instance TEXT,thread_id INTEGER,checked REAL,PRIMARY KEY(instance,thread_id))');c.execute('CREATE TABLE IF NOT EXISTS greenapi_chat_profiles(instance TEXT,thread_id INTEGER,avatar TEXT,PRIMARY KEY(instance,thread_id))');c.commit();c.close()
     app.add_url_rule('/whatsapp/greenapi/sync',endpoint='greenapi_sync',view_func=sync,methods=['POST'])
     app.add_url_rule('/whatsapp/greenapi/chat/<int:thread_id>',endpoint='greenapi_chat_load',view_func=load,methods=['POST'])

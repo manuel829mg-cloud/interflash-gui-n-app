@@ -354,7 +354,7 @@ def inbox():
         if session.get('role') == 'ADMIN':
             sync_button = f'<form method="post" action="{url_for("greenapi_sync")}"><input type="hidden" name="csrf" value="{esc(sync_csrf)}"><button class="btn green">Chats</button></form>'
             if thread:
-                history_button = f'<form method="post" action="{url_for("greenapi_chat_load",thread_id=thread["id"])}" style="display:flex;gap:8px;padding:10px"><input type="hidden" name="csrf" value="{esc(sync_csrf)}"><button class="btn" name="action" value="history">Cargar historial</button><button class="btn" name="action" value="avatar">Cargar foto</button></form>'
+                history_button = f'<form method="post" action="{url_for("greenapi_chat_load",thread_id=thread["id"])}" style="display:flex;gap:8px;padding:10px"><input type="hidden" name="csrf" value="{esc(sync_csrf)}"><button class="btn" name="action" value="history">Cargar historial</button><span class="muted" data-auto-avatar="1">Foto automática</span></form>'
     trows=[]
     for t in threads:
         label=t['customer_name'] or t['display_name'] or t['phone']
@@ -404,6 +404,21 @@ def inbox():
         input.value = button.dataset.message; input.focus();
         input.scrollIntoView({behavior:'smooth', block:'center'});
       }));
+      const photoMarker = document.querySelector('[data-auto-avatar]');
+      if (photoMarker) {
+        const form = photoMarker.closest('form');
+        const data = new FormData(form);
+        data.set('action', 'avatar'); data.set('automatic', '1');
+        fetch(form.action, {method:'POST', body:data}).then(r => r.ok ? r.json() : null).then(result => {
+          if (!result || !result.avatar) return;
+          const avatar = document.querySelector('.wa-thread.on .wa-avatar');
+          if (!avatar) return;
+          const img = document.createElement('img');
+          img.src = result.avatar; img.alt = ''; img.referrerPolicy = 'no-referrer';
+          img.style.cssText = 'width:42px;height:42px;object-fit:cover;border-radius:50%';
+          avatar.replaceChildren(img);
+        }).catch(() => {});
+      }
       let previous = null, busy = false;
       const box = document.querySelector('.wa-messages');
       if (box) box.scrollTop = box.scrollHeight;

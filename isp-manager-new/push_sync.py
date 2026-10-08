@@ -217,6 +217,16 @@ def traffic(name):
     if not base.logged_in(): return redirect(url_for('login'))
     c=base.db()
     rows=c.execute('SELECT * FROM push_router_traffic WHERE router_name=? ORDER BY interface_name',(name,)).fetchall()
+    try:
+        active_names={str(r['name'] or '').strip() for r in c.execute(
+            'SELECT name FROM push_pppoe_active WHERE router_name=? ORDER BY name',(name,)
+        ).fetchall() if r['name']}
+        customers=c.execute('''SELECT id,name,pppoe FROM customers
+          WHERE COALESCE(pppoe,'')<>'' AND COALESCE(router_name,'CCR2116')=?
+          ORDER BY name COLLATE NOCASE''',(name,)).fetchall()
+    except Exception:
+        active_names=set()
+        customers=[]
     c.close()
 
     wan=[r for r in rows if 'wan' in (r['interface_name'] or '').lower()]
@@ -236,6 +246,21 @@ def traffic(name):
     else:
         note='Aún no se identifican interfaces con “WAN” en el nombre. Activa el monitor para comenzar a recibir datos.'
 
+    client_options=[]
+    for customer in customers:
+        pppoe=str(customer['pppoe'] or '').strip()
+        if pppoe not in active_names:
+            continue
+        customer_name=escape(customer['name'] or pppoe)
+        client_options.append(
+            f'<option value="{int(customer["id"])}">{customer_name} · {escape(pppoe)}</option>'
+        )
+    options=''.join(client_options)
+    client_placeholder=(
+        '<option value="">Selecciona un cliente conectado</option>' if options
+        else '<option value="">No hay clientes PPPoE conectados registrados en la plataforma</option>'
+    )
+
     body=f'''<div class="head"><div><h1>Consumo MikroTik · {escape(name)}</h1><p>Tráfico total del router por sus interfaces WAN.</p></div><div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn blue" href="{url_for('router_push_traffic_script',name=name)}">Activar monitor</a><a class="btn" href="{url_for('router_push_view')}">← Volver</a></div></div>
     <div class="grid6" style="grid-template-columns:repeat(3,minmax(180px,1fr))">
       <div class="kpi blue1"><div class="label">Descarga total</div><div class="value">{_fmt_mbps(total_rx)}</div><div class="sub">RX de las WAN</div></div>
@@ -243,6 +268,50 @@ def traffic(name):
       <div class="kpi cyan1"><div class="label">Última lectura</div><div class="value" style="font-size:16px">{escape(last)}</div><div class="sub">{escape(note)}</div></div>
     </div>
     <div class="panel"><table class="table"><tr><th>Interfaz</th><th>Tipo</th><th>Descarga</th><th>Subida</th><th>Actualizado</th></tr>{table}</table></div>
+    <div class="panel" id="pppoe-traffic-panel">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+        <div><h2 style="margin:0 0 5px">Tráfico por cliente PPPoE</h2><p class="muted" style="margin:0">Elige un cliente conectado para ver su velocidad y consumo de esta sesión.</p></div>
+        <select id="pppoe-traffic-customer" class="field" style="min-width:min(420px,100%)">{client_placeholder}{options}</select>
+      </div>
+      <div class="grid6" style="grid-template-columns:repeat(4,minmax(140px,1fr));margin-top:14px">
+        <div class="kpi blue1"><div class="label">Descarga actual</div><div class="value" id="pppoe-download-speed">0.00 Mbps</div></div>
+        <div class="kpi green1"><div class="label">Subida actual</div><div class="value" id="pppoe-upload-speed">0.00 Mbps</div></div>
+        <div class="kpi cyan1"><div class="label">Descargado en sesión</div><div class="value" id="pppoe-download-total">0 B</div></div>
+        <div class="kpi purple1"><div class="label">Subido en sesión</div><div class="value" id="pppoe-upload-total">0 B</div></div>
+      </div>
+      <div class="muted" id="pppoe-traffic-status" style="margin-top:10px">Selecciona un cliente conectado.</div>
+    </div>
+    <script>
+      (function(){{
+        const select=document.getElementById('pppoe-traffic-customer');
+        const status=document.getElementById('pppoe-traffic-status');
+        const storageKey='interflash-pppoe-traffic-{escape(name)}';
+        const fmtBytes=value=>{{
+          let n=Math.max(0,Number(value)||0),units=['B','KB','MB','GB','TB'],i=0;
+          while(n>=1024&&i<units.length-1){{n/=1024;i++;}}
+          return n.toFixed(i===0?0:2)+' '+units[i];
+        }};
+        async function refresh(){{
+          const id=select.value;
+          if(!id){{status.textContent='Selecciona un cliente conectado.';return;}}
+          try{{
+            const response=await fetch('/api/customers/'+encodeURIComponent(id)+'/traffic',{{cache:'no-store'}});
+            const data=await response.json();
+            if(!response.ok||!data.ok) throw new Error(data.error||'No se pudo leer el tráfico.');
+            document.getElementById('pppoe-download-speed').textContent=((Number(data.download_bps)||0)/1000000).toFixed(2)+' Mbps';
+            document.getElementById('pppoe-upload-speed').textContent=((Number(data.upload_bps)||0)/1000000).toFixed(2)+' Mbps';
+            document.getElementById('pppoe-download-total').textContent=fmtBytes(data.download_bytes);
+            document.getElementById('pppoe-upload-total').textContent=fmtBytes(data.upload_bytes);
+            status.textContent=data.online?'CONECTADO · Actualizando automáticamente':'SIN LECTURA RECIENTE · Verifica que el cliente siga conectado';
+          }}catch(error){{status.textContent='No se pudo actualizar: '+error.message;}}
+        }}
+        const previous=localStorage.getItem(storageKey);
+        if(previous&&Array.from(select.options).some(option=>option.value===previous)) select.value=previous;
+        select.addEventListener('change',()=>{{localStorage.setItem(storageKey,select.value);refresh();}});
+        refresh();
+        setInterval(refresh,1000);
+      }})();
+    </script>
     <script>setTimeout(function(){{location.reload()}},10000)</script>'''
     return base.shell('Consumo MikroTik',body,'routers')
 

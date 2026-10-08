@@ -1,4 +1,5 @@
 import json
+import unicodedata
 from ipaddress import ip_address
 from datetime import datetime
 from html import escape
@@ -8,6 +9,11 @@ import app as base
 
 def esc(value):
     return escape('' if value is None else str(value))
+
+
+def search_text(value):
+    return ''.join(ch for ch in unicodedata.normalize('NFD', str(value or ''))
+                   if not '\u0300' <= ch <= '\u036f').lower().strip()
 
 
 def device_ip_links(value):
@@ -112,11 +118,6 @@ def customers_responsive():
              LEFT JOIN zones z ON z.id=cu.zone_id
              WHERE COALESCE(cu.status,'ACTIVO') <> 'ELIMINADO' '''
     args = []
-    if q:
-        like = '%' + q + '%'
-        sql += ''' AND (cu.name LIKE ? OR cu.phone LIKE ? OR cu.document LIKE ?
-                   OR cu.pppoe LIKE ? OR cu.onu_serial LIKE ? OR cu.code LIKE ? OR cu.ip_address LIKE ?)'''
-        args = [like] * 7
     if status_filter:
         sql += ' AND cu.status = ?'
         args.append(status_filter)
@@ -137,6 +138,8 @@ def customers_responsive():
     c.close()
 
     trs = []
+    visible_count = 0
+    query_text = search_text(q)
     connected_count = 0
     disconnected_count = 0
     suspended_count = 0
@@ -149,16 +152,12 @@ def customers_responsive():
 
         if local_status == 'SUSPENDIDO':
             state = 'SUSPENDIDO'
-            suspended_count += 1
         elif not pppoe:
             state = 'SIN PPPoE'
-            no_pppoe_count += 1
         elif (router_name, pppoe) in active_pairs or pppoe in active_names:
             state = 'CONECTADO'
-            connected_count += 1
         else:
             state = 'DESCONECTADO'
-            disconnected_count += 1
 
         if state == 'CONECTADO':
             cls = 'ok connection-online'
@@ -172,6 +171,17 @@ def customers_responsive():
         access_ip = active_addresses.get((router_name, pppoe)) or r['ip_address']
         ip_links = device_ip_links(access_ip)
         code = r['code'] or ('#' + str(r['id']))
+        searchable = search_text(' '.join(str(value or '') for value in (
+            r['name'], r['phone'], r['document'], pppoe, r['onu_serial'],
+            code, r['ip_address'], access_ip
+        )))
+        visible = query_text in searchable
+        if visible:
+            visible_count += 1
+            connected_count += state == 'CONECTADO'
+            disconnected_count += state == 'DESCONECTADO'
+            suspended_count += state == 'SUSPENDIDO'
+            no_pppoe_count += state == 'SIN PPPoE'
 
         if state == 'SUSPENDIDO':
             service_button = f'''<form method="post" action="{url_for('customer_service_action',id=r['id'],action='REACTIVATE')}"><button class="icon-btn reactivate-icon" type="submit" title="Reactivar cliente" aria-label="Reactivar cliente" onclick="return confirm('¿Reactivar este cliente?')">{_icon('reactivate')}</button></form>'''
@@ -190,7 +200,7 @@ def customers_responsive():
         dot_class = 'dot-online' if state == 'CONECTADO' else ('dot-offline' if state == 'DESCONECTADO' else ('dot-suspended' if state == 'SUSPENDIDO' else 'dot-none'))
         state_html = f'<span class="tag {cls}"><span class="status-dot {dot_class}"></span>{esc(state)}</span>'
 
-        trs.append(f'''<tr>
+        trs.append(f'''<tr data-client-search="{esc(searchable)}" data-client-state="{esc(state)}"{'' if visible else ' hidden'}>
           <td class="c-code" data-label="Código"><span>{esc(code)}</span></td>
           <td class="c-client" data-label="Cliente"><b>{esc(r['name'])}</b><br><span class="muted">{esc(r['phone'])}</span></td>
           <td class="c-plan" data-label="Plan">{esc(r['plan_name'] or '-')}</td>
@@ -202,6 +212,7 @@ def customers_responsive():
 
     body = f'''
     <style>
+      .clients-fit tr[hidden]{{display:none!important;}}
       .clients-fit-panel{{overflow-x:hidden;max-width:100%;}}
       .clients-fit{{width:100%;max-width:100%;table-layout:fixed;border-collapse:collapse;}}
       .clients-fit th,.clients-fit td{{padding:11px 8px;border-bottom:1px solid #1b3045;text-align:left;vertical-align:middle;font-size:13px;min-width:0;overflow-wrap:anywhere;word-break:break-word;}}
@@ -274,23 +285,59 @@ def customers_responsive():
     <div class="head"><div><h1>{'Clientes suspendidos' if status_filter else 'Clientes'}</h1><p>Clientes, servicio, facturas, ONU y soporte</p></div><a class="btn green" href="{url_for('customer_new')}">+ Nuevo cliente</a></div>
     <div class="panel clients-fit-panel">
       <div class="connection-summary">
-        <div class="connection-card"><span class="status-dot dot-online"></span>Conectados <b>{connected_count}</b></div>
-        <div class="connection-card"><span class="status-dot dot-offline"></span>Desconectados <b>{disconnected_count}</b></div>
-        <div class="connection-card"><span class="status-dot dot-suspended"></span>Suspendidos <b>{suspended_count}</b></div>
-        <div class="connection-card"><span class="status-dot dot-none"></span>Sin PPPoE <b>{no_pppoe_count}</b></div>
+        <div class="connection-card"><span class="status-dot dot-online"></span>Conectados <b data-count-state="CONECTADO">{connected_count}</b></div>
+        <div class="connection-card"><span class="status-dot dot-offline"></span>Desconectados <b data-count-state="DESCONECTADO">{disconnected_count}</b></div>
+        <div class="connection-card"><span class="status-dot dot-suspended"></span>Suspendidos <b data-count-state="SUSPENDIDO">{suspended_count}</b></div>
+        <div class="connection-card"><span class="status-dot dot-none"></span>Sin PPPoE <b data-count-state="SIN PPPoE">{no_pppoe_count}</b></div>
       </div>
-      <form class="clients-toolbar" method="get">
+      <form id="clients-search-form" class="clients-toolbar" method="get">
         {'<input type="hidden" name="status" value="SUSPENDIDO">' if status_filter else ''}
-        <input class="field" name="q" value="{esc(q)}" placeholder="Buscar cliente, teléfono, cédula, PPPoE, IP, ONU">
+        <input id="clients-search" class="field" name="q" aria-label="Buscar clientes" autocomplete="off" value="{esc(q)}" placeholder="Buscar cliente, teléfono, cédula, PPPoE, IP, ONU">
         <button class="btn blue">Buscar</button>
-        <a class="btn" href="{url_for('customers')}">Limpiar</a>
+        <a id="clients-search-clear" class="btn" href="{url_for('customers', status=status_filter) if status_filter else url_for('customers')}">Limpiar</a>
       </form>
       <p class="muted">Pulsa la IP para abrir el router u ONU del cliente. Debes estar conectado a la red del ISP o a su VPN y el equipo debe permitir administración web.</p>
       <table class="clients-fit">
         <thead><tr><th>Código</th><th>Cliente</th><th>Plan</th><th class="c-zone">Zona</th><th>PPPoE / IP del equipo</th><th>Conexión</th><th>Acciones</th></tr></thead>
-        <tbody>{''.join(trs) or '<tr><td colspan="7" class="muted">No hay clientes.</td></tr>'}</tbody>
+        <tbody>{''.join(trs)}<tr id="clients-search-empty"{' hidden' if visible_count else ''}><td colspan="7" class="muted" role="status">No hay clientes que coincidan con la búsqueda.</td></tr></tbody>
       </table>
     </div>
+    <script>
+    (() => {{
+      const form = document.getElementById('clients-search-form');
+      const input = document.getElementById('clients-search');
+      const clear = document.getElementById('clients-search-clear');
+      const rows = [...document.querySelectorAll('[data-client-search]')];
+      const counts = [...document.querySelectorAll('[data-count-state]')];
+      const empty = document.getElementById('clients-search-empty');
+      const normalize = value => value.normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().trim();
+      function filterClients() {{
+        const query = normalize(input.value);
+        const totals = {{}};
+        let visible = 0;
+        rows.forEach(row => {{
+          row.hidden = !row.dataset.clientSearch.includes(query);
+          if (!row.hidden) {{
+            visible++;
+            const state = row.dataset.clientState;
+            totals[state] = (totals[state] || 0) + 1;
+          }}
+        }});
+        counts.forEach(count => count.textContent = totals[count.dataset.countState] || 0);
+        empty.hidden = visible > 0;
+        const url = new URL(location.href);
+        if (input.value.trim()) url.searchParams.set('q', input.value.trim());
+        else url.searchParams.delete('q');
+        history.replaceState(null, '', url);
+      }}
+      input.addEventListener('input', filterClients);
+      form.addEventListener('submit', event => {{ event.preventDefault(); filterClients(); }});
+      clear.addEventListener('click', event => {{
+        event.preventDefault(); input.value = ''; filterClients(); input.focus();
+      }});
+      filterClients();
+    }})();
+    </script>
     '''
     return base.shell('Clientes', body, 'customers')
 

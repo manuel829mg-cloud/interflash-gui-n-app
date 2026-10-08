@@ -1,15 +1,15 @@
 from functools import wraps
 import app as base
 
-LOGO_URL = '/static/interflash-logo.svg'
+LOGO_URL = '/static/interflash-logo-round.webp?v=20261008'
 
 _EXTRA_CSS = '''
 <style>
-.brandmark.brandmark-logo{background:transparent!important;width:64px;height:64px;border-radius:0;overflow:visible;display:flex;align-items:center;justify-content:center;flex:0 0 64px;box-shadow:none}
-.brandmark.brandmark-logo img{width:64px;height:64px;object-fit:contain;display:block;border-radius:0}
+.brandmark.brandmark-logo{background:transparent!important;width:64px;height:64px;border-radius:50%;overflow:visible;display:flex;align-items:center;justify-content:center;flex:0 0 64px;box-shadow:none}
+.brandmark.brandmark-logo img{width:64px;height:64px;object-fit:contain;display:block;border-radius:50%}
 .brand{align-items:center}
 .loginbox .brandmark.brandmark-logo{width:120px;height:120px;flex-basis:120px;box-shadow:none}
-.loginbox .brandmark.brandmark-logo img{width:120px;height:120px;object-fit:contain;border-radius:0}
+.loginbox .brandmark.brandmark-logo img{width:120px;height:120px;object-fit:contain;border-radius:50%}
 @media(max-width:850px){.brandmark.brandmark-logo{width:58px;height:58px;flex-basis:58px}.brandmark.brandmark-logo img{width:58px;height:58px}.side .brand{padding-left:4px;padding-right:4px}}
 </style>
 '''
@@ -22,7 +22,7 @@ def _apply_branding(html):
     html = html.replace('<div class="brandmark">IF</div>', logo)
     if _EXTRA_CSS not in html:
         html = html.replace('</head>', _EXTRA_CSS + '<link rel="stylesheet" href="/static/interflash-theme.css?v=20261007"></head>')
-    favicon = '<link rel="icon" type="image/svg+xml" href="/static/interflash-logo.svg?v=20261007-tab">'
+    favicon = '<link rel="icon" type="image/webp" href="/static/interflash-logo-round.webp?v=20261008">'
     if favicon not in html:
         html = html.replace('</head>', favicon + '</head>')
     return html

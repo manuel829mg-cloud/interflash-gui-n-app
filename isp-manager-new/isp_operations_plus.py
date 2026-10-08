@@ -212,6 +212,9 @@ def customers_plus():
         </tr>''')
 
     css='''<style>
+    .clients-table .clients-search-row{background:transparent;border:0;box-shadow:none;margin:0;padding:0}
+    .clients-table .clients-search-row>td{padding:6px 0 8px;border:0}
+    .clients-search-row .toolbar2{margin:0;gap:8px}
     .clients-table tr[hidden]{display:none!important}
     .device-ip{display:flex;flex-direction:column;gap:3px;margin-top:7px}.device-ip-main{color:#53c8ff;font-weight:700;font-size:13px;overflow-wrap:anywhere}.device-ip-https{font-size:10px;color:#8bdac9}.device-ip a:hover{text-decoration:underline}.device-ip-empty{display:block;margin-top:5px;font-size:10px}
 
@@ -221,8 +224,8 @@ def customers_plus():
     @media(max-width:780px){.clients-table thead{display:none}.clients-table,.clients-table tbody,.clients-table tr,.clients-table td{display:block;width:100%!important}.clients-table tr{background:#0b1725;border:1px solid #22374e;border-radius:12px;margin-bottom:10px;padding:10px}.clients-table td{border:0;padding:5px 0}.c-zone,.c-plan,.c-pay{display:block}.icon-actions{margin-top:6px}}
     </style>'''
     body=f'''{css}<div class="head"><div><h1>{'Clientes suspendidos' if status_filter else 'Clientes'}</h1><p>Estado PPPoE real, facturación, ONU y acciones rápidas</p></div><div class="quick-links"><a class="btn" href="{url_for('onu_overview')}">ONU / ONT</a><a class="btn" href="{url_for('customer_trash')}">Papelera</a><a class="btn green" href="{url_for('customer_new')}">+ Nuevo cliente</a></div></div>
-    <div class="panel clients-panel"><form id="clients-search-form" class="toolbar2" method="get">{'<input type="hidden" name="status" value="SUSPENDIDO">' if status_filter else ''}<input id="clients-search" class="field" name="q" aria-label="Buscar clientes" autocomplete="off" value="{esc(q)}" placeholder="Buscar cliente, teléfono, cédula, PPPoE, IP, ONU"><button class="btn blue">Buscar</button><a id="clients-search-clear" class="btn" href="{url_for('customers',status=status_filter) if status_filter else url_for('customers')}">Limpiar</a></form>
-    <table class="clients-table"><thead><tr><th>Código</th><th>Cliente</th><th>Plan</th><th>Zona</th><th>PPPoE / estado / IP</th><th>Vence</th><th>Deuda</th><th>Último pago</th><th>Acciones</th></tr></thead><tbody>{''.join(trs)}<tr id="clients-search-empty"{' hidden' if visible_count else ''}><td colspan="9" class="muted" role="status">No hay clientes que coincidan con la búsqueda.</td></tr></tbody></table></div>'''
+    <div class="panel clients-panel">
+    <table class="clients-table"><thead><tr><th>Código</th><th>Cliente</th><th>Plan</th><th>Zona</th><th>PPPoE / estado / IP</th><th>Vence</th><th>Deuda</th><th>Último pago</th><th>Acciones</th></tr></thead><tbody><tr class="clients-search-row"><td colspan="9"><form id="clients-search-form" class="toolbar2" method="get">{'<input type="hidden" name="status" value="SUSPENDIDO">' if status_filter else ''}<input id="clients-search" class="field" name="q" aria-label="Buscar clientes" autocomplete="off" value="{esc(q)}" placeholder="Buscar cliente, teléfono, cédula, PPPoE, IP, ONU"><button class="btn blue">Buscar</button><a id="clients-search-clear" class="btn" href="{url_for('customers',status=status_filter) if status_filter else url_for('customers')}">Limpiar</a></form></td></tr>{''.join(trs)}<tr id="clients-search-empty"{' hidden' if visible_count else ''}><td colspan="9" class="muted" role="status">No hay clientes que coincidan con la búsqueda.</td></tr></tbody></table></div>'''
     body += r'''    <script>
     (() => {
       const form = document.getElementById('clients-search-form');

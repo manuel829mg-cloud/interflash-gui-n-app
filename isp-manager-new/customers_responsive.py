@@ -104,6 +104,7 @@ def customers_responsive():
         return redirect(url_for('login'))
 
     q = (request.args.get('q') or '').strip()
+    status_filter = 'SUSPENDIDO' if request.args.get('status') == 'SUSPENDIDO' else ''
     c = base.db()
     sql = '''SELECT cu.*,p.name plan_name,z.name zone_name
              FROM customers cu
@@ -116,6 +117,9 @@ def customers_responsive():
         sql += ''' AND (cu.name LIKE ? OR cu.phone LIKE ? OR cu.document LIKE ?
                    OR cu.pppoe LIKE ? OR cu.onu_serial LIKE ? OR cu.code LIKE ? OR cu.ip_address LIKE ?)'''
         args = [like] * 7
+    if status_filter:
+        sql += ' AND cu.status = ?'
+        args.append(status_filter)
     sql += ' ORDER BY cu.id DESC'
     rows = c.execute(sql, args).fetchall()
 
@@ -267,7 +271,7 @@ def customers_responsive():
         .clients-toolbar .field{{min-width:100%;max-width:100%;}}
       }}
     </style>
-    <div class="head"><div><h1>Clientes</h1><p>Clientes, servicio, facturas, ONU y soporte</p></div><a class="btn green" href="{url_for('customer_new')}">+ Nuevo cliente</a></div>
+    <div class="head"><div><h1>{'Clientes suspendidos' if status_filter else 'Clientes'}</h1><p>Clientes, servicio, facturas, ONU y soporte</p></div><a class="btn green" href="{url_for('customer_new')}">+ Nuevo cliente</a></div>
     <div class="panel clients-fit-panel">
       <div class="connection-summary">
         <div class="connection-card"><span class="status-dot dot-online"></span>Conectados <b>{connected_count}</b></div>
@@ -276,6 +280,7 @@ def customers_responsive():
         <div class="connection-card"><span class="status-dot dot-none"></span>Sin PPPoE <b>{no_pppoe_count}</b></div>
       </div>
       <form class="clients-toolbar" method="get">
+        {'<input type="hidden" name="status" value="SUSPENDIDO">' if status_filter else ''}
         <input class="field" name="q" value="{esc(q)}" placeholder="Buscar cliente, teléfono, cédula, PPPoE, IP, ONU">
         <button class="btn blue">Buscar</button>
         <a class="btn" href="{url_for('customers')}">Limpiar</a>

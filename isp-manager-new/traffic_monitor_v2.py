@@ -169,6 +169,7 @@ def build_traffic_script(name):
       }} else={{
         /system scheduler set [find where name="interflash-traffic-scheduler"] interval=2s;
       }}
+      :local pppoeItems "";
       :foreach pppoe in=$watched do={{
         :local iface ("<pppoe-" . $pppoe . ">");
         :foreach item in=[/interface print stats as-value where name=$iface] do={{
@@ -176,9 +177,13 @@ def build_traffic_script(name):
           :local tx ($item->"tx-byte");
           :local sample {{"name"=$pppoe; "bytes"=($tx . "/" . $rx)}};
           :local record [:serialize to=json value=$sample options=json.no-string-conversion];
-          :local pppData ("{{\\\"router\\\":\\\"{name}\\\",\\\"kind\\\":\\\"pppoe-traffic\\\",\\\"items\\\":[" . $record . "]}}");
-          /tool fetch url=$relayUrl http-method=post http-header-field=$jsonHeaders http-data=$pppData output=none check-certificate=yes;
+          :if ([:len $pppoeItems] > 0) do={{ :set pppoeItems ($pppoeItems . ","); }}
+          :set pppoeItems ($pppoeItems . $record);
         }}
+      }}
+      :if ([:len $pppoeItems] > 0) do={{
+        :local pppData ("{{\\\"router\\\":\\\"{name}\\\",\\\"kind\\\":\\\"pppoe-traffic\\\",\\\"items\\\":[" . $pppoeItems . "]}}");
+        /tool fetch url=$relayUrl http-method=post http-header-field=$jsonHeaders http-data=$pppData output=none check-certificate=yes;
       }}
     }} on-error={{}}
   }}

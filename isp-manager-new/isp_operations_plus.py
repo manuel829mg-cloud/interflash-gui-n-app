@@ -613,6 +613,9 @@ def dashboard_plus():
     kpis=[('Clientes',total,f'<span class="pppoe-online"><span class="online-dot" aria-hidden="true"></span><strong>{online_ppp}</strong><span>clientes conectados</span></span>','blue1'),('Suspendidos',suspended,'Fuera de servicio','orange1'),('Morosos',overdue,f'RD${overdue_money:,.0f} vencido','red1'),('Clientes con factura vencida',overdue,'Con saldo pendiente vencido','purple1'),('Órdenes MikroTik',pending_cmd,'Pendientes / proceso','cyan1'),('Papelera',trash,'Clientes eliminados','green1')]
     icons = ["<circle cx=\"9\" cy=\"8\" r=\"3\"/><path d=\"M3 21v-2a6 6 0 0 1 12 0v2M16 5a3 3 0 0 1 0 6m2 4a5 5 0 0 1 3 4v2\"/>","<circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M9 8v8m6-8v8\"/>","<path d=\"M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 12h8m-8 4h4\"/><path d=\"M17 15v2m0 2h.01\"/>","<rect x=\"3\" y=\"12\" width=\"18\" height=\"8\" rx=\"2\"/><path d=\"M7 16h.01M11 16h.01M12 12V8M8 4a7 7 0 0 1 8 0M3 3l18 18\"/>","<rect x=\"3\" y=\"4\" width=\"18\" height=\"6\" rx=\"2\"/><rect x=\"3\" y=\"14\" width=\"18\" height=\"6\" rx=\"2\"/><path d=\"M7 7h.01M7 17h.01M11 7h6m-6 10h6\"/>","<path d=\"M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7\"/>"]
     icons[3] = '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 12h8M8 16h5"/><path d="M17 15v2m0 2h.01"/>'
+    # Keep overdue customers beside the trash card in the second row.
+    kpis[3], kpis[4] = kpis[4], kpis[3]
+    icons[3], icons[4] = icons[4], icons[3]
     cards=[]
     for (a,b,d,cls),icon in zip(kpis,icons):
         card=f'<div class="kpi {cls} dashboard-stat"><div class="stat-heading"><span class="stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">{icon}</svg></span><div class="label">{a}</div></div><div class="value">{b}</div><div class="sub">{d}</div></div>'

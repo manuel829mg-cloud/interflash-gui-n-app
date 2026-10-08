@@ -398,7 +398,7 @@ def customer_profile_plus(id):
     <div class="panel"><h3>ONU / ONT</h3><table class="table"><tr><th>Equipo</th><th>Serial</th><th>OLT / PON</th><th>RX</th><th>TX</th><th>Estado</th><th>Última lectura</th></tr>{onur}</table></div>
     <div class="split2"><div class="panel"><h3>Facturas</h3><table class="table"><tr><th>#</th><th>Concepto</th><th>Monto</th><th>Vence</th><th>Estado</th></tr>{invr}</table></div><div class="panel"><h3>Pagos</h3><table class="table"><tr><th>Fecha</th><th>Monto</th><th>Método</th><th>Ref.</th></tr>{payr}</table></div></div>
     <div class="split2"><div class="panel"><h3>Historial de acciones</h3><table class="table"><tr><th>Fecha</th><th>Acción</th><th>Quién</th><th>Detalle</th></tr>{evr}</table></div><div class="panel"><h3>Comandos MikroTik</h3><table class="table"><tr><th>Fecha</th><th>Acción</th><th>Estado</th><th>Resultado</th></tr>{cmdr}</table></div></div>'''
-    body += _client_traffic_refresh_script(url_for('customer_traffic_api', id=id))
+    body += _client_traffic_refresh_script(url_for('customer_traffic_api', customer_id=id))
     return base.shell('Ficha cliente',body,'customers')
 
 

@@ -1,3 +1,4 @@
+import math
 import os, hmac, json, base64, hashlib
 from datetime import date, datetime
 from html import escape
@@ -107,6 +108,16 @@ def customer_form(row=None):
       <div><label>Cédula / documento<input name="document" value="{esc(v('document'))}"></label></div>
       <div><label>Email<input name="email" value="{esc(v('email'))}"></label></div>
       <div class="full"><label>Dirección<textarea name="address" rows="2">{esc(v('address'))}</textarea></label></div>
+      <div class="full" style="border:1px solid #29425b;border-radius:10px;padding:14px">
+        <h3 style="margin:0 0 10px">Ubicación de la instalación</h3>
+        <p class="muted">Fija este punto cuando estés en casa del cliente. Se guardará al pulsar Guardar cliente.</p>
+        <div class="formgrid">
+          <label>Latitud<input id="customer-latitude" name="latitude" type="number" min="-90" max="90" step="any" value="{esc(v('latitude'))}" placeholder="18.4861"></label>
+          <label>Longitud<input id="customer-longitude" name="longitude" type="number" min="-180" max="180" step="any" value="{esc(v('longitude'))}" placeholder="-69.9312"></label>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button id="customer-gps" class="btn blue" type="button">Fijar mi ubicación actual</button><a id="customer-map-preview" class="btn" target="_blank" rel="noopener noreferrer" hidden>Ver punto en el mapa</a></div>
+        <p id="customer-gps-status" class="muted" role="status"></p>
+      </div>
       <div><label>Zona<input name="zone" value="{esc(v('zone'))}"></label></div>
       <div><label>Plan<select name="plan_id"><option value="">Sin plan</option>{plan_opts}</select></label></div>
       <div><label>Usuario PPPoE<input name="pppoe" value="{esc(v('pppoe'))}"></label></div>
@@ -123,14 +134,60 @@ def customer_form(row=None):
         <div class="muted" style="margin-top:7px">El PBR solo agrega o mueve la IP de este cliente entre las listas de línea. No cambia reglas de mangle, rutas ni failover.</div>
       </div>
       <div class="full"><button class="btn green">Guardar cliente</button></div>
-    </form>'''
+    </form><script>
+    (() => {{
+      const lat = document.getElementById('customer-latitude');
+      const lng = document.getElementById('customer-longitude');
+      const button = document.getElementById('customer-gps');
+      const status = document.getElementById('customer-gps-status');
+      const preview = document.getElementById('customer-map-preview');
+      function updatePreview() {{
+        const a = Number(lat.value), b = Number(lng.value);
+        const valid = lat.value.trim() && lng.value.trim() && Number.isFinite(a) && Number.isFinite(b) && Math.abs(a) <= 90 && Math.abs(b) <= 180;
+        preview.hidden = !valid;
+        preview.style.display = valid ? '' : 'none';
+        if (valid) preview.href = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(a + ',' + b);
+        else preview.removeAttribute('href');
+      }}
+      lat.addEventListener('input', updatePreview); lng.addEventListener('input', updatePreview);
+      updatePreview();
+      button.addEventListener('click', () => {{
+        if (!navigator.geolocation) {{ status.textContent = 'Introduce las coordenadas manualmente; este navegador no permite obtener la ubicación.'; return; }}
+        button.disabled = true; status.textContent = 'Buscando tu ubicación…';
+        navigator.geolocation.getCurrentPosition(position => {{
+          lat.value = position.coords.latitude.toFixed(7); lng.value = position.coords.longitude.toFixed(7);
+          updatePreview(); button.disabled = false;
+          status.textContent = 'Ubicación fijada. Pulsa Guardar cliente para guardarla con la instalación.';
+        }}, error => {{
+          button.disabled = false;
+          status.textContent = error.code === 1 ? 'Permite el acceso a la ubicación o introduce las coordenadas manualmente.' : 'No se pudo obtener tu ubicación. Inténtalo de nuevo o introduce las coordenadas.';
+        }}, {{enableHighAccuracy: true, timeout: 15000, maximumAge: 0}});
+      }});
+    }})();
+    </script>'''
+
+
+def _location_values():
+    lat = (request.form.get('latitude') or '').strip()
+    lng = (request.form.get('longitude') or '').strip()
+    if not lat and not lng:
+        return None, None
+    try:
+        a, b = float(lat), float(lng)
+        if math.isfinite(a) and math.isfinite(b) and -90 <= a <= 90 and -180 <= b <= 180:
+            return f'{a:.7f}', f'{b:.7f}'
+    except ValueError:
+        pass
+    raise ValueError('La ubicación necesita una latitud entre -90 y 90 y una longitud entre -180 y 180.')
 
 
 def _post_values():
     pbr = (request.form.get('pbr_line') or '').strip()
     if pbr not in PBR_LISTS:
         pbr = ''
+    latitude, longitude = _location_values()
     return {
+        'latitude': latitude, 'longitude': longitude,
         'name': (request.form.get('name') or '').strip(),
         'phone': request.form.get('phone'), 'document': request.form.get('document'),
         'email': request.form.get('email'), 'address': request.form.get('address'),
@@ -149,10 +206,14 @@ def customer_new_pbr():
     if not base.logged_in(): return redirect(url_for('login'))
     ensure_schema()
     if request.method == 'POST':
-        x = _post_values(); c = base.db()
-        cur = c.execute('''INSERT INTO customers(code,name,phone,document,email,address,zone,pppoe,ip_address,onu_serial,plan_id,status,due_day,created_at,mikrotik_profile,pbr_line,router_name,service_status)
-                           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
-                        (None,x['name'],x['phone'],x['document'],x['email'],x['address'],x['zone'],x['pppoe'],x['ip'],x['onu'],x['plan_id'],x['status'],x['due_day'],date.today().isoformat(),x['profile'],x['pbr'],x['router'],x['status']))
+        try:
+            x = _post_values()
+        except ValueError as error:
+            return base.shell('Nuevo cliente', f'<div class="notice" role="alert">{esc(error)}</div>' + customer_form(request.form), 'customers'), 400
+        c = base.db()
+        cur = c.execute('''INSERT INTO customers(code,name,phone,document,email,address,zone,pppoe,ip_address,onu_serial,plan_id,status,due_day,created_at,mikrotik_profile,pbr_line,router_name,service_status,latitude,longitude)
+                           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                        (None,x['name'],x['phone'],x['document'],x['email'],x['address'],x['zone'],x['pppoe'],x['ip'],x['onu'],x['plan_id'],x['status'],x['due_day'],date.today().isoformat(),x['profile'],x['pbr'],x['router'],x['status'],x['latitude'],x['longitude']))
         cid = cur.lastrowid; c.execute('UPDATE customers SET code=? WHERE id=?',(f'IF-{cid:05d}',cid))
         notes = []
         if x['create_in_router']:
@@ -180,9 +241,16 @@ def customer_edit_pbr(id):
     ensure_schema(); c = base.db(); row = c.execute('SELECT * FROM customers WHERE id=?',(id,)).fetchone()
     if not row: c.close(); return redirect(url_for('customers'))
     if request.method == 'POST':
-        x = _post_values(); old_pbr = row['pbr_line'] or ''; old_ip = row['ip_address'] or ''; old_profile = row['mikrotik_profile'] or ''
+        try:
+            x = _post_values()
+        except ValueError as error:
+            c.close()
+            return base.shell('Editar cliente', f'<div class="notice" role="alert">{esc(error)}</div>' + customer_form(request.form), 'customers'), 400
+        old_pbr = row['pbr_line'] or ''; old_ip = row['ip_address'] or ''; old_profile = row['mikrotik_profile'] or ''
         c.execute('''UPDATE customers SET name=?,phone=?,document=?,email=?,address=?,zone=?,pppoe=?,ip_address=?,onu_serial=?,plan_id=?,status=?,due_day=?,mikrotik_profile=?,pbr_line=?,router_name=?,service_status=? WHERE id=?''',
                   (x['name'],x['phone'],x['document'],x['email'],x['address'],x['zone'],x['pppoe'],x['ip'],x['onu'],x['plan_id'],x['status'],x['due_day'],x['profile'],x['pbr'],x['router'],x['status'],id))
+        if 'latitude' in request.form or 'longitude' in request.form:
+            c.execute('UPDATE customers SET latitude=?,longitude=? WHERE id=?', (x['latitude'],x['longitude'],id))
         notes=[]
         if x['create_in_router'] and x['pppoe'] and x['password'] and x['profile']:
             _queue(c,id,x['pppoe'],x['router'],'CREATE_PPPOE',{'password':x['password'],'profile':x['profile'],'remote_address':x['ip']}); notes.append('PPPoE enviado a la cola')

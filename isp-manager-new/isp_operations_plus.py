@@ -1,4 +1,5 @@
 import json
+import math
 from customers_responsive import device_ip_links, search_text
 import re
 import calendar
@@ -125,6 +126,81 @@ def customer_service_action_plus(id, action):
     return redirect(url_for('customers'))
 
 
+
+def _map_coordinates(latitude, longitude):
+    try:
+        lat, lng = float(latitude), float(longitude)
+        if not (math.isfinite(lat) and math.isfinite(lng) and -90 <= lat <= 90 and -180 <= lng <= 180):
+            return None
+        return f'{lat:.7f}', f'{lng:.7f}'
+    except (TypeError, ValueError):
+        return None
+
+
+def _customer_map_url(customer):
+    coordinates = _map_coordinates(customer['latitude'], customer['longitude'])
+    return 'https://www.google.com/maps/search/?api=1&query=' + ','.join(coordinates) if coordinates else ''
+
+
+def customer_location(id):
+    if not base.logged_in():
+        return redirect(url_for('login'))
+    c = base.db()
+    cu = c.execute('SELECT * FROM customers WHERE id=?', (id,)).fetchone()
+    if not cu:
+        c.close()
+        flash('Cliente no encontrado.')
+        return redirect(url_for('customers'))
+    lat, lng = cu['latitude'] or '', cu['longitude'] or ''
+    error = ''
+    if request.method == 'POST':
+        lat = (request.form.get('latitude') or '').strip()
+        lng = (request.form.get('longitude') or '').strip()
+        coordinates = _map_coordinates(lat, lng)
+        if (lat or lng) and not coordinates:
+            error = '<div class="notice" role="alert">Introduce una latitud entre -90 y 90 y una longitud entre -180 y 180.</div>'
+        else:
+            values = coordinates or (None, None)
+            c.execute('UPDATE customers SET latitude=?,longitude=? WHERE id=?', (*values, id))
+            c.commit()
+            c.close()
+            _event(id, 'UBICACION', 'Ubicación actualizada' if coordinates else 'Ubicación retirada')
+            flash('Ubicación guardada.' if coordinates else 'Ubicación retirada.')
+            return redirect(url_for('customer_location', id=id))
+    c.close()
+    map_url = _customer_map_url(cu)
+    map_button = f'<a class="btn blue" href="{esc(map_url)}" target="_blank" rel="noopener noreferrer">Ver en el mapa</a>' if map_url else '<span class="muted">Ubicación pendiente</span>'
+    body = f'''<div class="head"><div><h1>Ubicación del cliente</h1><p>{esc(cu['name'])}</p></div><a class="btn" href="{url_for('customer_profile',id=id)}">Volver a la ficha</a></div>
+    {error}<form class="panel formgrid" method="post">
+      <p class="full muted">Guarda el punto donde está instalado el servicio. Puedes copiar las coordenadas del mapa o usar tu ubicación cuando estés en casa del cliente.</p>
+      <label>Latitud<input id="customer-latitude" class="field" name="latitude" type="number" step="any" min="-90" max="90" value="{esc(lat)}" placeholder="18.4861"></label>
+      <label>Longitud<input id="customer-longitude" class="field" name="longitude" type="number" step="any" min="-180" max="180" value="{esc(lng)}" placeholder="-69.9312"></label>
+      <div class="full quick-links"><button class="btn green" type="submit">Guardar ubicación</button><button id="customer-gps" class="btn" type="button">Usar mi ubicación actual</button>{map_button}</div>
+      <p id="customer-gps-status" class="full muted" role="status"></p>
+    </form>'''
+    body += r'''<script>
+    (() => {
+      const button = document.getElementById('customer-gps');
+      const status = document.getElementById('customer-gps-status');
+      button.addEventListener('click', () => {
+        if (!navigator.geolocation) { status.textContent = 'Este navegador no permite obtener la ubicación. Introduce las coordenadas.'; return; }
+        button.disabled = true;
+        status.textContent = 'Buscando tu ubicación…';
+        navigator.geolocation.getCurrentPosition(position => {
+          document.getElementById('customer-latitude').value = position.coords.latitude.toFixed(7);
+          document.getElementById('customer-longitude').value = position.coords.longitude.toFixed(7);
+          status.textContent = 'Ubicación obtenida. Pulsa Guardar ubicación para asignarla al cliente.';
+          button.disabled = false;
+        }, error => {
+          status.textContent = error.code === 1 ? 'Permiso de ubicación denegado. Puedes introducir las coordenadas manualmente.' : 'No se pudo obtener tu ubicación. Inténtalo de nuevo o introduce las coordenadas.';
+          button.disabled = false;
+        }, {enableHighAccuracy: true, timeout: 15000, maximumAge: 0});
+      });
+    })();
+    </script>'''
+    return base.shell('Ubicación del cliente', body, 'customers')
+
+
 def customers_plus():
     if not base.logged_in():
         return redirect(url_for('login'))
@@ -191,6 +267,9 @@ def customers_plus():
         )))
         visible = query_text in searchable
         visible_count += visible
+        map_url = _customer_map_url(r)
+        map_icon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>'
+        map_btn = f'<a class="ico" title="Ver ubicación en el mapa" aria-label="Ver ubicación de {esc(r["name"])}" href="{esc(map_url)}" target="_blank" rel="noopener noreferrer">{map_icon}</a>' if map_url else f'<a class="ico" title="Agregar ubicación" aria-label="Agregar ubicación de {esc(r["name"])}" href="{url_for("customer_location",id=r["id"])}">{map_icon}</a>'
         row_class = 'overdue-row' if overdue else ''
         trs.append(f'''<tr class="{row_class}" data-client-search="{esc(searchable)}"{'' if visible else ' hidden'}>
           <td class="c-code"><span>{esc(r['code'] or '#'+str(r['id']))}</span></td>
@@ -205,6 +284,7 @@ def customers_plus():
             <a class="ico invoice-create" title="Generar factura" aria-label="Generar factura para {esc(r['name'])}" href="{url_for('invoices',customer_id=r['id'])}#nueva-factura"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 15h8M12 11v8"/></svg></a>
             <a class="ico" title="Ficha" href="{url_for('customer_profile',id=r['id'])}">{icon_doc}</a>
             {wa_btn}
+            {map_btn}
             <a class="ico" title="Editar" href="{url_for('customer_edit',id=r['id'])}">{icon_edit}</a>
             <form method="post" action="{url_for('customer_service_action',id=r['id'],action=service_action)}"><button class="ico {service_cls}" title="{service_title}" onclick="return confirm('¿{service_title} este cliente?')">{service_icon}</button></form>
             <form method="post" action="{url_for('customer_service_action',id=r['id'],action='DELETE')}"><button class="ico danger" title="Eliminar" onclick="return confirm('¿Enviar este cliente a la papelera y eliminar su PPPoE del MikroTik?')">{icon_trash}</button></form>
@@ -444,6 +524,9 @@ def customer_profile_plus(id):
     <div class="panel"><h3>ONU / ONT</h3><table class="table"><tr><th>Equipo</th><th>Serial</th><th>OLT / PON</th><th>RX</th><th>TX</th><th>Estado</th><th>Última lectura</th></tr>{onur}</table></div>
     <div class="split2"><div class="panel"><h3>Facturas</h3><table class="table"><tr><th>#</th><th>Concepto</th><th>Monto</th><th>Vence</th><th>Estado</th></tr>{invr}</table></div><div class="panel"><h3>Pagos</h3><table class="table"><tr><th>Fecha</th><th>Monto</th><th>Método</th><th>Ref.</th></tr>{payr}</table></div></div>
     <div class="split2"><div class="panel"><h3>Historial de acciones</h3><table class="table"><tr><th>Fecha</th><th>Acción</th><th>Quién</th><th>Detalle</th></tr>{evr}</table></div><div class="panel"><h3>Comandos MikroTik</h3><table class="table"><tr><th>Fecha</th><th>Acción</th><th>Estado</th><th>Resultado</th></tr>{cmdr}</table></div></div>'''
+    map_url = _customer_map_url(cu)
+    map_button = f'<a class="btn blue" href="{esc(map_url)}" target="_blank" rel="noopener noreferrer">Ver en el mapa</a>' if map_url else '<span class="muted">Ubicación pendiente</span>'
+    body += f'<div class="panel"><h3>Ubicación del cliente</h3><div class="quick-links">{map_button}<a class="btn" href="{url_for("customer_location",id=id)}">Editar ubicación</a></div></div>'
     body += _client_traffic_refresh_script(url_for('customer_traffic_api', customer_id=id))
     return base.shell('Ficha cliente',body,'customers')
 
@@ -624,6 +707,7 @@ def _backfill_pppoe_phones():
 def setup(app):
     _backfill_pppoe_phones()
     ensure_schema()
+    app.add_url_rule('/customers/<int:id>/location', endpoint='customer_location', view_func=customer_location, methods=['GET','POST'])
     app.view_functions['customers'] = customers_plus
     if 'customer_profile' in app.view_functions:
         app.view_functions['customer_profile'] = customer_profile_plus

@@ -181,7 +181,7 @@ def customers_plus():
         onu_status = (r['onu_status'] or '').upper()
         onu_bad = onu_status in ('OFFLINE','DOWN','LOS','CAIDA','CAÍDA')
         client_extra = []
-        client_extra.append(f'Tel: {esc(r["phone"])}' if r['phone'] else 'Sin teléfono')
+        if r['phone']: client_extra.append(esc(r['phone']))
         if onu_status: client_extra.append(f'ONU: {"⚠ " if onu_bad else ""}{esc(onu_status)} {esc(r["onu_rx"] or "")}')
         service_action = 'REACTIVATE' if (r['status'] or '').upper() == 'SUSPENDIDO' else 'SUSPEND'
         service_icon = icon_play if service_action == 'REACTIVATE' else icon_pause
@@ -561,7 +561,30 @@ body .dashboard-stat .online-dot{{width:7px;height:7px;border-radius:50%;backgro
     return base.shell('Dashboard',body,'dashboard')
 
 
+def _backfill_pppoe_phones():
+    c = base.db()
+    try:
+        rows = c.execute("""SELECT id,pppoe FROM customers
+                            WHERE TRIM(COALESCE(phone,''))=''
+                            AND COALESCE(status,'ACTIVO')<>'ELIMINADO'""").fetchall()
+        for row in rows:
+            username = (row['pppoe'] or '').strip()
+            if not re.fullmatch(r'\+?[0-9 ()-]+', username):
+                continue
+            digits = re.sub(r'\D', '', username)
+            if len(digits) == 11 and digits.startswith('1'):
+                digits = digits[1:]
+            if len(digits) == 10 and digits[:3] in ('809', '829', '849'):
+                c.execute("""UPDATE customers SET phone=?
+                             WHERE id=? AND TRIM(COALESCE(phone,''))=''""",
+                          (digits, row['id']))
+        c.commit()
+    finally:
+        c.close()
+
+
 def setup(app):
+    _backfill_pppoe_phones()
     ensure_schema()
     app.view_functions['customers'] = customers_plus
     if 'customer_profile' in app.view_functions:

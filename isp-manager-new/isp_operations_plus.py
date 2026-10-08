@@ -1,5 +1,5 @@
 import json
-from customers_responsive import device_ip_links
+from customers_responsive import device_ip_links, search_text
 import re
 import calendar
 from datetime import date, datetime, timedelta
@@ -142,11 +142,6 @@ def customers_plus():
              LEFT JOIN zones z ON z.id=cu.zone_id
              WHERE COALESCE(cu.status,'ACTIVO')<>'ELIMINADO' '''
     args = []
-    if q:
-        like = '%' + q + '%'
-        sql += '''AND (cu.name LIKE ? OR cu.phone LIKE ? OR cu.document LIKE ? OR cu.pppoe LIKE ?
-                  OR cu.onu_serial LIKE ? OR cu.code LIKE ? OR cu.ip_address LIKE ?) '''
-        args = [like] * 7
     if status_filter:
         sql += 'AND cu.status = ? '
         args.append(status_filter)
@@ -168,6 +163,8 @@ def customers_plus():
     icon_wa = '<svg class="reference-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a9 9 0 0 1-13 8L3 21l1.5-5A9 9 0 1 1 21 11.5z"/></svg>'
 
     trs = []
+    query_text = search_text(q)
+    visible_count = 0
     today = date.today()
     for r in rows:
         state, cls = _real_state(r, active_names, secret_disabled)
@@ -188,8 +185,14 @@ def customers_plus():
         service_title = 'Reactivar' if service_action == 'REACTIVATE' else 'Suspender'
         service_cls = 'good' if service_action == 'REACTIVATE' else 'warnx'
         wa_btn = f'<a class="ico wa" title="WhatsApp" target="_blank" href="https://wa.me/{wa}">{icon_wa}</a>' if wa else ''
+        searchable = search_text(' '.join(str(value or '') for value in (
+            r['name'], r['phone'], r['document'], r['pppoe'], r['onu_serial'],
+            r['code'] or '#' + str(r['id']), r['ip_address'], device_ip
+        )))
+        visible = query_text in searchable
+        visible_count += visible
         row_class = 'overdue-row' if overdue else ''
-        trs.append(f'''<tr class="{row_class}">
+        trs.append(f'''<tr class="{row_class}" data-client-search="{esc(searchable)}"{'' if visible else ' hidden'}>
           <td class="c-code"><span>{esc(r['code'] or '#'+str(r['id']))}</span></td>
           <td class="c-client"><b>{esc(r['name'])}</b><br><span class="muted">{' · '.join(client_extra)}</span></td>
           <td class="c-plan">{esc(r['plan_name'] or '-')}</td>
@@ -209,6 +212,7 @@ def customers_plus():
         </tr>''')
 
     css='''<style>
+    .clients-table tr[hidden]{display:none!important}
     .device-ip{display:flex;flex-direction:column;gap:3px;margin-top:7px}.device-ip-main{color:#53c8ff;font-weight:700;font-size:13px;overflow-wrap:anywhere}.device-ip-https{font-size:10px;color:#8bdac9}.device-ip a:hover{text-decoration:underline}.device-ip-empty{display:block;margin-top:5px;font-size:10px}
 
     .clients-panel{overflow:hidden}.clients-table{width:100%;border-collapse:collapse;table-layout:fixed}.clients-table th,.clients-table td{padding:10px 7px;border-bottom:1px solid #1b3045;text-align:left;vertical-align:middle;font-size:12px;overflow-wrap:anywhere}.clients-table th{font-size:10px;color:#92a5b8;text-transform:uppercase}.c-code{width:8%}.c-client{width:20%}.c-plan{width:11%}.c-zone{width:10%}.c-pppoe{width:14%}.c-due{width:10%}.c-debt{width:9%}.c-pay{width:9%}.c-actions{width:17%}.c-code span,.c-pppoe>span:first-child{white-space:nowrap}.icon-actions{display:flex;gap:5px;align-items:center;flex-wrap:wrap}.icon-actions form{margin:0}.ico{width:34px;height:34px;border:1px solid #2a4058;background:#132336;color:#b9c7d6;border-radius:7px;display:inline-grid;place-items:center;cursor:pointer;padding:0}.ico:hover{background:#1b3149;color:#fff}.ico svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.ico.invoice-create{color:#62d7ff;border-color:#2a7796}.ico.wa{color:#3ee38f}.ico.warnx{color:#ffcb69}.ico.good{color:#6af0ac}.ico.danger{color:#ff8791}.danger-text{color:#ff7b86}.good-text{color:#5ce3a0}.overdue-row{background:#3b15192e;box-shadow:inset 3px 0 #e34855}.toolbar2{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}.toolbar2 .field{flex:1;min-width:250px}.quick-links{display:flex;gap:8px;flex-wrap:wrap}
@@ -217,8 +221,39 @@ def customers_plus():
     @media(max-width:780px){.clients-table thead{display:none}.clients-table,.clients-table tbody,.clients-table tr,.clients-table td{display:block;width:100%!important}.clients-table tr{background:#0b1725;border:1px solid #22374e;border-radius:12px;margin-bottom:10px;padding:10px}.clients-table td{border:0;padding:5px 0}.c-zone,.c-plan,.c-pay{display:block}.icon-actions{margin-top:6px}}
     </style>'''
     body=f'''{css}<div class="head"><div><h1>{'Clientes suspendidos' if status_filter else 'Clientes'}</h1><p>Estado PPPoE real, facturación, ONU y acciones rápidas</p></div><div class="quick-links"><a class="btn" href="{url_for('onu_overview')}">ONU / ONT</a><a class="btn" href="{url_for('customer_trash')}">Papelera</a><a class="btn green" href="{url_for('customer_new')}">+ Nuevo cliente</a></div></div>
-    <div class="panel clients-panel"><form class="toolbar2" method="get">{'<input type="hidden" name="status" value="SUSPENDIDO">' if status_filter else ''}<input class="field" name="q" value="{esc(q)}" placeholder="Buscar cliente, teléfono, cédula, PPPoE, IP, ONU"><button class="btn blue">Buscar</button><a class="btn" href="{url_for('customers')}">Limpiar</a></form>
-    <table class="clients-table"><thead><tr><th>Código</th><th>Cliente</th><th>Plan</th><th>Zona</th><th>PPPoE / estado / IP</th><th>Vence</th><th>Deuda</th><th>Último pago</th><th>Acciones</th></tr></thead><tbody>{''.join(trs) or '<tr><td colspan="9" class="muted">No hay clientes.</td></tr>'}</tbody></table></div>'''
+    <div class="panel clients-panel"><form id="clients-search-form" class="toolbar2" method="get">{'<input type="hidden" name="status" value="SUSPENDIDO">' if status_filter else ''}<input id="clients-search" class="field" name="q" aria-label="Buscar clientes" autocomplete="off" value="{esc(q)}" placeholder="Buscar cliente, teléfono, cédula, PPPoE, IP, ONU"><button class="btn blue">Buscar</button><a id="clients-search-clear" class="btn" href="{url_for('customers',status=status_filter) if status_filter else url_for('customers')}">Limpiar</a></form>
+    <table class="clients-table"><thead><tr><th>Código</th><th>Cliente</th><th>Plan</th><th>Zona</th><th>PPPoE / estado / IP</th><th>Vence</th><th>Deuda</th><th>Último pago</th><th>Acciones</th></tr></thead><tbody>{''.join(trs)}<tr id="clients-search-empty"{' hidden' if visible_count else ''}><td colspan="9" class="muted" role="status">No hay clientes que coincidan con la búsqueda.</td></tr></tbody></table></div>'''
+    body += r'''    <script>
+    (() => {
+      const form = document.getElementById('clients-search-form');
+      const input = document.getElementById('clients-search');
+      const clear = document.getElementById('clients-search-clear');
+      const rows = [...document.querySelectorAll('[data-client-search]')];
+      const empty = document.getElementById('clients-search-empty');
+      const normalize = value => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+      function filterClients() {
+        const query = normalize(input.value);
+        let visible = 0;
+        rows.forEach(row => {
+          row.hidden = !row.dataset.clientSearch.includes(query);
+          if (!row.hidden) {
+            visible++;
+          }
+        });
+        empty.hidden = visible > 0;
+        const url = new URL(location.href);
+        if (input.value.trim()) url.searchParams.set('q', input.value.trim());
+        else url.searchParams.delete('q');
+        history.replaceState(null, '', url);
+      }
+      input.addEventListener('input', filterClients);
+      form.addEventListener('submit', event => { event.preventDefault(); filterClients(); });
+      clear.addEventListener('click', event => {
+        event.preventDefault(); input.value = ''; filterClients(); input.focus();
+      });
+      filterClients();
+    })();
+    </script>'''
     return base.shell('Clientes', body, 'customers')
 
 

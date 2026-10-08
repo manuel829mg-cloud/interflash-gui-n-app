@@ -267,19 +267,22 @@ def traffic(name):
       <div class="kpi green1"><div class="label">Subida total</div><div class="value">{_fmt_mbps(total_tx)}</div><div class="sub">TX de las WAN</div></div>
       <div class="kpi cyan1"><div class="label">Última lectura</div><div class="value" style="font-size:16px">{escape(last)}</div><div class="sub">{escape(note)}</div></div>
     </div>
-    <div class="panel"><table class="table"><tr><th>Interfaz</th><th>Tipo</th><th>Descarga</th><th>Subida</th><th>Actualizado</th></tr>{table}</table></div>
-    <div class="panel" id="pppoe-traffic-panel">
+    <style>@media(max-width:1100px){{#router-traffic-layout{{grid-template-columns:1fr!important}}}}</style>
+    <div id="router-traffic-layout" style="display:grid;grid-template-columns:minmax(0,1.35fr) minmax(360px,1fr);gap:14px;align-items:start;margin-top:14px">
+    <div class="panel" style="margin-top:0"><table class="table"><tr><th>Interfaz</th><th>Tipo</th><th>Descarga</th><th>Subida</th><th>Actualizado</th></tr>{table}</table></div>
+    <div class="panel" id="pppoe-traffic-panel" style="margin-top:0">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
         <div><h2 style="margin:0 0 5px">Tráfico por cliente PPPoE</h2><p class="muted" style="margin:0">Elige un cliente conectado para ver su velocidad y consumo de esta sesión.</p></div>
         <select id="pppoe-traffic-customer" class="field" style="min-width:min(420px,100%)">{client_placeholder}{options}</select>
       </div>
-      <div class="grid6" style="grid-template-columns:repeat(4,minmax(140px,1fr));margin-top:14px">
+      <div class="grid6" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:14px">
         <div class="kpi blue1"><div class="label">Descarga actual</div><div class="value" id="pppoe-download-speed">0.00 Mbps</div></div>
         <div class="kpi green1"><div class="label">Subida actual</div><div class="value" id="pppoe-upload-speed">0.00 Mbps</div></div>
         <div class="kpi cyan1"><div class="label">Descargado en sesión</div><div class="value" id="pppoe-download-total">0 B</div></div>
         <div class="kpi purple1"><div class="label">Subido en sesión</div><div class="value" id="pppoe-upload-total">0 B</div></div>
       </div>
       <div class="muted" id="pppoe-traffic-status" style="margin-top:10px">Selecciona un cliente conectado.</div>
+    </div>
     </div>
     <script>
       (function(){{

@@ -177,7 +177,7 @@ def traffic_script_v2(name):
       :foreach pppoe in=$watched do={{
         :foreach session in=[/ppp active print stats as-value proplist=name,bytes where name=$pppoe] do={{
           :local record [:serialize to=json value=$session options=json.no-string-conversion];
-          :local pppData ("{{\"router\":\"{name}\",\"kind\":\"pppoe-traffic\",\"items\":[" . $record . "]}}");
+          :local pppData ("{{\\\"router\\\":\\\"{name}\\\",\\\"kind\\\":\\\"pppoe-traffic\\\",\\\"items\\\":[" . $record . "]}}");
           /tool fetch url=$relayUrl http-method=post http-header-field=$jsonHeaders http-data=$pppData output=none check-certificate=yes;
         }}
       }}

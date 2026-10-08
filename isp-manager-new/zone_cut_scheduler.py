@@ -312,12 +312,29 @@ def run_billing():
     return created, overdue_customers, commands
 
 
+def _run_billing_once_per_day(now, last_billing_date):
+    """Run invoice generation on startup and once on each Dominican local date."""
+    if last_billing_date == now.date():
+        return last_billing_date, None
+    return now.date(), run_billing()
+
+
 def _worker():
-    # First pass shortly after boot, then keep checking the local DR time.
+    # Generate invoices automatically once per local day; keep cut checks frequent.
     time_module.sleep(8)
+    last_billing_date = None
     while True:
+        now = datetime.now()
         try:
-            queued = process_zone_cuts(datetime.now())
+            last_billing_date, billing_result = _run_billing_once_per_day(now, last_billing_date)
+            if billing_result is not None:
+                created, overdue, commands = billing_result
+                print(
+                    f'INTERFLASH_DAILY_BILLING date={now.date().isoformat()} '
+                    f'invoices={created} overdue={overdue} commands={commands}',
+                    flush=True,
+                )
+            queued = process_zone_cuts(now)
             if queued:
                 print(f'INTERFLASH_ZONE_CUTS_QUEUED={queued}', flush=True)
         except Exception as exc:

@@ -129,6 +129,7 @@ def customers_plus():
     if not base.logged_in():
         return redirect(url_for('login'))
     q = (request.args.get('q') or '').strip()
+    status_filter = 'SUSPENDIDO' if request.args.get('status') == 'SUSPENDIDO' else ''
     c = base.db()
     sql = '''SELECT cu.*,p.name plan_name,z.name zone_name,
              COALESCE((SELECT SUM(i.amount) FROM invoices i WHERE i.customer_id=cu.id AND i.status='PENDIENTE'),0) debt,
@@ -146,6 +147,9 @@ def customers_plus():
         sql += '''AND (cu.name LIKE ? OR cu.phone LIKE ? OR cu.document LIKE ? OR cu.pppoe LIKE ?
                   OR cu.onu_serial LIKE ? OR cu.code LIKE ? OR cu.ip_address LIKE ?) '''
         args = [like] * 7
+    if status_filter:
+        sql += 'AND cu.status = ? '
+        args.append(status_filter)
     sql += 'ORDER BY cu.id DESC'
     rows = c.execute(sql, args).fetchall()
     active_names = {r['name'] for r in c.execute('SELECT name FROM push_pppoe_active').fetchall()} if _table_exists(c, 'push_pppoe_active') else set()
@@ -212,8 +216,8 @@ def customers_plus():
     @media(max-width:1050px){.c-plan{display:none}.c-client{width:27%}.c-pppoe{width:18%}.c-actions{width:25%}}
     @media(max-width:780px){.clients-table thead{display:none}.clients-table,.clients-table tbody,.clients-table tr,.clients-table td{display:block;width:100%!important}.clients-table tr{background:#0b1725;border:1px solid #22374e;border-radius:12px;margin-bottom:10px;padding:10px}.clients-table td{border:0;padding:5px 0}.c-zone,.c-plan,.c-pay{display:block}.icon-actions{margin-top:6px}}
     </style>'''
-    body=f'''{css}<div class="head"><div><h1>Clientes</h1><p>Estado PPPoE real, facturación, ONU y acciones rápidas</p></div><div class="quick-links"><a class="btn" href="{url_for('onu_overview')}">ONU / ONT</a><a class="btn" href="{url_for('customer_trash')}">Papelera</a><a class="btn green" href="{url_for('customer_new')}">+ Nuevo cliente</a></div></div>
-    <div class="panel clients-panel"><form class="toolbar2" method="get"><input class="field" name="q" value="{esc(q)}" placeholder="Buscar cliente, teléfono, cédula, PPPoE, IP, ONU"><button class="btn blue">Buscar</button><a class="btn" href="{url_for('customers')}">Limpiar</a></form>
+    body=f'''{css}<div class="head"><div><h1>{'Clientes suspendidos' if status_filter else 'Clientes'}</h1><p>Estado PPPoE real, facturación, ONU y acciones rápidas</p></div><div class="quick-links"><a class="btn" href="{url_for('onu_overview')}">ONU / ONT</a><a class="btn" href="{url_for('customer_trash')}">Papelera</a><a class="btn green" href="{url_for('customer_new')}">+ Nuevo cliente</a></div></div>
+    <div class="panel clients-panel"><form class="toolbar2" method="get">{'<input type="hidden" name="status" value="SUSPENDIDO">' if status_filter else ''}<input class="field" name="q" value="{esc(q)}" placeholder="Buscar cliente, teléfono, cédula, PPPoE, IP, ONU"><button class="btn blue">Buscar</button><a class="btn" href="{url_for('customers')}">Limpiar</a></form>
     <table class="clients-table"><thead><tr><th>Código</th><th>Cliente</th><th>Plan</th><th>Zona</th><th>PPPoE / estado / IP</th><th>Vence</th><th>Deuda</th><th>Último pago</th><th>Acciones</th></tr></thead><tbody>{''.join(trs) or '<tr><td colspan="9" class="muted">No hay clientes.</td></tr>'}</tbody></table></div>'''
     return base.shell('Clientes', body, 'customers')
 

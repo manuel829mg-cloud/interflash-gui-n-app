@@ -262,8 +262,10 @@ def _client_traffic_refresh_script(endpoint):
     return (i === 0 ? n.toFixed(0) : n.toFixed(2)) + ' ' + units[i];
   };
   let timer;
+  let busy = false;
   async function updateTraffic() {
-    if (document.hidden) return;
+    if (document.hidden || busy) return;
+    busy = true;
     try {
       const response = await fetch(endpoint, {credentials:'same-origin', cache:'no-store'});
       if (!response.ok) throw new Error('No se pudo leer el tráfico');
@@ -276,15 +278,17 @@ def _client_traffic_refresh_script(endpoint):
       state.textContent = data.online ? 'CONECTADO' : (data.has_pppoe ? 'ESPERANDO LECTURA' : 'SIN PPPoE');
       state.className = 'tag ' + (data.online ? 'ok' : 'warn');
       document.getElementById('client-traffic-updated').textContent = data.updated_at
-        ? 'Última lectura: ' + data.updated_at + ' · pantalla consultada cada segundo'
+        ? 'Última lectura: ' + data.updated_at + ' · pantalla consultada dos veces por segundo'
         : (data.has_pppoe ? 'Esperando los contadores del monitor MikroTik…' : 'Este cliente no tiene un usuario PPPoE asociado.');
     } catch (error) {
       document.getElementById('client-traffic-state').textContent = 'SIN DATOS';
       document.getElementById('client-traffic-state').className = 'tag warn';
+    } finally {
+      busy = false;
     }
   }
   updateTraffic();
-  timer = window.setInterval(updateTraffic, 1000);
+  timer = window.setInterval(updateTraffic, 500);
   document.addEventListener('visibilitychange', updateTraffic);
   window.addEventListener('pagehide', () => window.clearInterval(timer), {once:true});
 })();

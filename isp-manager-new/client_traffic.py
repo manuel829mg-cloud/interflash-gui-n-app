@@ -81,7 +81,7 @@ def save_samples(conn, router_name, items):
                     continue
                 old_down = int(previous["download_bytes"])
                 old_up = int(previous["upload_bytes"])
-                if seconds >= 1.0:
+                if seconds >= 0.8:
                     if download_bytes >= old_down:
                         download_bps = (download_bytes - old_down) * 8.0 / seconds
                     if upload_bytes >= old_up:

@@ -486,8 +486,10 @@ def dashboard_plus():
     cards=[]
     for (a,b,d,cls),icon in zip(kpis,icons):
         card=f'<div class="kpi {cls} dashboard-stat"><div class="stat-heading"><span class="stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">{icon}</svg></span><div class="label">{a}</div></div><div class="value">{b}</div><div class="sub">{d}</div></div>'
-        if a == 'Clientes':
-            card=card.replace('<div class="kpi ', f'<a href="{url_for("customers")}" aria-label="Ver lista de clientes" class="dashboard-client-link kpi ', 1)
+        if a in ('Clientes', 'Suspendidos'):
+            target = url_for('customers', status='SUSPENDIDO') if a == 'Suspendidos' else url_for('customers')
+            label = 'Ver clientes suspendidos' if a == 'Suspendidos' else 'Ver lista de clientes'
+            card=card.replace('<div class="kpi ', f'<a href="{target}" aria-label="{label}" class="dashboard-client-link kpi ', 1)
             card=card[:-6] + '</a>'
         cards.append(card)
     cards=''.join(cards)

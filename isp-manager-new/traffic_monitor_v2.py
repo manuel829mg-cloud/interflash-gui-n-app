@@ -208,7 +208,7 @@ def traffic_script_v2(name):
     download_url = url_for('router_push_traffic_script_download', name=name)
 
     body = f'''<div class="head"><div><h1>Activar consumo MikroTik</h1><p>Monitor: 4 WAN y PPPoE cada 2 segundos; al abrir una ficha, los contadores consultados pasan a 1 segundo y vuelven a 2 al cerrarla. Ping de las 4 líneas cada 10 segundos.</p></div><a class="btn" href="{url_for('router_push_traffic',name=name)}">← Volver</a></div>
-    <div class="panel"><div style="padding:11px;border-radius:8px;background:#063f2a;color:#9ff0c8;margin-bottom:12px"><b>Monitor v6.3 · Instalación con archivo y validación previa.</b> Descarga el archivo y súbelo en WinBox → Files. En Terminal ejecuta primero <code>/import file-name=interflash-traffic.rsc verbose=yes dry-run</code>. Si termina sin errores, aplica con <code>/import file-name=interflash-traffic.rsc verbose=yes</code>. Luego verifica con <code>/system script print where name="interflash-traffic"</code>. La instalación no reinicia sesiones PPPoE.</div><p><a class="btn primary" href="{download_url}">Descargar instalador .rsc</a></p><details><summary>Ver el contenido del instalador</summary><textarea class="field" readonly style="width:100%;height:440px;font-family:Consolas,monospace">{push_sync.escape(script)}</textarea></details></div>'''
+    <div class="panel"><div style="padding:11px;border-radius:8px;background:#063f2a;color:#9ff0c8;margin-bottom:12px"><b>Monitor v6.3 · Instalación con archivo y validación previa.</b> Descarga el archivo y súbelo en WinBox → Files. En Terminal ejecuta primero <code>/import file-name=interflash-traffic-v2.rsc verbose=yes dry-run</code>. Si termina sin errores, aplica con <code>/import file-name=interflash-traffic-v2.rsc verbose=yes</code>. Luego verifica con <code>/system script print where name="interflash-traffic"</code>. La instalación no reinicia sesiones PPPoE.</div><p><a class="btn primary" href="{download_url}">Descargar instalador .rsc</a></p><details><summary>Ver el contenido del instalador</summary><textarea class="field" readonly style="width:100%;height:440px;font-family:Consolas,monospace">{push_sync.escape(script)}</textarea></details></div>'''
     return base.shell('Activar consumo MikroTik', body, 'routers')
 
 
@@ -220,7 +220,7 @@ def traffic_script_download(name):
     return Response(
         build_traffic_script(name),
         mimetype='text/plain; charset=utf-8',
-        headers={'Content-Disposition': 'attachment; filename="interflash-traffic.rsc"'}
+        headers={'Content-Disposition': 'attachment; filename="interflash-traffic-v2.rsc"'}
     )
 
 

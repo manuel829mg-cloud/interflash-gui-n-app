@@ -181,7 +181,7 @@ def customers_plus():
         onu_status = (r['onu_status'] or '').upper()
         onu_bad = onu_status in ('OFFLINE','DOWN','LOS','CAIDA','CAÍDA')
         client_extra = []
-        if r['phone']: client_extra.append(esc(r['phone']))
+        client_extra.append(f'Tel: {esc(r["phone"])}' if r['phone'] else 'Sin teléfono')
         if onu_status: client_extra.append(f'ONU: {"⚠ " if onu_bad else ""}{esc(onu_status)} {esc(r["onu_rx"] or "")}')
         service_action = 'REACTIVATE' if (r['status'] or '').upper() == 'SUSPENDIDO' else 'SUSPEND'
         service_icon = icon_play if service_action == 'REACTIVATE' else icon_pause

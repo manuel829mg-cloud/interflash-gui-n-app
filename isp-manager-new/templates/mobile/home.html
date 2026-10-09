@@ -1,1 +1,14 @@
-{% extends 'mobile/base.html' %}{% block content %}<p class="eyebrow">TU INTERNET, MÁS CERCA</p><h1>Todo INTER Flash.<br>En tu bolsillo.</h1><p class="lead">Consulta tu servicio o gestiona tu negocio desde un solo lugar.</p><div class="mobile-grid"><section class="mobile-card"><span class="eyebrow">CLIENTES</span><h2>Mi servicio</h2><p>Facturas, historial de pagos y ayuda con tu conexión.</p>{% if customer %}<a class="mobile-button" href="/app/cliente">Entrar a mi cuenta</a>{% else %}<p class="mobile-notice">Abre el enlace personal que INTER Flash te entrega para acceder a tu cuenta. Solicítalo al administrador si todavía no lo tienes.</p>{% endif %}</section><section class="mobile-card"><span class="eyebrow">EQUIPO INTER FLASH</span><h2>Administración</h2><p>Clientes, cobros, red y WhatsApp con tu acceso habitual.</p><a class="mobile-button secondary" href="{{ url_for('dashboard') if admin else url_for('login') }}">{{ 'Abrir administración' if admin else 'Iniciar sesión' }}</a>{% if admin %}<a class="mobile-link" href="/app/solicitudes">Ver solicitudes de clientes</a>{% endif %}</section></div>{% endblock %}
+{% extends 'mobile/base.html' %}
+{% block content %}
+<p class="eyebrow">ADMINISTRACIÓN INTER FLASH</p>
+<h1>Tu plataforma.<br>Donde estés.</h1>
+<p class="lead">Gestiona clientes, instalaciones, planes, zonas, facturas, pagos, red y WhatsApp desde tu celular, con tu cuenta habitual.</p>
+<section class="mobile-card">
+<h2>Administración</h2>
+<p>Los cambios se guardan en la misma plataforma que utilizas en la computadora. Necesitas conexión a internet.</p>
+<a class="mobile-button" href="{{ url_for('dashboard') if admin else url_for('login') }}">{{ 'Abrir mi plataforma' if admin else 'Iniciar sesión' }}</a>
+</section>
+{% if customer %}
+<section class="mobile-card"><h2>Mi servicio</h2><p>Consulta las facturas y los pagos de tu cuenta de cliente.</p><a class="mobile-button secondary" href="/app/cliente">Entrar a mi cuenta</a></section>
+{% endif %}
+{% endblock %}

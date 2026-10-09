@@ -1,6 +1,10 @@
 import app as base
 import menu_icons
 
+menu_icons.ART['finanzas_ia'] = ('#a78bfa', '<path d="M12 3l2.6 6.4L21 12l-6.4 2.6L12 21l-2.6-6.4L3 12l6.4-2.6z"/><path d="M20 2v4M18 4h4"/>')
+for _endpoint in ('analysis', 'recommendations', 'risk', 'assistant'):
+    menu_icons.ALIASES['finance_ai_' + _endpoint] = 'finanzas_ia'
+
 def setup():
     base.NAV[:] = [(ep, ic, 'Importar clientes' if ep == 'client_extract' else label)
                    for ep, ic, label in base.NAV if ep != 'customer_trash']
@@ -37,6 +41,7 @@ def setup():
             parts.append(f'<a class="nav-single" href="{base.url_for("whatsapp_chatbot")}" title="IA / Automatización" aria-label="IA / Automatización">{menu_icons.icon("automation")}<span class="txt">IA / Automatización</span></a>')
         parts.append(group('clientes','♙','Clientes',['customers','client_extract']))
         parts.append(group('finanzas','▤','Finanzas',['invoices','payments','expenses_page','banks_page']))
+        parts.append(group('finanzas_ia','✧','Finanzas IA',['finance_ai_analysis','finance_ai_recommendations','finance_ai_risk','finance_ai_assistant']))
         # Almacén se mostrará automáticamente cuando se agregue un módulo de inventario.
         warehouse=[ep for ep in ('inventory_page','warehouse_page','stock_page','equipment_page') if ep in nav]
         if warehouse: parts.append(group('almacen','▣','Almacén',warehouse))
@@ -122,3 +127,4 @@ def setup():
         </div>{{script|safe}}</body></html>''',logout_icon=menu_icons.icon("logout"),title=title,css=base.BASE_CSS,extra_css=extra_css,links=links_html,body=body,user=user,role=role_label,initial=(user[:1] or 'M').upper(),msgs=msgs,script=script)
 
     base.shell=grouped_shell
+

@@ -216,3 +216,8 @@ commercial_catalog.setup(app)
 import commercial_service
 commercial_service.setup(app)
 
+
+
+# Read-only financial AI module; provider key is configured by the administrator.
+import finance_ai
+finance_ai.setup(app)

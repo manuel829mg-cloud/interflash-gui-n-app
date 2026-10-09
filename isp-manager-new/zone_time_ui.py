@@ -121,6 +121,16 @@ def zones_page():
         cut_days_after = _int_value(request.form.get('cut_days_after'), 6)
         cut_time = request.form.get('cut_time') or '14:00'
 
+        reminder_enabled = int(request.form.get('whatsapp_reminder_enabled') == '1')
+        try:
+            reminder_days = int(request.form.get('whatsapp_reminder_days', '2'))
+            if not 0 <= reminder_days <= 31:
+                raise ValueError()
+        except ValueError:
+            c.close()
+            flash('El recordatorio debe indicar entre 0 y 31 días antes del corte.')
+            return redirect(url_for('zones_page', edit=zone_id) if zone_id else url_for('zones_page'))
+
         if zone_id:
             current = c.execute('SELECT * FROM zones WHERE id=?', (zone_id,)).fetchone()
             if not current:
@@ -129,8 +139,8 @@ def zones_page():
                 return redirect(url_for('zones_page'))
 
             c.execute(
-                'UPDATE zones SET name=?, billing_day=?, invoice_days_before=?, cut_days_after=?, cut_time=? WHERE id=?',
-                (name, billing_day, invoice_days_before, cut_days_after, cut_time, zone_id),
+                'UPDATE zones SET name=?, billing_day=?, invoice_days_before=?, cut_days_after=?, cut_time=?, whatsapp_reminder_enabled=?, whatsapp_reminder_days=? WHERE id=?',
+                (name, billing_day, invoice_days_before, cut_days_after, cut_time, reminder_enabled, reminder_days, zone_id),
             )
             try:
                 c.execute('UPDATE customers SET zone=? WHERE zone_id=?', (name, zone_id))
@@ -142,8 +152,8 @@ def zones_page():
             return redirect(url_for('zones_page'))
 
         c.execute(
-            'INSERT INTO zones(name,billing_day,invoice_days_before,cut_days_after,cut_time) VALUES(?,?,?,?,?)',
-            (name, billing_day, invoice_days_before, cut_days_after, cut_time),
+            'INSERT INTO zones(name,billing_day,invoice_days_before,cut_days_after,cut_time,whatsapp_reminder_enabled,whatsapp_reminder_days) VALUES(?,?,?,?,?,?,?)',
+            (name, billing_day, invoice_days_before, cut_days_after, cut_time, reminder_enabled, reminder_days),
         )
         c.commit()
         c.close()
@@ -163,6 +173,8 @@ def zones_page():
     form_cut_days = edit_zone['cut_days_after'] if edit_zone else 6
     form_cut_time = edit_zone['cut_time'] if edit_zone else '14:00'
     time_options = _time_options(form_cut_time)
+    reminder_checked = 'checked' if edit_zone and edit_zone['whatsapp_reminder_enabled'] else ''
+    reminder_days = edit_zone['whatsapp_reminder_days'] if edit_zone else 2
 
     total_zones = len(rows)
     zones_billing = sum(1 for r in rows if r['invoice_days_before'] is not None)
@@ -176,6 +188,7 @@ def zones_page():
         f'<td>{r["invoice_days_before"]} días antes</td>'
         f'<td>{r["cut_days_after"]} días después</td>'
         f'<td><span class="time-pill">{esc(_time12(r["cut_time"]))}</span></td>'
+        f'<td>{str(r["whatsapp_reminder_days"]) + " días antes" if r["whatsapp_reminder_enabled"] else "Desactivado"}</td>'
         f'<td><div class="zone-actions">'
         f'<a class="edit-btn" href="{url_for("zones_page", edit=r["id"])}#zone-form">✎&nbsp; Editar</a>'
         f'<form method="post" style="display:inline" onsubmit="return confirm(\'¿Seguro que deseas eliminar esta zona?\')">'
@@ -288,6 +301,8 @@ def zones_page():
           <div class="field-group"><label for="invoice-days">Factura días antes *</label><input id="invoice-days" class="field" type="number" name="invoice_days_before" value="{form_invoice}" min="0"></div>
           <div class="field-group"><label for="cut-days">Corte días después *</label><input id="cut-days" class="field" type="number" name="cut_days_after" value="{form_cut_days}" min="0"></div>
           <div class="field-group"><label for="cut-time">Hora de corte *</label><select id="cut-time" class="field" name="cut_time">{time_options}</select></div>
+          <div class="field-group" style="grid-column:1/-1"><label><input type="checkbox" name="whatsapp_reminder_enabled" value="1" {reminder_checked}> Recordatorio por WhatsApp</label><p class="muted">Avisa únicamente a clientes con pagos pendientes. Requiere avisos automáticos de WhatsApp activos. Envío desde las 8:00, hora dominicana.</p></div>
+          <div class="field-group"><label for="reminder-days">Días antes del corte</label><input id="reminder-days" class="field" type="number" name="whatsapp_reminder_days" value="{reminder_days}" min="0" max="31" required></div>
           <div style="display:flex;gap:9px"><button class="primary-zone-btn" type="submit">+ {button_text}</button>{cancel_button}</div>
         </form>
       </div>
@@ -299,8 +314,8 @@ def zones_page():
         </div>
         <div class="zone-table-wrap">
           <table class="zones-table">
-            <thead><tr><th>Zona</th><th>Clientes</th><th>Vence</th><th>Factura</th><th>Corte</th><th>Hora</th><th>Acciones</th></tr></thead>
-            <tbody id="zoneRows">{trs or '<tr><td colspan="7" class="empty-zone">Sin zonas registradas.</td></tr>'}</tbody>
+            <thead><tr><th>Zona</th><th>Clientes</th><th>Vence</th><th>Factura</th><th>Corte</th><th>Hora</th><th>WhatsApp</th><th>Acciones</th></tr></thead>
+            <tbody id="zoneRows">{trs or '<tr><td colspan="8" class="empty-zone">Sin zonas registradas.</td></tr>'}</tbody>
           </table>
         </div>
       </div>

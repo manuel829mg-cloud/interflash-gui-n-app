@@ -45,6 +45,8 @@ def ensure_zone_schema():
             ('cut_days_after', 'INTEGER DEFAULT 6'),
             ('cut_time', "TEXT DEFAULT '14:00'"),
             ('active', 'INTEGER DEFAULT 1'),
+            ('whatsapp_reminder_enabled', 'INTEGER NOT NULL DEFAULT 0'),
+            ('whatsapp_reminder_days', 'INTEGER NOT NULL DEFAULT 2'),
         ]
         for name, ddl in additions:
             if name not in cols:

@@ -109,6 +109,12 @@ def send_outbox(limit=25):
             row = c.execute("SELECT o.* FROM whatsapp_outbox o LEFT JOIN whatsapp_outbox_links l ON l.outbox_id=o.id WHERE o.id>? AND o.status='PENDIENTE' AND l.outbox_id IS NULL ORDER BY o.id LIMIT 1", (floor,)).fetchone()
             if not row:
                 c.rollback(); break
+            if row['template_code'] == 'ZONE_REMINDER':
+                from zone_whatsapp_reminders import valid
+                if not valid(c, row['id']):
+                    c.execute("UPDATE whatsapp_outbox SET status='CANCELADO',error='Recordatorio resuelto, desactivado o fuera de fecha' WHERE id=?", (row['id'],))
+                    c.commit()
+                    continue
             if row['template_code'] == 'PROMISE_DUE':
                 event = c.execute('SELECT event_key FROM whatsapp_event_keys WHERE outbox_id=?', (row['id'],)).fetchone()
                 pid = int(event[0].split(':')[1]) if event else 0
@@ -118,6 +124,8 @@ def send_outbox(limit=25):
                     c.execute("UPDATE whatsapp_outbox SET status='CANCELADO',error='Promesa resuelta o recordatorio vencido' WHERE id=?", (row['id'],))
                     c.commit()
                     continue
+            if row['template_code'] == 'ZONE_REMINDER':
+                row = c.execute('SELECT * FROM whatsapp_outbox WHERE id=?', (row['id'],)).fetchone()
             phone = wa._wa_phone(row['phone'])
             thread = wa._thread_for_phone(c, phone, customer_id=row['customer_id'])
             qid = c.execute("INSERT INTO whatsapp_queue(thread_id,customer_id,phone,kind,body,status,created_at) VALUES(?,?,?,'text',?,'EN_PROCESO',?)", (thread['id'], row['customer_id'], phone, row['message'], wa._now())).lastrowid
@@ -169,7 +177,7 @@ def page():
         return redirect(url_for('whatsapp_automatics'))
     token = session.setdefault('wa_events_csrf', secrets.token_urlsafe(32))
     enabled = bs.setting('whatsapp_enabled', '0') == '1'
-    body = wa._tabs('auto') + f'''<div class="panel"><h1>Avisos automáticos de WhatsApp</h1><p>GREEN-API: <b>{wa.esc(state)}</b></p><p>Avisos: <b>{'ACTIVOS' if enabled else 'DESACTIVADOS'}</b></p><ul><li>Pago: confirmación del monto registrado.</li><li>Corte y reconexión: aviso cuando MikroTik confirma la operación.</li><li>Promesa: confirmación al guardarla y recordatorio el día acordado si queda deuda.</li><li>Facturas: emisión y vencimiento.</li></ul><p>Revisión automática cada 10 segundos. El recordatorio de promesa se revisa durante el día, desde las 8:00, hora dominicana.</p><p>Los avisos anteriores a la activación no se envían en lote. Un error o envío sin confirmación requiere revisión antes de reintentarlo.</p><form method="post"><input type="hidden" name="csrf" value="{wa.esc(token)}"><button class="btn green" name="action" value="{'disable' if enabled else 'enable'}">{'Desactivar avisos' if enabled else 'Activar avisos automáticos'}</button></form><p><a class="btn" href="/whatsapp/queue">Ver estados de entrega</a></p></div>'''
+    body = wa._tabs('auto') + f'''<div class="panel"><h1>Avisos automáticos de WhatsApp</h1><p>GREEN-API: <b>{wa.esc(state)}</b></p><p>Avisos: <b>{'ACTIVOS' if enabled else 'DESACTIVADOS'}</b></p><ul><li>Pago: confirmación del monto registrado.</li><li>Corte y reconexión: aviso cuando MikroTik confirma la operación.</li><li>Promesa: confirmación al guardarla y recordatorio el día acordado si queda deuda.</li><li>Facturas: emisión y vencimiento.</li><li>Recordatorio antes del corte: configurable al crear o editar cada zona, solo con deuda pendiente, desde las 8:00.</li></ul><p>Revisión automática cada 10 segundos. El recordatorio de promesa se revisa durante el día, desde las 8:00, hora dominicana.</p><p>Los avisos anteriores a la activación no se envían en lote. Un error o envío sin confirmación requiere revisión antes de reintentarlo.</p><form method="post"><input type="hidden" name="csrf" value="{wa.esc(token)}"><button class="btn green" name="action" value="{'disable' if enabled else 'enable'}">{'Desactivar avisos' if enabled else 'Activar avisos automáticos'}</button></form><p><a class="btn" href="/whatsapp/queue">Ver estados de entrega</a></p></div>'''
     return base.shell('Avisos automáticos', body, 'whatsapp_inbox')
 
 
@@ -185,6 +193,8 @@ def setup(app):
                 with app.app_context():
                     if 8 <= datetime.now().hour < 20:
                         promise_reminders()
+                        from zone_whatsapp_reminders import process
+                        process()
                     send_outbox()
             except Exception:
                 app.logger.error('Revisión de avisos WhatsApp pendiente; se volverá a comprobar.')

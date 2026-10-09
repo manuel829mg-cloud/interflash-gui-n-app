@@ -107,8 +107,11 @@ def snapshot(a,b):
         level='ALTO' if x['days']>=30 or x['promises'] else 'MEDIO' if x['days']>=7 else 'BAJO'
         risks.append(dict(x,id=r['id'],name=r['name'],status=r['status'],level=level))
     risks.sort(key=lambda x:(x['promises']>0,x['days'],x['late']),reverse=True)
+    operation={'clientes_suspendidos':sum(r['status']=='SUSPENDIDO' for r in customers),
+      'clientes_por_plan':[dict(r) for r in c.execute("SELECT COALESCE(p.name,'Sin plan') plan,COUNT(*) clientes FROM customers cu LEFT JOIN plans p ON p.id=cu.plan_id WHERE COALESCE(cu.status,'ACTIVO')<>'ELIMINADO' GROUP BY cu.plan_id ORDER BY clientes DESC")],
+      'clientes_sin_facturas':c.execute("SELECT COUNT(*) FROM customers cu WHERE COALESCE(cu.status,'ACTIVO')<>'ELIMINADO' AND NOT EXISTS(SELECT 1 FROM invoices i WHERE i.customer_id=cu.id AND i.status NOT IN ('CANCELADA','ANULADA'))").fetchone()[0]}
     c.close()
-    return {'periodo':{'inicio':a.isoformat(),'fin':b.isoformat()},'periodo_anterior':{'inicio':(a-timedelta(days=span)).isoformat(),'fin':(a-timedelta(days=1)).isoformat()},'actual':current,'anterior':previous,'pendiente_hoy':round(pending,2),'vencido_hoy':round(overdue,2),'clientes':len(customers),'clientes_con_atrasos':len(risks),'riesgos':risks,'fecha_cartera':today.isoformat()}
+    return {'operacion':operation,'periodo':{'inicio':a.isoformat(),'fin':b.isoformat()},'periodo_anterior':{'inicio':(a-timedelta(days=span)).isoformat(),'fin':(a-timedelta(days=1)).isoformat()},'actual':current,'anterior':previous,'pendiente_hoy':round(pending,2),'vencido_hoy':round(overdue,2),'clientes':len(customers),'clientes_con_atrasos':len(risks),'riesgos':risks,'fecha_cartera':today.isoformat()}
 
 def public_context(data):
     # Names, phone numbers, addresses, documents and network credentials never
@@ -156,6 +159,8 @@ def ask(kind,question,data):
 CSS='''<style>.ai-cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.ai-card{padding:18px;border:1px solid #294159;border-radius:14px;background:linear-gradient(135deg,#12263d,#0b1725)}.ai-card small{color:#95acc2}.ai-card b{display:block;margin-top:9px;font-size:24px;color:#79dddc}.ai-answer{white-space:pre-wrap;line-height:1.65;padding:18px;background:#0b1725;border:1px solid #294159;border-radius:12px}.ai-table-wrap{overflow-x:auto}.ai-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}.ai-query{width:100%;min-height:110px}.ai-stamp{font-size:12px;color:#92a9bd}.ai-note{padding:12px;border:1px solid #294159;border-radius:10px;margin:12px 0}@media(max-width:700px){.ai-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.ai-card{padding:12px}.ai-card b{font-size:19px}}</style>'''
 
 def page(kind):
+    if kind == 'assistant':
+        return assistant_page()
     if kind == 'recommendations':
         return recommendations_page()
     denied=admin()
@@ -177,6 +182,7 @@ def page(kind):
     body+='<div class="ai-cards">'+''.join(f'<div class="ai-card"><small>{label}</small><b>RD${value:,.2f}</b></div>' for label,value in cards)+'</div>'
     body+=f'<p class="ai-stamp">Periodo: {a} a {b} · Cartera al {data["fecha_cartera"]} · Saldo de caja = cobros − gastos registrados. No representa ganancia neta.</p>'
     if kind=='analysis':
+        body+=financial_charts(a,b)
         rows=''.join(f'<tr><td>{label}</td><td>RD${data["actual"][key]:,.2f}</td><td>RD${data["anterior"][key]:,.2f}</td></tr>' for label,key in [('Cobrado','cobrado'),('Gastos registrados','gastos_registrados'),('Saldo de caja','saldo_caja')])
         body+=f'<div class="panel ai-table-wrap"><h3>Comparación con el periodo anterior ({data["periodo_anterior"]["inicio"]} a {data["periodo_anterior"]["fin"]})</h3><table class="table"><tr><th>Indicador</th><th>Periodo elegido</th><th>Periodo anterior</th></tr>{rows}</table><p>Facturado en el periodo: RD${data["actual"]["facturado"]:,.2f} · Pendiente actual: RD${data["pendiente_hoy"]:,.2f}</p></div>'
     if kind=='risk':
@@ -257,7 +263,8 @@ def recommendations_page():
     body+=f'<div class="head"><div><h1>Recomendaciones IA</h1><p>El informe financiero y las recomendaciones de tu operación.</p></div></div><div class="advisor-controls"><form class="toolbar" method="get"><label>Desde<input type="date" class="field" name="start" value="{a}"></label><label>Hasta<input type="date" class="field" name="end" value="{b}"></label><button class="btn">Ver periodo</button></form><div class="quick-links"><a class="btn" href="{url_for("finance_ai_settings")}">Configurar IA</a><form method="post" id="ai-query-form"><input type="hidden" name="csrf" value="{csrf()}"><input type="hidden" name="start" value="{a}"><input type="hidden" name="end" value="{b}"><button class="btn blue" {"disabled" if not connected else ""}>{"Actualizar informe IA" if answer else "Generar informe IA"}</button></form></div></div>'
     if error:body+=f'<p class="notice" role="alert">{esc(error)}</p>'
     body+=f'<article class="advisor-report"><header class="advisor-header"><span class="advisor-symbol" aria-hidden="true">✧</span><div><h2>Asesor financiero</h2><p>{"Informe generado por IA" if answer else "Resumen de datos registrados · pendiente de generar con IA"} el {esc(display_stamp)} · Hora RD</p></div></header><div class="advisor-content">{report}</div><footer class="advisor-footer">{"Este informe conserva las cifras de la fecha de generación. Actualízalo para incorporar cambios." if answer else "Conecta la clave API y pulsa Generar informe IA para obtener la interpretación y las recomendaciones."} El saldo de caja no equivale a ganancia neta. Las recomendaciones requieren revisión.</footer></article>'
-    body+='''<script>document.getElementById('ai-query-form').addEventListener('submit',function(){const b=this.querySelector('button');b.disabled=true;b.textContent='Generando informe…';});</script>'''
+    body+=f'<div class="panel" style="max-width:1080px;margin:18px auto"><h3>¿Tienes una pregunta sobre este informe?</h3><a class="btn blue" href="{url_for("finance_ai_assistant",start=a.isoformat(),end=b.isoformat())}">Preguntar al Asistente Inter Flash</a></div>'
+    body+='''<script>document.getElementById('ai-query-form').addEventListener('submit',function(){const b=this.querySelector('button');b.disabled=true;b.textContent='Generando informe…';});</script>''' 
     return base.shell('Recomendaciones IA',body,'finance_ai_recommendations')
 
 def settings():
@@ -285,3 +292,70 @@ def setup(app):
     for ep,label in [('analysis','Análisis financiero'),('recommendations','Recomendaciones IA'),('risk','Clientes en riesgo'),('assistant','Asistente Inter Flash')]:
         if not any(x[0]=='finance_ai_'+ep for x in base.NAV):base.NAV.append(('finance_ai_'+ep,'✧',label))
 
+
+
+def financial_charts(a,b):
+    c=base.db()
+    def series(table):
+        return {r['day']:float(r['total']) for r in c.execute(f"SELECT date(paid_at) day,SUM(amount) total FROM {table} WHERE date(paid_at) BETWEEN ? AND ? GROUP BY date(paid_at)",(a.isoformat(),b.isoformat()))}
+    paid,spent=series('payments'),series('expenses')
+    days=[a+timedelta(days=i) for i in range((b-a).days+1)]
+    values=[[source.get(d.isoformat(),0) for d in days] for source in (paid,spent)]
+    maximum=max([1]+[v for line in values for v in line]);minimum=min([0]+[v for line in values for v in line]);spread=maximum-minimum
+    def y(v):return 185-(v-minimum)/spread*150
+    svg='<svg viewBox="0 0 700 225" role="img" aria-label="Cobros y gastos diarios del periodo" style="width:100%;height:auto">'
+    for i in range(4):
+        v=minimum+spread*i/3
+        svg+=f'<line x1="80" y1="{y(v):.1f}" x2="675" y2="{y(v):.1f}" stroke="#294159"/><text x="4" y="{y(v)+4:.1f}" fill="#95acc2" font-size="11">RD${v:,.0f}</text>'
+    for line,color in zip(values,['#48d9b0','#b497ff']):
+        pts=' '.join(f'{80+i*595/max(1,len(days)-1):.1f},{y(v):.1f}' for i,v in enumerate(line))
+        svg+=f'<polyline points="{pts}" fill="none" stroke="{color}" stroke-width="3"/>'
+        if len(days)==1:svg+=f'<circle cx="80" cy="{y(line[0]):.1f}" r="4" fill="{color}"/>'
+    svg+=f'<text x="80" y="215" fill="#95acc2" font-size="12">{a}</text><text x="590" y="215" fill="#95acc2" font-size="12">{b}</text></svg>'
+    counts=c.execute("SELECT SUM(CASE WHEN status='ACTIVO' THEN 1 ELSE 0 END) active,SUM(CASE WHEN status='SUSPENDIDO' THEN 1 ELSE 0 END) suspended FROM customers WHERE COALESCE(status,'ACTIVO')<>'ELIMINADO'").fetchone()
+    new=c.execute("SELECT COUNT(*) FROM customers WHERE date(created_at) BETWEEN ? AND ? AND COALESCE(status,'ACTIVO')<>'ELIMINADO'",(a.isoformat(),b.isoformat())).fetchone()[0];c.close()
+    active,suspended=int(counts['active'] or 0),int(counts['suspended'] or 0);total=active+suspended
+    pct=active/total*100 if total else 0
+    return f'<div class="ai-chart-grid"><div class="panel"><h3>Cobros y gastos diarios</h3>{svg}<p><span style="color:#48d9b0">● Cobros</span> · <span style="color:#b497ff">● Gastos registrados</span></p></div><div class="panel"><h3>Estado actual de clientes</h3><div class="ai-donut" style="background:conic-gradient(#48d9b0 0 {pct}%,#b497ff {pct}% 100%)"><span>{total}</span></div><p>{active} activos · {suspended} suspendidos</p><p>{new} nuevos en el periodo</p><p class="ai-stamp">No hay fechas fiables de cancelación para graficar bajas o ingresos perdidos.</p></div></div>'
+
+
+def assistant_page():
+    denied=admin()
+    if denied:return denied
+    a,b=period();data=snapshot(a,b);token=csrf();error='';connected=bool(get_key())
+    c=base.db()
+    c.execute('CREATE TABLE IF NOT EXISTS finance_ai_chats(id TEXT PRIMARY KEY,history TEXT NOT NULL)');c.commit()
+    chat_id=session.setdefault('finance_ai_chat_id',secrets.token_urlsafe(24))
+    row=c.execute('SELECT history FROM finance_ai_chats WHERE id=?',(chat_id,)).fetchone();c.close()
+    history=json.loads(row['history']) if row else []
+    if request.method=='POST':
+        check_csrf()
+        if request.form.get('action')=='clear':history=[]
+        else:
+            question=(request.form.get('question') or '').strip()
+            if not question or len(question)>1600:error='Escribe una pregunta de hasta 1600 caracteres.'
+            else:
+                try:
+                    context=dict(data)
+                    context['conversacion_reciente']=history[-4:]
+                    answer=ask('assistant',question,context)
+                    history=(history+[{'question':question,'answer':answer}])[-6:]
+                except ValueError as e:error=str(e)
+        # Store conversation server-side; cookie contains only a random identifier.
+    c=base.db()
+    c.execute('INSERT OR REPLACE INTO finance_ai_chats VALUES(?,?)',(chat_id,json.dumps(history,ensure_ascii=False)));c.commit();c.close()
+    body=CSS+CHAT_CSS+f'<div class="head"><div><h1>Asistente Inter Flash</h1><p>Consulta sobre los datos de tu operación</p></div><a class="btn" href="{url_for("finance_ai_settings")}">Configurar IA</a></div>'
+    body+=f'<form class="toolbar panel" method="get"><label>Desde<input type="date" name="start" value="{a}"></label><label>Hasta<input type="date" name="end" value="{b}"></label><button class="btn">Ver periodo</button></form>'
+    questions=['¿Cuántos clientes están suspendidos?','¿Cuánto cobré en este periodo?','¿Cuánto tengo pendiente de cobrar?','¿Cuántos clientes no tienen facturas?','¿Cuántos clientes hay por plan?','¿Qué debo priorizar para mejorar los cobros?']
+    body+='<div class="panel"><h3>Preguntas frecuentes</h3><div class="ai-quick">'+''.join(f'<button type="button" class="btn" data-question="{esc(q)}">{esc(q)}</button>' for q in questions)+'</div>'
+    body+='<div class="ai-chat" aria-live="polite"><div class="ai-bubble"><b>✦ Asistente Inter Flash</b><p>Hola. Elige una pregunta o escribe tu consulta sobre clientes, cobros y facturas. Usaré los datos registrados del periodo seleccionado.</p></div>'
+    for entry in history:
+        body+=f'<div class="ai-bubble ai-user"><b>Tú</b><p>{esc(entry["question"])}</p></div><div class="ai-bubble"><b>✦ Asistente Inter Flash</b>{_report_text(entry["answer"])}</div>'
+    body+='</div>'
+    if error:body+=f'<p class="notice" role="alert">{esc(error)}</p>'
+    if not connected:body+='<p class="notice">Configura tu clave API para consultar al asistente.</p>'
+    body+=f'<form method="post" id="ai-query-form"><input type="hidden" name="csrf" value="{token}"><input type="hidden" name="start" value="{a}"><input type="hidden" name="end" value="{b}"><label>Tu pregunta<textarea id="ai-question" class="field ai-query" name="question" maxlength="1600" required placeholder="Escribe tu pregunta…"></textarea></label><p><button class="btn green" {"disabled" if not connected else ""}>Enviar consulta</button></p></form><form method="post"><input type="hidden" name="csrf" value="{token}"><input type="hidden" name="action" value="clear"><button class="btn">Limpiar conversación</button></form><p class="ai-stamp">Hasta 30 consultas diarias. Solo se cobra una consulta al enviarla. El asistente no modifica clientes ni envía mensajes. Revisa sus respuestas.</p></div>'
+    body+="""<script>document.querySelectorAll('[data-question]').forEach(b=>b.addEventListener('click',()=>{const q=document.getElementById('ai-question');q.value=b.dataset.question;q.focus();}));document.getElementById('ai-query-form').addEventListener('submit',function(){const b=this.querySelector('button');b.disabled=true;b.textContent='Consultando IA…';});const chat=document.querySelector('.ai-chat');chat.scrollTop=chat.scrollHeight;</script>"""
+    return base.shell('Asistente Inter Flash',body,'finance_ai_assistant')
+
+CHAT_CSS='<style>.ai-chart-grid{display:grid;grid-template-columns:2fr 1fr;gap:16px}.ai-donut{width:160px;height:160px;border-radius:50%;display:grid;place-items:center;margin:20px auto}.ai-donut span{display:grid;place-items:center;background:#0b1725;width:115px;height:115px;border-radius:50%;font-size:28px;color:#79dddc}.ai-quick{display:flex;flex-wrap:wrap;gap:8px}.ai-chat{max-height:520px;min-height:240px;overflow:auto;padding:16px 0}.ai-bubble{background:#12263d;border:1px solid #294159;border-radius:14px;padding:16px;margin:12px 0;max-width:90%;line-height:1.6;overflow-wrap:anywhere}.ai-user{margin-left:auto;background:#153a42}.ai-bubble b{color:#79dddc}@media(max-width:700px){.ai-chart-grid{grid-template-columns:1fr}.ai-bubble{max-width:100%}}</style>'

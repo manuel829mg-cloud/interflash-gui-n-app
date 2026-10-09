@@ -79,9 +79,6 @@ def _choices(row=None):
     return plans, profiles, routers
 
 
-LOCATION_MAP_WIDGET = '<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">\n<style>#customer-location-map{height:350px;min-height:280px;width:100%;border-radius:12px;background:#142638;z-index:0}.if-map-tools{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.if-map-tools button[aria-pressed=true]{background:#087f67;color:white}.leaflet-container{color:#182c38;font-family:inherit}.leaflet-control-attribution{font-size:10px!important}@media(max-width:600px){#customer-location-map{height:300px}}</style>\n<div class="if-map-tools"><button type="button" class="btn" id="customer-map-streets" aria-pressed="true">Mapa de calles</button><button type="button" class="btn" id="customer-map-satellite" aria-pressed="false">Satélite</button></div>\n<p class="muted">Toca la casa en el mapa o pulsa Mi ubicación. Arrastra el marcador para afinar el punto y guarda los cambios.</p>\n<div id="customer-location-map" aria-label="Mapa de la ubicación del cliente"></div>\n<p id="customer-map-status" class="muted" role="status"></p>\n<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>\n<script>\ndocument.addEventListener(\'DOMContentLoaded\', () => {\n  const lat=document.getElementById(\'customer-latitude\'),lng=document.getElementById(\'customer-longitude\');\n  const box=document.getElementById(\'customer-location-map\'),status=document.getElementById(\'customer-map-status\');\n  if(!lat||!lng||!box)return;\n  if(!window.L){status.textContent=\'No se pudo cargar el mapa. Puedes usar Mi ubicación o escribir las coordenadas.\';return;}\n  const map=L.map(box,{scrollWheelZoom:false}).setView([18.4861,-69.9312],12);\n  const street=L.tileLayer(\'https://tile.openstreetmap.org/{z}/{x}/{y}.png\',{maxZoom:19,attribution:\'&copy; OpenStreetMap contributors\'});\n  const satellite=L.tileLayer(\'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}\',{maxZoom:19,attribution:\'Tiles &copy; Esri, Maxar, Earthstar Geographics, and the GIS User Community\'});\n  let layer=street.addTo(map),marker=null,lastPoint=\'\';\n  function point(){const a=Number(lat.value),b=Number(lng.value);return lat.value.trim()&&lng.value.trim()&&Number.isFinite(a)&&Number.isFinite(b)&&Math.abs(a)<=90&&Math.abs(b)<=180?[a,b]:null;}\n  function write(p){lat.value=p.lat.toFixed(7);lng.value=p.lng.toFixed(7);lat.dispatchEvent(new Event(\'input\',{bubbles:true}));lng.dispatchEvent(new Event(\'input\',{bubbles:true}));status.textContent=\'Punto seleccionado. Guarda los cambios para asignarlo al cliente.\';}\n  function sync(center=false){const p=point();if(!p){if(marker){map.removeLayer(marker);marker=null;}lastPoint=\'\';return;}\n    if(!marker){marker=L.marker(p,{draggable:true}).addTo(map);marker.on(\'dragend\',()=>write(marker.getLatLng()));}\n    else marker.setLatLng(p);\n    const key=p.join(\',\');if(center&&key!==lastPoint)map.setView(p,Math.max(map.getZoom(),17));lastPoint=key;\n  }\n  window.IFLocationMap={sync};\n  lat.addEventListener(\'input\',()=>sync(true));lng.addEventListener(\'input\',()=>sync(true));\n  map.on(\'click\',e=>write(e.latlng));sync(true);\n  const streets=document.getElementById(\'customer-map-streets\'),sat=document.getElementById(\'customer-map-satellite\');\n  function switchLayer(next){map.removeLayer(layer);layer=next.addTo(map);streets.setAttribute(\'aria-pressed\',next===street);sat.setAttribute(\'aria-pressed\',next===satellite);status.textContent=\'\';}\n  streets.addEventListener(\'click\',()=>switchLayer(street));sat.addEventListener(\'click\',()=>switchLayer(satellite));\n  for(const tiles of [street,satellite])tiles.on(\'tileerror\',()=>status.textContent=\'No se pudo cargar parte del mapa. Revisa tu conexión o cambia la vista.\');\n  if(window.ResizeObserver)new ResizeObserver(()=>map.invalidateSize()).observe(box);\n});\n</script>\n'
-
-
 def customer_form(row=None):
     plans, profiles, routers = _choices(row)
     def v(k, default=''):
@@ -114,13 +111,12 @@ def customer_form(row=None):
       <div class="full"><label>Dirección<textarea name="address" rows="2">{esc(v('address'))}</textarea></label></div>
       <div class="full" style="border:1px solid #29425b;border-radius:10px;padding:14px">
         <h3 style="margin:0 0 10px">Ubicación de la instalación</h3>
-        {LOCATION_MAP_WIDGET}
         <p class="muted">Fija este punto cuando estés en casa del cliente. Se guardará al pulsar Guardar cliente.</p>
         <div class="formgrid">
           <label>Latitud<input id="customer-latitude" name="latitude" type="number" min="-90" max="90" step="any" value="{esc(v('latitude'))}" placeholder="18.4861"></label>
           <label>Longitud<input id="customer-longitude" name="longitude" type="number" min="-180" max="180" step="any" value="{esc(v('longitude'))}" placeholder="-69.9312"></label>
         </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button id="customer-gps" class="btn blue" type="button">Mi ubicación (GPS)</button><a id="customer-map-preview" class="btn" target="_blank" rel="noopener noreferrer" hidden>Ver punto en el mapa</a></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button id="customer-gps" class="btn blue" type="button">Fijar mi ubicación actual</button><a id="customer-map-preview" class="btn" target="_blank" rel="noopener noreferrer" hidden>Ver punto en el mapa</a></div>
         <p id="customer-gps-status" class="muted" role="status"></p>
       </div>
       <div><label>Zona<input name="zone" value="{esc(v('zone'))}"></label></div>
@@ -147,7 +143,6 @@ def customer_form(row=None):
       const status = document.getElementById('customer-gps-status');
       const preview = document.getElementById('customer-map-preview');
       function updatePreview() {{
-        if (window.IFLocationMap) window.IFLocationMap.sync(true);
         const a = Number(lat.value), b = Number(lng.value);
         const valid = lat.value.trim() && lng.value.trim() && Number.isFinite(a) && Number.isFinite(b) && Math.abs(a) <= 90 && Math.abs(b) <= 180;
         preview.hidden = !valid;
@@ -371,4 +366,3 @@ def setup(app):
     app.add_url_rule('/api/mikrotik/agent/next', endpoint='pbr_control_next', view_func=control_next, methods=['GET'])
     app.add_url_rule('/api/mikrotik/agent/result', endpoint='pbr_control_result', view_func=control_result, methods=['POST'])
     app.add_url_rule('/mikrotik/agent-script', endpoint='pbr_control_script', view_func=control_script, methods=['GET'])
-

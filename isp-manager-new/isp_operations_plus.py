@@ -172,11 +172,10 @@ def customer_location(id):
     map_button = f'<a class="btn blue" href="{esc(map_url)}" target="_blank" rel="noopener noreferrer">Ver en el mapa</a>' if map_url else '<span class="muted">Ubicación pendiente</span>'
     body = f'''<div class="head"><div><h1>Ubicación del cliente</h1><p>{esc(cu['name'])}</p></div><a class="btn" href="{url_for('customer_profile',id=id)}">Volver a la ficha</a></div>
     {error}<form class="panel formgrid" method="post">
-      <div class="full">{pbr_client.LOCATION_MAP_WIDGET}</div>
       <p class="full muted">Guarda el punto donde está instalado el servicio. Puedes copiar las coordenadas del mapa o usar tu ubicación cuando estés en casa del cliente.</p>
       <label>Latitud<input id="customer-latitude" class="field" name="latitude" type="number" step="any" min="-90" max="90" value="{esc(lat)}" placeholder="18.4861"></label>
       <label>Longitud<input id="customer-longitude" class="field" name="longitude" type="number" step="any" min="-180" max="180" value="{esc(lng)}" placeholder="-69.9312"></label>
-      <div class="full quick-links"><button class="btn green" type="submit">Guardar ubicación</button><button id="customer-gps" class="btn" type="button">Mi ubicación (GPS)</button>{map_button}</div>
+      <div class="full quick-links"><button class="btn green" type="submit">Guardar ubicación</button><button id="customer-gps" class="btn" type="button">Usar mi ubicación actual</button>{map_button}</div>
       <p id="customer-gps-status" class="full muted" role="status"></p>
     </form>'''
     body += r'''<script>
@@ -190,7 +189,6 @@ def customer_location(id):
         navigator.geolocation.getCurrentPosition(position => {
           document.getElementById('customer-latitude').value = position.coords.latitude.toFixed(7);
           document.getElementById('customer-longitude').value = position.coords.longitude.toFixed(7);
-          if (window.IFLocationMap) window.IFLocationMap.sync(true);
           status.textContent = 'Ubicación obtenida. Pulsa Guardar ubicación para asignarla al cliente.';
           button.disabled = false;
         }, error => {
@@ -749,4 +747,3 @@ def setup(app):
         base.NAV.append(('onu_overview','◉','ONU / ONT'))
     if not any(x[0]=='customer_trash' for x in base.NAV):
         base.NAV.append(('customer_trash','⌫','Papelera'))
-

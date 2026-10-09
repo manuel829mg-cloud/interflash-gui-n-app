@@ -181,6 +181,20 @@ def control_result_compat():
             c.execute("UPDATE customers SET status='SUSPENDIDO',service_status='SUSPENDIDO' WHERE id=?", (cmd['customer_id'],))
         elif cmd['action'] == 'REACTIVATE':
             c.execute("UPDATE customers SET status='ACTIVO',service_status='ACTIVO' WHERE id=?", (cmd['customer_id'],))
+    if ok and cmd['action'] == 'CHANGE_PROFILE' and cmd['customer_id'] and cmd['pppoe']:
+        # The transaction and terminal-status guard make repeated acknowledgements safe.
+        customer = c.execute(
+            'SELECT status,service_status,pppoe,router_name FROM customers WHERE id=?',
+            (cmd['customer_id'],),
+        ).fetchone()
+        if (customer and customer['status'] == 'ACTIVO'
+                and customer['service_status'] == 'ACTIVO'
+                and customer['pppoe'] == cmd['pppoe']
+                and (customer['router_name'] or 'CCR2116') == (cmd['router_name'] or 'CCR2116')):
+            pbr_client._queue(
+                c, cmd['customer_id'], cmd['pppoe'], cmd['router_name'],
+                'RESTART_PPPOE', {'after_profile_command': cid},
+            )
     if ok and cmd['customer_id']:
         from whatsapp_events import command_notice
         command_notice(c, cmd)

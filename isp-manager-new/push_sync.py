@@ -1,4 +1,4 @@
-import os, hmac, io, csv
+import os, hmac, io, csv, json
 from datetime import datetime
 from html import escape
 from flask import request, jsonify, redirect, url_for, flash, Response
@@ -138,9 +138,21 @@ def _save_traffic(c, name, items):
                   (name, iface, rx, tx, rx_bps, tx_bps, now_s))
 
 
+def _relay_json(raw):
+    try:
+        text = raw.decode('utf-8')
+    except UnicodeDecodeError:
+        # Older RouterOS account comments may contain Windows-1252 bytes.
+        text = raw.decode('cp1252')
+    return json.loads(text)
+
+
 def sync_api():
     if not _auth(): return jsonify(ok=False,error='unauthorized'),401
-    p=request.get_json(silent=True)
+    try:
+        p = _relay_json(request.get_data())
+    except (UnicodeError, ValueError):
+        return jsonify(ok=False,error='invalid-json'),400
     if not isinstance(p,dict): return jsonify(ok=False,error='invalid-json'),400
     name=_safe(p.get('router') or 'CCR2116',80).strip(); kind=_safe(p.get('kind') or '',24).lower()
     items=p.get('items') or []

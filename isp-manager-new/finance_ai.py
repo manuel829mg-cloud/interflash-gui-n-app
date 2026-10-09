@@ -156,6 +156,8 @@ def ask(kind,question,data):
 CSS='''<style>.ai-cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.ai-card{padding:18px;border:1px solid #294159;border-radius:14px;background:linear-gradient(135deg,#12263d,#0b1725)}.ai-card small{color:#95acc2}.ai-card b{display:block;margin-top:9px;font-size:24px;color:#79dddc}.ai-answer{white-space:pre-wrap;line-height:1.65;padding:18px;background:#0b1725;border:1px solid #294159;border-radius:12px}.ai-table-wrap{overflow-x:auto}.ai-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}.ai-query{width:100%;min-height:110px}.ai-stamp{font-size:12px;color:#92a9bd}.ai-note{padding:12px;border:1px solid #294159;border-radius:10px;margin:12px 0}@media(max-width:700px){.ai-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.ai-card{padding:12px}.ai-card b{font-size:19px}}</style>'''
 
 def page(kind):
+    if kind == 'recommendations':
+        return recommendations_page()
     denied=admin()
     if denied:return denied
     a,b=period();data=snapshot(a,b);answer='';error='';question=''
@@ -189,6 +191,75 @@ def page(kind):
     body+='''<script>document.getElementById('ai-query-form').addEventListener('submit',function(){const b=this.querySelector('button');b.disabled=true;b.textContent='Consultando IA…';});</script>'''
     return base.shell(titles[kind],body,ep)
 
+def _report_text(text):
+    # Render a small safe subset of model prose; never trust model HTML.
+    import re
+    sections=[]
+    for block in text.split('\n\n'):
+        block=block.strip()
+        if not block:continue
+        lines=block.split('\n')
+        first=lines[0].strip()
+        heading=first.startswith('#') or (first.startswith('**') and first.endswith('**'))
+        if heading:
+            title=re.sub(r'^[#\s]+','',first).strip('* ').strip()
+            sections.append('<h3>'+esc(title)+'</h3>')
+            lines=lines[1:]
+        if lines:
+            sections.append('<p>'+esc('\n'.join(lines)).replace('\n','<br>')+'</p>')
+    return ''.join(sections)
+
+def recommendations_page():
+    denied=admin()
+    if denied:return denied
+    a,b=period();data=snapshot(a,b);today=date.today()
+    summaries={}
+    for label,start in [('hoy',today),('ultimos_7_dias',today-timedelta(days=6)),('mes_actual',today.replace(day=1))]:
+        summaries[label]=snapshot(start,today)['actual']
+    c=base.db()
+    invoice_counts=c.execute('''SELECT COUNT(*) total,
+      SUM(CASE WHEN date(i.due_date)<? THEN 1 ELSE 0 END) overdue
+      FROM invoices i LEFT JOIN (SELECT invoice_id,SUM(amount) paid FROM payments GROUP BY invoice_id) p ON p.invoice_id=i.id
+      WHERE i.status='PENDIENTE' AND i.amount+COALESCE(i.late_fee,0)>COALESCE(p.paid,0)''',(today.isoformat(),)).fetchone()
+    counts=c.execute("SELECT SUM(CASE WHEN status='ACTIVO' THEN 1 ELSE 0 END) active,SUM(CASE WHEN status='SUSPENDIDO' THEN 1 ELSE 0 END) suspended,SUM(CASE WHEN date(created_at) BETWEEN ? AND ? AND COALESCE(status,'ACTIVO')<>'ELIMINADO' THEN 1 ELSE 0 END) new FROM customers",(today.replace(day=1).isoformat(),today.isoformat())).fetchone()
+    c.executescript('''CREATE TABLE IF NOT EXISTS finance_ai_reports(start_date TEXT NOT NULL,end_date TEXT NOT NULL,answer TEXT NOT NULL,generated_at TEXT NOT NULL,PRIMARY KEY(start_date,end_date));''')
+    c.commit()
+    saved=c.execute('SELECT answer,generated_at FROM finance_ai_reports WHERE start_date=? AND end_date=?',(a.isoformat(),b.isoformat())).fetchone();c.close()
+    data['resumenes_cobros']=summaries
+    data['facturas_pendientes']=int(invoice_counts['total'] or 0)
+    data['facturas_vencidas']=int(invoice_counts['overdue'] or 0)
+    data['clientes_activos']=int(counts['active'] or 0)
+    data['clientes_suspendidos']=int(counts['suspended'] or 0)
+    data['clientes_nuevos_mes']=int(counts['new'] or 0)
+    data['cancelaciones']='No se dispone de fecha fiable de cancelación; no inferir bajas del periodo a partir de estados actuales.'
+    answer=saved['answer'] if saved else '';stamp=saved['generated_at'] if saved else datetime.now().isoformat(timespec='seconds');error=''
+    if request.method=='POST':
+        check_csrf()
+        prompt='Redacta un informe de Asesor financiero de INTER Flash, breve y en español, con subtítulos Markdown: Resumen del día, Resumen de la semana, Resumen del mes, Cuentas por cobrar, Clientes nuevos y cancelados, Cómo recuperar lo pendiente, Recomendaciones prioritarias. Usa los resúmenes hoy/últimos 7 días/mes actual para esos apartados y el periodo elegido solo para su comparación. No inventes antigüedad del sistema, cancelaciones ni cifras. Aclara cuando faltan fechas de cancelación. Describe el dinero vencido como pendiente, no perdido. Da recomendaciones concretas y respetuosas basadas en los datos. No afirmes haber enviado mensajes ni cambiado clientes.'
+        try:
+            answer=ask('recommendations',prompt,data);stamp=datetime.now().isoformat(timespec='seconds')
+            c=base.db();c.execute('INSERT INTO finance_ai_reports(start_date,end_date,answer,generated_at) VALUES(?,?,?,?) ON CONFLICT(start_date,end_date) DO UPDATE SET answer=excluded.answer,generated_at=excluded.generated_at',(a.isoformat(),b.isoformat(),answer,stamp));c.commit();c.close()
+        except ValueError as e:error=str(e)
+    try:display_stamp=datetime.fromisoformat(stamp).strftime('%d/%m/%Y a las %I:%M %p')
+    except ValueError:display_stamp=stamp
+    connected=bool(get_key())
+    report=''
+    if answer:
+        report=_report_text(answer)
+    else:
+        report=f'''<p>Hoy tienes registrados cobros por <b>RD${summaries['hoy']['cobrado']:,.2f}</b> y gastos por <b>RD${summaries['hoy']['gastos_registrados']:,.2f}</b>.</p>
+        <h3>Resumen de la semana</h3><p>En los últimos 7 días registraste cobros de RD${summaries['ultimos_7_dias']['cobrado']:,.2f} y gastos de RD${summaries['ultimos_7_dias']['gastos_registrados']:,.2f}. El saldo de caja registrado es RD${summaries['ultimos_7_dias']['saldo_caja']:,.2f}.</p>
+        <h3>Resumen del mes</h3><p>Desde el {today.replace(day=1).strftime('%d/%m/%Y')} hasta hoy, los cobros suman RD${summaries['mes_actual']['cobrado']:,.2f}, con gastos registrados de RD${summaries['mes_actual']['gastos_registrados']:,.2f}.</p>
+        <h3>Cuentas por cobrar</h3><p>Tienes {data['facturas_pendientes']} facturas con saldo pendiente por RD${data['pendiente_hoy']:,.2f}. De ellas, {data['facturas_vencidas']} están vencidas, con un saldo de RD${data['vencido_hoy']:,.2f}. Los saldos descuentan los abonos registrados en cada factura.</p>
+        <h3>Clientes nuevos y cancelados</h3><p>Actualmente hay {data['clientes_activos']} clientes con estado ACTIVO y {data['clientes_suspendidos']} suspendidos. En el mes se registraron {data['clientes_nuevos_mes']} clientes que permanecen en la lista. No hay información suficiente para determinar las cancelaciones del periodo.</p>
+        <h3>Cómo recuperar lo pendiente</h3><p>{'Revisa las facturas vencidas y las promesas pendientes en Clientes en riesgo. Verifica los pagos antes de realizar seguimiento.' if data['vencido_hoy'] else 'No hay saldo vencido registrado actualmente. Mantén actualizado el registro de pagos y vencimientos.'}</p>'''
+    body=CSS+'''<style>.advisor-report{max-width:1080px;margin:0 auto;border:1px solid #2b4158;border-radius:18px;overflow:hidden;background:#0d1a2a;box-shadow:0 10px 30px #0002}.advisor-header{display:flex;gap:14px;align-items:center;padding:24px 28px;background:#13273d;border-bottom:1px solid #2b4158}.advisor-symbol{display:grid;place-items:center;width:48px;height:48px;border-radius:14px;background:#204268;color:#8cceff;font-size:27px;flex-shrink:0}.advisor-header h2{font-size:19px;margin:0 0 6px}.advisor-header p{margin:0;color:#9eb3c6;font-size:13px}.advisor-content{padding:28px 34px;line-height:1.8;color:#c8d5e2}.advisor-content h3{margin:28px 0 7px;font-size:17px;color:#eff7ff}.advisor-content p{margin:0 0 15px;overflow-wrap:anywhere}.advisor-controls{max-width:1080px;margin:0 auto 18px;display:flex;gap:8px;justify-content:space-between;align-items:center;flex-wrap:wrap}.advisor-controls form{margin:0}.advisor-footer{padding:16px 28px;border-top:1px solid #2b4158;color:#91a8bd;font-size:12px}@media(max-width:650px){.advisor-header{padding:18px}.advisor-content{padding:20px}.advisor-controls .toolbar{width:100%}}</style>'''
+    body+=f'<div class="head"><div><h1>Recomendaciones IA</h1><p>El informe financiero y las recomendaciones de tu operación.</p></div></div><div class="advisor-controls"><form class="toolbar" method="get"><label>Desde<input type="date" class="field" name="start" value="{a}"></label><label>Hasta<input type="date" class="field" name="end" value="{b}"></label><button class="btn">Ver periodo</button></form><div class="quick-links"><a class="btn" href="{url_for("finance_ai_settings")}">Configurar IA</a><form method="post" id="ai-query-form"><input type="hidden" name="csrf" value="{csrf()}"><input type="hidden" name="start" value="{a}"><input type="hidden" name="end" value="{b}"><button class="btn blue" {"disabled" if not connected else ""}>{"Actualizar informe IA" if answer else "Generar informe IA"}</button></form></div></div>'
+    if error:body+=f'<p class="notice" role="alert">{esc(error)}</p>'
+    body+=f'<article class="advisor-report"><header class="advisor-header"><span class="advisor-symbol" aria-hidden="true">✧</span><div><h2>Asesor financiero</h2><p>{"Informe generado por IA" if answer else "Resumen de datos registrados · pendiente de generar con IA"} el {esc(display_stamp)} · Hora RD</p></div></header><div class="advisor-content">{report}</div><footer class="advisor-footer">{"Este informe conserva las cifras de la fecha de generación. Actualízalo para incorporar cambios." if answer else "Conecta la clave API y pulsa Generar informe IA para obtener la interpretación y las recomendaciones."} El saldo de caja no equivale a ganancia neta. Las recomendaciones requieren revisión.</footer></article>'
+    body+='''<script>document.getElementById('ai-query-form').addEventListener('submit',function(){const b=this.querySelector('button');b.disabled=true;b.textContent='Generando informe…';});</script>'''
+    return base.shell('Recomendaciones IA',body,'finance_ai_recommendations')
+
 def settings():
     denied=admin()
     if denied:return denied
@@ -213,3 +284,4 @@ def setup(app):
     app.add_url_rule('/finanzas-ia/configurar',endpoint='finance_ai_settings',view_func=settings,methods=['GET','POST'])
     for ep,label in [('analysis','Análisis financiero'),('recommendations','Recomendaciones IA'),('risk','Clientes en riesgo'),('assistant','Asistente Inter Flash')]:
         if not any(x[0]=='finance_ai_'+ep for x in base.NAV):base.NAV.append(('finance_ai_'+ep,'✧',label))
+

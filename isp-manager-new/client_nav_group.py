@@ -2,7 +2,8 @@ import app as base
 import menu_icons
 
 def setup():
-    base.NAV[:] = [item for item in base.NAV if item[0] != 'client_extract']
+    base.NAV[:] = [(ep, ic, 'Importar clientes' if ep == 'client_extract' else label)
+                   for ep, ic, label in base.NAV if ep != 'customer_trash']
 
     def grouped_shell(title, body, active='dashboard'):
         nav={ep:(ic,label) for ep,ic,label in base.NAV}
@@ -34,7 +35,7 @@ def setup():
         parts.append(item('dashboard','▦','Dashboard'))
         if 'whatsapp_inbox' in nav:
             parts.append(f'<a class="nav-single" href="{base.url_for("whatsapp_chatbot")}" title="IA / Automatización" aria-label="IA / Automatización">{menu_icons.icon("automation")}<span class="txt">IA / Automatización</span></a>')
-        parts.append(group('clientes','♙','Clientes',['customers','client_extract','customer_trash']))
+        parts.append(group('clientes','♙','Clientes',['customers','client_extract']))
         parts.append(group('finanzas','▤','Finanzas',['invoices','payments','expenses_page','banks_page']))
         # Almacén se mostrará automáticamente cuando se agregue un módulo de inventario.
         warehouse=[ep for ep in ('inventory_page','warehouse_page','stock_page','equipment_page') if ep in nav]

@@ -153,12 +153,20 @@ def sync_api():
             c.execute('DELETE FROM push_pppoe_active WHERE router_name=?',(name,))
             c.execute('DELETE FROM push_ppp_profiles WHERE router_name=?',(name,))
             _touch(c,name,_safe(p.get('identity'),80),_safe(p.get('version'),80),'SYNCING')
-        elif kind=='secrets':
+        elif kind in ('secrets','secrets-upsert'):
             for x in items:
                 if isinstance(x,dict):
+                    if kind == 'secrets-upsert':
+                        account = _safe(x.get('name'),255).strip()
+                        if not account:
+                            continue
+                        c.execute('DELETE FROM push_pppoe_secrets WHERE router_name=? AND name=?', (name, account))
                     c.execute('INSERT INTO push_pppoe_secrets(router_name,name,profile,service,remote_address,caller_id,disabled,comment) VALUES(?,?,?,?,?,?,?,?)',
                               (name,_safe(x.get('name'),255),_safe(x.get('profile'),255),_safe(x.get('service'),80),_safe(x.get('remote-address'),255),_safe(x.get('caller-id'),255),_safe(x.get('disabled'),20),_safe(x.get('comment'))))
             _touch(c,name,status='SYNCING')
+            if kind == 'secrets-upsert':
+                total = c.execute('SELECT COUNT(*) c FROM push_pppoe_secrets WHERE router_name=?',(name,)).fetchone()['c']
+                c.execute('UPDATE push_router_agents SET pppoe_total=? WHERE name=?',(total,name))
         elif kind=='active-snapshot':
             c.execute('DELETE FROM push_pppoe_active WHERE router_name=?',(name,))
             for x in items:

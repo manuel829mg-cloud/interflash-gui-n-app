@@ -1,7 +1,7 @@
 from functools import wraps
 import app as base
 
-LOGO_URL = '/static/interflash-logo-round.webp?v=20261008'
+LOGO_URL = '/static/interflash-symbol.png?v=20261009'
 
 _EXTRA_CSS = '''
 <style>

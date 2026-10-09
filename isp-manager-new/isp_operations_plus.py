@@ -208,7 +208,7 @@ def customers_plus():
     status_filter = 'SUSPENDIDO' if request.args.get('status') == 'SUSPENDIDO' else ''
     overdue_filter = request.args.get('overdue') == '1'
     c = base.db()
-    sql = '''SELECT cu.*,p.name plan_name,z.name zone_name,
+    sql = '''SELECT cu.*,p.name plan_name,p.price plan_price,z.name zone_name,
              COALESCE((SELECT SUM(i.amount) FROM invoices i WHERE i.customer_id=cu.id AND i.status='PENDIENTE'),0) debt,
              (SELECT MIN(i.due_date) FROM invoices i WHERE i.customer_id=cu.id AND i.status='PENDIENTE') oldest_due,
              (SELECT MAX(py.paid_at) FROM payments py WHERE py.customer_id=cu.id) last_payment,
@@ -278,7 +278,7 @@ def customers_plus():
         trs.append(f'''<tr class="{row_class}" data-client-search="{esc(searchable)}"{'' if visible else ' hidden'}>
           <td class="c-code"><span>{esc(r['code'] or '#'+str(r['id']))}</span></td>
           <td class="c-client"><b>{esc(r['name'])}</b><br><span class="muted">{' · '.join(client_extra)}</span></td>
-          <td class="c-plan">{esc(r['plan_name'] or '-')}</td>
+          <td class="c-plan">{esc(r['plan_name'] or 'Sin plan')}<br><small class="muted">{('RD$' + format(float(r['plan_price']), ',.0f') + ' / mes') if r['plan_price'] is not None else 'Precio sin asignar'}</small></td>
           <td class="c-zone">{esc(r['zone_name'] or r['zone'] or '-')}</td>
           <td class="c-pppoe"><span>{esc(r['pppoe'] or '-')}</span><br><span class="tag {cls}">{esc(state)}</span>{ip_html}</td>
           <td class="c-due"><span class="{'danger-text' if overdue else ''}">{esc(due)}</span>{'<br><small class="danger-text">VENCIDO</small>' if overdue else ''}</td>

@@ -150,24 +150,40 @@ def _pppoe_picker(router='', load=False):
         rows.append(f'''<tr class="ppprow" data-search="{search_blob}">
           <td style="width:42px;text-align:center">{checkbox}</td>
           <td><b>{esc(name)}</b><br><span class="muted">{esc(r['comment'] or '')}</span></td>
-          <td>{esc(profile)}</td><td>{esc(ip)}</td>
-          <td><span class="tag {cls}">{state}</span></td>
+          <td data-label="Perfil">{esc(profile)}</td><td data-label="IP">{esc(ip)}</td>
+          <td data-label="Estado"><span class="tag {cls}">{state}</span></td>
         </tr>''')
 
     list_html = ''.join(rows) if rows else '<tr><td colspan="5" class="muted" style="padding:26px;text-align:center">Selecciona el router y pulsa <b>Buscar cuentas</b>.</td></tr>'
     disabled = 'disabled' if not agents else ''
     modal = f'''
     <style>
-      .extract-overlay{{min-height:calc(100vh - 130px);display:grid;place-items:start center;padding:28px 10px}}
-      .extract-modal{{width:min(940px,96vw);background:#eef1f5;color:#172033;border:1px solid #cbd2db;border-radius:24px;padding:28px;box-shadow:0 30px 90px #0008}}
+      .extract-overlay{{width:100%;min-width:0;box-sizing:border-box;min-height:calc(100vh - 130px);display:grid;place-items:start center;padding:28px 10px}}
+      .extract-modal{{width:100%;max-width:940px;min-width:0;box-sizing:border-box;background:#eef1f5;color:#172033;border:1px solid #cbd2db;border-radius:24px;padding:28px;box-shadow:0 30px 90px #0008}}
       .extract-modal .field{{background:white;color:#172033;border-color:#b9c1cc}}
       .extract-modal .muted{{color:#667085}}
-      .extract-modal table{{width:100%;border-collapse:collapse;background:white;border-radius:12px;overflow:hidden}}
-      .extract-modal th,.extract-modal td{{padding:11px;border-bottom:1px solid #e5e7eb;text-align:left;font-size:13px}}
+      .extract-modal table{{table-layout:fixed;width:100%;border-collapse:collapse;background:white;border-radius:12px;overflow:hidden}}
+      .extract-modal th,.extract-modal td{{overflow-wrap:anywhere;white-space:normal;padding:11px;border-bottom:1px solid #e5e7eb;text-align:left;font-size:13px}}
       .extract-modal th{{font-size:11px;color:#667085;text-transform:uppercase;background:#f8fafc}}
       .extract-actions{{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px}}
       .extract-search{{display:grid;grid-template-columns:180px 1fr;gap:10px;margin:14px 0}}
-      @media(max-width:700px){{.extract-search{{grid-template-columns:1fr}}.extract-modal{{padding:18px}}}}
+      .extract-modal .field{{width:100%;min-width:0;box-sizing:border-box}}
+      .extract-modal input[type=checkbox]{{width:20px;height:20px;cursor:pointer;accent-color:#16a34a}}
+      .extract-modal .btn{{white-space:normal}}
+      @media(max-width:1100px){{
+        .extract-search{{grid-template-columns:1fr}}
+        .extract-search>div{{flex-wrap:wrap}}
+        .extract-search>div input{{flex:1 1 200px!important}}
+        .extract-modal{{padding:18px}}
+        .extract-modal h2{{font-size:22px!important}}
+        .extract-modal thead{{display:none}}
+        .extract-modal tbody,.extract-modal tr,.extract-modal td{{display:block;width:auto}}
+        .extract-modal tr.ppprow{{position:relative;padding:12px 12px 12px 48px;border-bottom:1px solid #d7dce3}}
+        .extract-modal tr.ppprow td{{border:0;padding:4px 0}}
+        .extract-modal tr.ppprow td:first-child{{position:absolute;left:12px;top:14px;width:24px!important}}
+        .extract-modal td[data-label]::before{{content:attr(data-label) ': ';font-weight:700;color:#667085}}
+        .extract-actions>*{{max-width:100%;box-sizing:border-box}}
+      }}
     </style>
     <div class="extract-overlay"><div class="extract-modal">
       <div style="display:flex;justify-content:space-between;gap:16px;align-items:start">

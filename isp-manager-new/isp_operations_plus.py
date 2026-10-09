@@ -363,6 +363,8 @@ def change_plan(id):
     if not cu:
         c.close(); return redirect(url_for('customers'))
     old_plan=cu['plan_id']; old_profile=cu['mikrotik_profile'] if 'mikrotik_profile' in cu.keys() else ''
+    if not profile:
+        profile = old_profile or ''
     c.execute('UPDATE customers SET plan_id=?,mikrotik_profile=? WHERE id=?',(plan_id,profile,id))
     if profile and profile != (old_profile or '') and cu['pppoe']:
         _queue(c,cu,'CHANGE_PROFILE',{'profile':profile})
@@ -432,7 +434,7 @@ def customer_profile_plus(id):
     onus=c.execute('SELECT * FROM onu_devices WHERE customer_id=? ORDER BY id DESC LIMIT 8',(id,)).fetchall()
     cmds=c.execute('SELECT * FROM router_commands WHERE customer_id=? ORDER BY id DESC LIMIT 12',(id,)).fetchall()
     events=c.execute('SELECT * FROM customer_events WHERE customer_id=? ORDER BY id DESC LIMIT 20',(id,)).fetchall()
-    plans=c.execute('SELECT * FROM plans WHERE active=1 ORDER BY price').fetchall()
+    plans=c.execute('SELECT * FROM plans WHERE active=1 OR id=? ORDER BY price', (cu['plan_id'],)).fetchall()
     profiles=c.execute('SELECT DISTINCT name FROM push_ppp_profiles WHERE COALESCE(name,"")<>"" ORDER BY name').fetchall() if _table_exists(c,'push_ppp_profiles') else []
     active=c.execute('SELECT * FROM push_pppoe_active WHERE name=? ORDER BY id DESC LIMIT 1',(cu['pppoe'],)).fetchone() if _table_exists(c,'push_pppoe_active') and cu['pppoe'] else None
     secret=c.execute('SELECT * FROM push_pppoe_secrets WHERE name=? ORDER BY id DESC LIMIT 1',(cu['pppoe'],)).fetchone() if _table_exists(c,'push_pppoe_secrets') and cu['pppoe'] else None

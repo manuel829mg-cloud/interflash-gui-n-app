@@ -208,3 +208,7 @@ whatsapp_events.setup(app)
 
 import invoice_void
 invoice_void.setup(app)
+
+# Retire the old commercial catalogue without modifying existing services.
+import commercial_catalog
+commercial_catalog.setup(app)

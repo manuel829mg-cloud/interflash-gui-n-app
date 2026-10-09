@@ -71,7 +71,8 @@ def _queue(c, customer_id, pppoe, router_name, action, payload=None):
 
 def _choices(row=None):
     c = base.db()
-    plans = c.execute('SELECT * FROM plans WHERE active=1 ORDER BY price').fetchall()
+    current_plan = row['plan_id'] if row is not None and 'plan_id' in row.keys() else None
+    plans = c.execute('SELECT * FROM plans WHERE active=1 OR id=? ORDER BY price', (current_plan,)).fetchall()
     profiles = c.execute('SELECT DISTINCT name FROM push_ppp_profiles WHERE COALESCE(name,"")<>"" ORDER BY name').fetchall() if _table_exists(c, 'push_ppp_profiles') else []
     routers = c.execute('SELECT name,identity FROM push_router_agents ORDER BY id DESC').fetchall() if _table_exists(c, 'push_router_agents') else []
     c.close()

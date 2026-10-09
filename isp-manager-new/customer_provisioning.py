@@ -290,7 +290,6 @@ window.IFPROFILE=(function(){
     if(s)s.addEventListener('change',saveMap);
     if(p)p.addEventListener('change',applyMap);
     if(l)l.addEventListener('change',applyMap);
-    applyMap();
     const form=s&&s.closest('form');
     if(form){form.addEventListener('submit',e=>{
       const line=document.querySelector('[name="pbr_line"]');

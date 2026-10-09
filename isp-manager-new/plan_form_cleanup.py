@@ -6,8 +6,7 @@ import pbr_client
 def setup(app):
     """Tidy the customer form and keep configured zones selected correctly.
 
-    - Existing-customer edits hide the duplicate commercial Plan selector while
-      preserving the current plan_id in a hidden input.
+    - Keep the commercial Plan selector available for manual reassignment.
     - Swap the visual positions of Zona and Usuario PPPoE so Usuario PPPoE
       appears where Zona used to be, and Zona appears where Usuario PPPoE was.
     - Render Zona as a selector populated from the configured zones table and
@@ -103,14 +102,7 @@ def setup(app):
         html = current(row)
         html = zone_input_pattern.sub(_zone_select(row), html, count=1)
         html = swap_zone_pppoe(html)
-        if row is None:
-            return html
-        try:
-            plan_id = row['plan_id'] if 'plan_id' in row.keys() and row['plan_id'] is not None else ''
-        except Exception:
-            plan_id = ''
-        hidden = f'<input type="hidden" name="plan_id" value="{plan_id}">'
-        return plan_pattern.sub(hidden, html, count=1)
+        return html
 
     customer_form._interflash_plan_cleanup_patched = True
     pbr_client.customer_form = customer_form

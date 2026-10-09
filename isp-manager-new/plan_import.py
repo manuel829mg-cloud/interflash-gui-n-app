@@ -133,7 +133,7 @@ def plans_page():
             c.close(); flash('Ese plan ya existe.'); return redirect(url_for('plans'))
         c.commit(); c.close(); base.audit('PLAN_CREATE', name); flash('Plan creado correctamente.'); return redirect(url_for('plans'))
 
-    rows = c.execute('SELECT * FROM plans ORDER BY price,name').fetchall()
+    rows = c.execute('SELECT * FROM plans WHERE active=1 ORDER BY price,name').fetchall()
     routers = _router_names(c)
     mikrotik_total = sum(len(_profiles_for_router(c, r)) for r in routers)
     c.close()
@@ -146,7 +146,7 @@ def plans_page():
         for r in rows
     )
 
-    body = f'''<div class="head"><div><h1>Planes</h1><p>Planes comerciales de Internet</p></div>
+    body = f'''<div class="head"><div><h1>Planes</h1><p>Seis planes comerciales simétricos. Los clientes con planes anteriores conservan su servicio hasta una reasignación manual.</p></div>
     <a class="btn blue" href="{url_for('plans_import_mikrotik')}">⇩ Extraer planes del MikroTik</a></div>
     <div class="panel">
       <div style="padding:11px;border-radius:8px;background:#0b2740;color:#b9dcff;margin-bottom:13px"><b>{mikrotik_total} perfiles/planes detectados en MikroTik.</b> Puedes buscarlos y escoger manualmente cuáles importar.</div>

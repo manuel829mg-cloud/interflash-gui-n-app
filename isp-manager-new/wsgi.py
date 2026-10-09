@@ -212,3 +212,7 @@ invoice_void.setup(app)
 # Retire the old commercial catalogue without modifying existing services.
 import commercial_catalog
 commercial_catalog.setup(app)
+
+import commercial_service
+commercial_service.setup(app)
+

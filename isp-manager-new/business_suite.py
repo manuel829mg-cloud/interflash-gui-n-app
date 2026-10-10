@@ -107,7 +107,32 @@ def promise_new(customer_id):
         except (ValueError,TypeError) as exc:
             flash(str(exc))
             return redirect(url_for('promise_new',customer_id=customer_id))
-    c=base.db(); inv=c.execute("SELECT * FROM invoices WHERE customer_id=? AND status='PENDIENTE'",(customer_id,)).fetchall(); c.close(); opts=''.join(f'<option value="{x["id"]}">#{x["id"]} · RD${x["amount"]:,.2f}</option>' for x in inv); return base.shell('Promesa',f'''<div class="head"><div><h1>Promesa de pago</h1></div></div><form class="panel formgrid" method="post"><label>Factura<select name="invoice_id"><option value="">General</option>{opts}</select></label><label>Fecha<input type="date" name="promise_date" required></label><label>Monto<input type="number" step="0.01" name="amount"></label><label>Notas<input name="notes"></label><div class="full"><button class="btn green">Guardar</button></div></form>''','customers')
+    c=base.db()
+    customer=c.execute("SELECT name FROM customers WHERE id=?",(customer_id,)).fetchone()
+    inv=c.execute("SELECT * FROM invoices WHERE customer_id=? AND status='PENDIENTE'",(customer_id,)).fetchall()
+    c.close()
+    if not customer: return 'Cliente no encontrado',404
+    opts=''.join(f'<option value="{x["id"]}">#{x["id"]} · RD${x["amount"]:,.2f}</option>' for x in inv)
+    today=date.today().isoformat()
+    body=f'''<style>
+    .promise-overlay{{position:fixed;inset:0;background:#0009;display:flex;align-items:center;justify-content:center;z-index:500;padding:16px}}
+    .promise-modal{{width:min(100%,610px);max-height:92vh;overflow:auto;background:#fff;color:#253248;border-radius:12px;box-shadow:0 20px 60px #0006}}
+    .promise-head{{background:linear-gradient(100deg,#e9690b,#c6290c);color:#fff;padding:23px 26px;display:flex;justify-content:space-between;align-items:center}}
+    .promise-head h2{{margin:0;color:#fff}}.promise-head small{{color:#fff}}
+    .promise-body{{padding:25px}}.promise-help{{background:#fff8e9;border:1px solid #f3dba7;border-radius:8px;padding:15px;margin-bottom:20px}}
+    .promise-body label{{display:block;font-weight:700;margin:14px 0}}.promise-body input,.promise-body select,.promise-body textarea{{display:block;width:100%;padding:12px;border:1px solid #d7dce3;border-radius:6px;background:white;color:#263242;margin-top:7px}}
+    .promise-foot{{display:flex;gap:12px;padding:16px 25px;border-top:1px solid #ddd}}.promise-foot>*{{flex:1;text-align:center;padding:12px;border-radius:6px}}.promise-save{{background:#d53d0c;color:white;border:0;font-weight:bold;cursor:pointer}}
+    </style><div class="promise-overlay"><section class="promise-modal" role="dialog" aria-modal="true" aria-label="Crear promesa de pago">
+    <header class="promise-head"><div><h2>🤝 Crear Promesa de Pago</h2><small>{esc(customer["name"])}</small></div><a href="{url_for('customers_plus',overdue=1)}" style="color:white;font-size:26px" aria-label="Cerrar">×</a></header>
+    <form method="post"><div class="promise-body">
+    <div class="promise-help"><b>¿Qué es una promesa de pago?</b><p>Acuerdo temporal que extiende la fecha de pago. El corte automático al incumplir requiere que esté habilitado y verificado en el sistema.</p></div>
+    <label>Nueva Fecha de Pago *<input type="date" name="promise_date" min="{today}" required></label>
+    <label>Hora de Corte si no cumple *<input type="time" name="promise_time" value="23:59" required></label>
+    <label>Factura<select name="invoice_id"><option value="">General</option>{opts}</select></label>
+    <label>Monto acordado (RD$)<input type="number" step="0.01" min="0" name="amount" value="0"></label>
+    <label>Motivo / Notas (Opcional)<textarea name="notes" rows="3" placeholder="Ej: Cliente solicita extensión por problemas económicos"></textarea></label>
+    </div><footer class="promise-foot"><a href="{url_for('customers_plus',overdue=1)}">Cancelar</a><button class="promise-save" type="submit">Crear Promesa</button></footer></form></section></div>'''
+    return base.shell('Promesa de pago',body,'customers')
 
 def portal_toggle(id):
     if not base.logged_in(): return redirect(url_for('login'))

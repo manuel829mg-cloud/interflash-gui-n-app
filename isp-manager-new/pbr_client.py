@@ -257,6 +257,9 @@ def customer_edit_pbr(id):
             _queue(c,id,x['pppoe'],x['router'],'CREATE_PPPOE',{'password':x['password'],'profile':x['profile'],'remote_address':x['ip']}); notes.append('PPPoE enviado a la cola')
         elif x['profile'] != old_profile and x['pppoe'] and x['profile']:
             _queue(c,id,x['pppoe'],x['router'],'CHANGE_PROFILE',{'profile':x['profile']}); notes.append('cambio de perfil enviado a la cola')
+        if x['ip'] != old_ip and x['ip'] and x['pppoe'] and not (x['create_in_router'] and x['password'] and x['profile']):
+            _queue(c,id,x['pppoe'],x['router'],'CHANGE_REMOTE_IP',{'remote_address':x['ip']})
+            notes.append('Cambio de IP PPPoE enviado al MikroTik; se aplicará al reconectar')
         if x['pbr'] != old_pbr or x['ip'] != old_ip:
             if old_ip and (not x['pbr'] or old_ip != x['ip']):
                 _queue(c,id,x['pppoe'],x['router'],'REMOVE_PBR',{'ip':old_ip})
@@ -323,6 +326,14 @@ def control_script():
     :if ($action="REACTIVATE") do={{ /ppp secret set [find where name=$user] disabled=no; }}
     :if ($action="CHANGE_PROFILE") do={{ /ppp secret set [find where name=$user] profile=($p->"profile"); }}
     :if ($action="CHANGE_PASSWORD") do={{ /ppp secret set [find where name=$user] password=($p->"password"); }}
+    :if ($action="CHANGE_REMOTE_IP") do={{
+      :local secretIds [/ppp secret find where name=$user];
+      :if ([:len $secretIds] != 1) do={{ :error "PPPoE no encontrado o ambiguo"; }}
+      :local rip ($p->"remote_address");
+      :if ([:len $rip] = 0) do={{ :error "IP remota vacia"; }}
+      /ppp secret set $secretIds remote-address=$rip;
+      :if ([/ppp secret get $secretIds remote-address] != $rip) do={{ :error "IP no verificada"; }}
+    }}
     :if ($action="DELETE_PPPOE") do={{ /ppp secret remove [find where name=$user]; }}
     :if ($action="CREATE_PPPOE") do={{
       :local prof ($p->"profile"); :local pass ($p->"password"); :local rip ($p->"remote_address");

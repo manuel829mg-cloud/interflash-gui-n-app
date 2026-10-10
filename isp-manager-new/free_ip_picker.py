@@ -1,6 +1,6 @@
 import ipaddress
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import request, jsonify
 import app as base
 import pbr_client
@@ -197,7 +197,22 @@ def free_ips_api():
         ).fetchall() if r['ip_address'])
     except Exception:
         pass
+    latest_pool = max((p['updated_at'] or '' for p in pools), default='')
+    occupancy = c.execute('SELECT MAX(updated_at) latest, COUNT(*) total FROM mikrotik_ip_used WHERE router_name=?', (router,)).fetchone()
+    latest_used = (occupancy['latest'] or '') if occupancy else ''
+    occupied_count = occupancy['total'] if occupancy else 0
     c.close()
+    try:
+        now = datetime.now()
+        fresh = (bool(pools) and occupied_count > 0
+                 and timedelta(0) <= now - datetime.fromisoformat(latest_pool) <= timedelta(minutes=15)
+                 and timedelta(0) <= now - datetime.fromisoformat(latest_used) <= timedelta(minutes=15))
+    except (ValueError, TypeError):
+        fresh = False
+    if not fresh:
+        return jsonify(ok=False, router=router, items=[], pools=len(pools),
+                       used=len(used), updated_at=latest_pool, stale=True,
+                       error='Las IP ocupadas no están actualizadas. Sincroniza el MikroTik antes de elegir una IP.'), 409
 
     items = []
     seen = set()

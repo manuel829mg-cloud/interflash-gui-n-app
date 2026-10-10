@@ -123,7 +123,7 @@ def promise_new(customer_id):
     .promise-body label{{display:block;font-weight:700;margin:14px 0}}.promise-body input,.promise-body select,.promise-body textarea{{display:block;width:100%;padding:12px;border:1px solid #d7dce3;border-radius:6px;background:white;color:#263242;margin-top:7px}}
     .promise-foot{{display:flex;gap:12px;padding:16px 25px;border-top:1px solid #ddd}}.promise-foot>*{{flex:1;text-align:center;padding:12px;border-radius:6px}}.promise-save{{background:#d53d0c;color:white;border:0;font-weight:bold;cursor:pointer}}
     </style><div class="promise-overlay"><section class="promise-modal" role="dialog" aria-modal="true" aria-label="Crear promesa de pago">
-    <header class="promise-head"><div><h2>🤝 Crear Promesa de Pago</h2><small>{esc(customer["name"])}</small></div><a href="{url_for('customers_plus',overdue=1)}" style="color:white;font-size:26px" aria-label="Cerrar">×</a></header>
+    <header class="promise-head"><div><h2>🤝 Crear Promesa de Pago</h2><small>{esc(customer["name"])}</small></div><a href="{url_for('customers',overdue=1)}" style="color:white;font-size:26px" aria-label="Cerrar">×</a></header>
     <form method="post"><div class="promise-body">
     <div class="promise-help"><b>¿Qué es una promesa de pago?</b><p>Acuerdo temporal que extiende la fecha de pago. El corte automático al incumplir requiere que esté habilitado y verificado en el sistema.</p></div>
     <label>Nueva Fecha de Pago *<input type="date" name="promise_date" min="{today}" required></label>
@@ -131,7 +131,7 @@ def promise_new(customer_id):
     <label>Factura<select name="invoice_id"><option value="">General</option>{opts}</select></label>
     <label>Monto acordado (RD$)<input type="number" step="0.01" min="0" name="amount" value="0"></label>
     <label>Motivo / Notas (Opcional)<textarea name="notes" rows="3" placeholder="Ej: Cliente solicita extensión por problemas económicos"></textarea></label>
-    </div><footer class="promise-foot"><a href="{url_for('customers_plus',overdue=1)}">Cancelar</a><button class="promise-save" type="submit">Crear Promesa</button></footer></form></section></div>'''
+    </div><footer class="promise-foot"><a href="{url_for('customers',overdue=1)}">Cancelar</a><button class="promise-save" type="submit">Crear Promesa</button></footer></form></section></div>'''
     return base.shell('Promesa de pago',body,'customers')
 
 def portal_toggle(id):

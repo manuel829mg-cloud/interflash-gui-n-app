@@ -221,3 +221,7 @@ commercial_service.setup(app)
 # Read-only financial AI module; provider key is configured by the administrator.
 import finance_ai
 finance_ai.setup(app)
+
+# Reject duplicate or stale PPPoE IP assignments before queuing router changes.
+import ip_assignment_guard
+ip_assignment_guard.setup(app)

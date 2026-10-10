@@ -301,7 +301,7 @@ def customers_plus():
 
     css='''<style>
     .clients-table .clients-search-row{background:transparent;border:0;box-shadow:none;margin:0;padding:0}
-    .clients-table .clients-search-row>td{padding:6px 0 8px;border:0}
+    .clients-table .clients-search-row>td{padding:0 0 6px;border:0}.clients-table thead th{padding-top:3px;padding-bottom:3px}.clients-panel{padding-top:4px!important}
     .clients-search-row .toolbar2{margin:0;gap:8px}
     .clients-table tr[hidden]{display:none!important}
     .device-ip{display:flex;flex-direction:column;gap:3px;margin-top:7px}.device-ip-main{color:#53c8ff;font-weight:700;font-size:13px;overflow-wrap:anywhere}.device-ip-https{font-size:10px;color:#8bdac9}.device-ip a:hover{text-decoration:underline}.device-ip-empty{display:block;margin-top:5px;font-size:10px}

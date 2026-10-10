@@ -33,6 +33,15 @@ def _validate(router, ip, customer_id=None):
                 return 'La lectura de IPs del MikroTik está desactualizada. Sincroniza nuevamente antes de guardar.'
         except (ValueError, TypeError):
             return 'No se pudo verificar la fecha de sincronización de IPs.'
+        occupancy = c.execute('SELECT MAX(updated_at) latest, COUNT(*) total FROM mikrotik_ip_used WHERE router_name=?', (router,)).fetchone()
+        if not occupancy or not occupancy['total'] or not occupancy['latest']:
+            return 'No hay datos de IP ocupadas del MikroTik. Sincroniza antes de guardar.'
+        try:
+            occupied_at = datetime.fromisoformat(occupancy['latest'])
+            if datetime.now() - occupied_at > MAX_SYNC_AGE or occupied_at > datetime.now() + timedelta(minutes=2):
+                return 'Las IP ocupadas están desactualizadas. Sincroniza antes de guardar.'
+        except (ValueError, TypeError):
+            return 'No se pudo verificar la fecha de las IP ocupadas.'
         # A static PPPoE IP must not overlap any dynamic pool unless the
         # network operator has explicitly excluded/reserved it there.
         # The picker already offers pool addresses; check occupancy in both sources.
@@ -73,6 +82,14 @@ def setup(app):
                 finally:
                     c.close()
                 if existing and ip and ip == (existing['ip_address'] or '') and router == (existing['router_name'] or 'CCR2116'):
+                    c = base.db()
+                    try:
+                        duplicate = c.execute('SELECT id FROM customers WHERE ip_address=? AND COALESCE(router_name,?)=? AND id<>? LIMIT 1', (ip, router, cid)).fetchone()
+                    finally:
+                        c.close()
+                    if duplicate:
+                        flash('IP duplicada: ya pertenece a otro cliente de Inter Flash.')
+                        return redirect(url_for('customer_edit', id=cid)), 409
                     return _original(*args, **kwargs)
             error = _validate(router, ip, cid)
             if error:

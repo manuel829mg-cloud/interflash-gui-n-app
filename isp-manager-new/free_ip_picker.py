@@ -292,7 +292,14 @@ window.IFIP=(function(){
       before=rd.before||before;
       for(let i=0;i<16;i++){
         await sleep(700);
-        const d=await read();
+        // A 409 means the router snapshot is still incomplete or stale.
+        // Keep waiting instead of aborting the refresh immediately.
+        let d;
+        try {
+          d=await read();
+        } catch(e) {
+          continue;
+        }
         if((d.updated_at&&d.updated_at!==before&&d.pools>0) || (!before&&d.pools>0)){
           applyData(d,'actualizado ahora');
           return;

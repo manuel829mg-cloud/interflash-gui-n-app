@@ -47,30 +47,55 @@ def command_notice(c, cmd):
     enqueue(c, f"COMMAND:{cmd['id']}", cmd['customer_id'], cmd['action'], f"Hola {cu['name']}, {text}")
 
 
-def create_promise(customer_id, invoice_id, promise_date, amount, notes):
-    from payment_flow import money
+def create_promise(customer_id, invoice_id, promise_date, amount, notes, promise_time='23:59'):
+    from datetime import time as clock_time
     when = date.fromisoformat(promise_date)
-    if when < date.today():
-        raise ValueError('La promesa debe tener una fecha de hoy o posterior.')
-    value = money(amount)
+    cutoff = clock_time.fromisoformat(promise_time)
+    if datetime.combine(when, cutoff) <= datetime.now():
+        raise ValueError('Selecciona una fecha y hora futuras para la promesa.')
     c = base.db()
     try:
         c.execute('BEGIN IMMEDIATE')
         cu = c.execute("SELECT * FROM customers WHERE id=? AND status<>'ELIMINADO'", (customer_id,)).fetchone()
         if not cu:
             raise ValueError('Cliente no disponible.')
+        if not cu['pppoe']:
+            raise ValueError('El cliente no tiene usuario PPPoE para reactivación.')
         if invoice_id:
             inv = c.execute("SELECT * FROM invoices WHERE id=? AND customer_id=? AND status='PENDIENTE'", (invoice_id, customer_id)).fetchone()
             if not inv:
                 raise ValueError('Selecciona una factura pendiente de este cliente.')
-        pid = c.execute("INSERT INTO payment_promises(customer_id,invoice_id,promise_date,amount,status,notes,created_at) VALUES(?,?,?,?,'PENDIENTE',?,?)",
-                        (customer_id, invoice_id or None, when.isoformat(), float(value), notes, wa._now())).lastrowid
+        balance = c.execute("""SELECT COALESCE(SUM(MAX(0,i.amount-COALESCE(
+            (SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id=i.id),0))),0)
+            FROM invoices i WHERE i.customer_id=? AND i.status='PENDIENTE'
+            AND (? IS NULL OR i.id=?)""", (customer_id, invoice_id, invoice_id)).fetchone()[0]
+        if not balance or float(balance) <= 0:
+            raise ValueError('El cliente no tiene deuda pendiente para esta promesa.')
+        existing = c.execute("SELECT id FROM payment_promises WHERE customer_id=? AND status='PENDIENTE'", (customer_id,)).fetchone()
+        if existing:
+            raise ValueError('Este cliente ya tiene una promesa pendiente. Revísala antes de crear otra.')
+        pid = c.execute("""INSERT INTO payment_promises
+            (customer_id,invoice_id,promise_date,promise_time,amount,status,notes,created_at)
+            VALUES(?,?,?,?,?,'PENDIENTE',?,?)""",
+            (customer_id, invoice_id or None, when.isoformat(), cutoff.strftime('%H:%M'), float(balance), notes, wa._now())).lastrowid
+        # Cancel queued suspensions before reactivating. In-flight commands are
+        # not cancelled here; the agent must acknowledge their outcome.
+        c.execute("""UPDATE router_commands SET status='CANCELADO',result='Reemplazado por promesa de pago'
+            WHERE customer_id=? AND action='SUSPEND' AND status='PENDIENTE'""", (customer_id,))
+        pending = c.execute("""SELECT id FROM router_commands WHERE customer_id=?
+            AND action='REACTIVATE' AND status IN ('PENDIENTE','EN_PROCESO')""", (customer_id,)).fetchone()
+        if not pending:
+            c.execute("""INSERT INTO router_commands
+                (router_name,customer_id,pppoe,action,payload,status,created_at,requested_by)
+                VALUES(?,?,?,'REACTIVATE','{}','PENDIENTE',?,?)""",
+                (cu['router_name'] or 'CCR2116', customer_id, cu['pppoe'], wa._now(), 'PROMESA:'+str(pid)))
         enqueue(c, f'PROMISE:{pid}', customer_id, 'PROMISE',
-                f"Hola {cu['name']}, registramos tu promesa de pago a INTER Flash por RD${value:,.2f} para el {when.strftime('%d/%m/%Y')}.")
+                f"Hola {cu['name']}, registramos tu promesa de pago por RD${float(balance):,.2f} para el {when.strftime('%d/%m/%Y')} a las {cutoff.strftime('%H:%M')}.")
         c.commit()
         return pid
     except Exception:
-        c.rollback(); raise
+        c.rollback()
+        raise
     finally:
         c.close()
 

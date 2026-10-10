@@ -193,7 +193,7 @@ def free_ips_api():
     used = {r['address'] for r in c.execute('SELECT address FROM mikrotik_ip_used WHERE router_name=?', (router,)).fetchall()}
     try:
         used.update(r['ip_address'] for r in c.execute(
-            "SELECT ip_address FROM customers WHERE router_name=? AND COALESCE(ip_address,'')<>''", (router,)
+            "SELECT ip_address FROM customers WHERE COALESCE(router_name,'CCR2116')=? AND COALESCE(ip_address,'')<>''", (router,)
         ).fetchall() if r['ip_address'])
     except Exception:
         pass
@@ -298,11 +298,9 @@ window.IFIP=(function(){
           return;
         }
       }
-      const d=await read();
-      applyData(d,'mostrando última lectura');
+      items=[];lastData=null;meta().textContent='Sin sincronización completa confirmada';list().innerHTML='<div class="if-ip-empty">No se confirmó la actualización del MikroTik. No se mostrarán IPs hasta verificar la sincronización.</div>';
     }catch(e){
-      try{applyData(await read(),'última lectura guardada');}
-      catch(_e){items=[];lastData=null;meta().textContent='';list().innerHTML='<div class="if-ip-empty">No pude consultar el MikroTik. Verifica que el agente esté instalado y conectado.</div>';}
+      items=[];lastData=null;meta().textContent='Sin IPs verificadas';list().innerHTML='<div class="if-ip-empty">No se pudo verificar la lista actualizada de IPs ocupadas. Intenta sincronizar de nuevo.</div>';
     }
   }
   function render(){

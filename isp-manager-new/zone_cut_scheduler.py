@@ -166,7 +166,7 @@ def process_zone_cuts(now=None, dry_run=False):
             if now < scheduled_at:
                 continue
 
-            promise = c.execute("SELECT 1 FROM payment_promises WHERE customer_id=? AND status='PENDIENTE' AND promise_date>=? LIMIT 1", (row['customer_id'], now.date().isoformat())).fetchone()
+            promise = c.execute("""SELECT 1 FROM payment_promises WHERE customer_id=? AND status='PENDIENTE' AND (promise_date>? OR (promise_date=? AND COALESCE(promise_time,'23:59')>?)) LIMIT 1""", (row['customer_id'], now.date().isoformat(), now.date().isoformat(), now.strftime('%H:%M'))).fetchone()
             if promise:
                 continue
             if dry_run:

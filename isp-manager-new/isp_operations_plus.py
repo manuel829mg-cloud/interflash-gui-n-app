@@ -274,6 +274,19 @@ def customers_plus():
         map_icon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>'
         map_btn = f'<a class="ico" title="Ver ubicación en el mapa" aria-label="Ver ubicación de {esc(r["name"])}" href="{esc(map_url)}" target="_blank" rel="noopener noreferrer">{map_icon}</a>' if map_url else f'<a class="ico" title="Agregar ubicación" aria-label="Agregar ubicación de {esc(r["name"])}" href="{url_for("customer_location",id=r["id"])}">{map_icon}</a>'
         row_class = 'overdue-row' if overdue else ''
+        if overdue_filter:
+            # Acciones compactas de cobranza, según la referencia visual.
+            actions_html = f'''<a class="ico debt-promise" title="Promesa de pago" aria-label="Promesa de pago para {esc(r['name'])}" href="{url_for('promise_new',customer_id=r['id'])}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12l5-5 4 2 3-2 8 5-4 5-3-2-3 3-3-2-2 1-5-5zM7 7l3-2 4 2"/></svg></a>
+            <a class="ico debt-edit" title="Editar cliente" aria-label="Editar {esc(r['name'])}" href="{url_for('customer_edit',id=r['id'])}">{icon_edit}</a>
+            <a class="ico debt-pay" title="Registrar pago" aria-label="Registrar pago para {esc(r['name'])}" href="{url_for('invoices',customer_id=r['id'])}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M17 6c-2-2-9-2-9 2 0 5 9 2 9 7 0 4-7 5-10 2"/></svg></a>'''
+        else:
+            actions_html = f'''<a class="ico invoice-create" title="Generar factura" aria-label="Generar factura para {esc(r['name'])}" href="{url_for('invoices',customer_id=r['id'])}#nueva-factura"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 15h8M12 11v8"/></svg></a>
+            <a class="ico" title="Ficha" href="{url_for('customer_profile',id=r['id'])}">{icon_doc}</a>
+            {wa_btn}
+            {map_btn}
+            <a class="ico" title="Editar" href="{url_for('customer_edit',id=r['id'])}">{icon_edit}</a>
+            <form method="post" action="{url_for('customer_service_action',id=r['id'],action=service_action)}"><button class="ico {service_cls}" title="{service_title}" onclick="return confirm('¿{service_title} este cliente?')">{service_icon}</button></form>
+            <form method="post" action="{url_for('customer_service_action',id=r['id'],action='DELETE')}"><button class="ico danger" title="Eliminar" onclick="return confirm('¿Enviar este cliente a la papelera y eliminar su PPPoE del MikroTik?')">{icon_trash}</button></form>'''
         trs.append(f'''<tr class="{row_class}" data-client-search="{esc(searchable)}"{'' if visible else ' hidden'}>
           <td class="c-code"><span>{esc(r['code'] or '#'+str(r['id']))}</span></td>
           <td class="c-client"><b>{esc(r['name'])}</b><br><span class="muted">{' · '.join(client_extra)}</span></td>
@@ -283,15 +296,7 @@ def customers_plus():
           <td class="c-due"><span class="{'danger-text' if overdue else ''}">{esc(due)}</span>{'<br><small class="danger-text">VENCIDO</small>' if overdue else ''}</td>
           <td class="c-debt"><b class="{'danger-text' if debt>0 else 'good-text'}">RD${debt:,.0f}</b></td>
           <td class="c-pay">{esc((r['last_payment'] or '-')[:10])}</td>
-          <td class="c-actions"><div class="icon-actions">
-            <a class="ico invoice-create" title="Generar factura" aria-label="Generar factura para {esc(r['name'])}" href="{url_for('invoices',customer_id=r['id'])}#nueva-factura"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 15h8M12 11v8"/></svg></a>
-            <a class="ico" title="Ficha" href="{url_for('customer_profile',id=r['id'])}">{icon_doc}</a>
-            {wa_btn}
-            {map_btn}
-            <a class="ico" title="Editar" href="{url_for('customer_edit',id=r['id'])}">{icon_edit}</a>
-            <form method="post" action="{url_for('customer_service_action',id=r['id'],action=service_action)}"><button class="ico {service_cls}" title="{service_title}" onclick="return confirm('¿{service_title} este cliente?')">{service_icon}</button></form>
-            <form method="post" action="{url_for('customer_service_action',id=r['id'],action='DELETE')}"><button class="ico danger" title="Eliminar" onclick="return confirm('¿Enviar este cliente a la papelera y eliminar su PPPoE del MikroTik?')">{icon_trash}</button></form>
-          </div></td>
+          <td class="c-actions"><div class="icon-actions">{actions_html}          </div></td>
         </tr>''')
 
     css='''<style>
@@ -301,7 +306,7 @@ def customers_plus():
     .clients-table tr[hidden]{display:none!important}
     .device-ip{display:flex;flex-direction:column;gap:3px;margin-top:7px}.device-ip-main{color:#53c8ff;font-weight:700;font-size:13px;overflow-wrap:anywhere}.device-ip-https{font-size:10px;color:#8bdac9}.device-ip a:hover{text-decoration:underline}.device-ip-empty{display:block;margin-top:5px;font-size:10px}
 
-    .clients-panel{overflow:hidden}.clients-table{width:100%;border-collapse:collapse;table-layout:fixed}.clients-table th,.clients-table td{padding:10px 7px;border-bottom:1px solid #1b3045;text-align:left;vertical-align:middle;font-size:12px;overflow-wrap:anywhere}.clients-table th{font-size:10px;color:#92a5b8;text-transform:uppercase}.c-code{width:8%}.c-client{width:20%}.c-plan{width:11%}.c-zone{width:10%}.c-pppoe{width:14%}.c-due{width:10%}.clients-table .c-debt{width:9%;white-space:nowrap;overflow-wrap:normal;word-break:normal}.c-debt b{display:inline-block;white-space:nowrap}.c-pay{width:9%}.c-actions{width:17%}.c-code span,.c-pppoe>span:first-child{white-space:nowrap}.icon-actions{display:flex;gap:5px;align-items:center;flex-wrap:wrap}.icon-actions form{margin:0}.ico{width:34px;height:34px;border:1px solid #2a4058;background:#132336;color:#b9c7d6;border-radius:7px;display:inline-grid;place-items:center;cursor:pointer;padding:0}.ico:hover{background:#1b3149;color:#fff}.ico svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.ico.invoice-create{color:#62d7ff;border-color:#2a7796}.ico.wa{color:#3ee38f}.ico.warnx{color:#ffcb69}.ico.good{color:#6af0ac}.ico.danger{color:#ff8791}.danger-text{color:#ff7b86}.good-text{color:#5ce3a0}.overdue-row{background:#3b15192e;box-shadow:inset 3px 0 #e34855}.toolbar2{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}.toolbar2 .field{flex:1;min-width:250px}.quick-links{display:flex;gap:8px;flex-wrap:wrap}
+    .clients-panel{overflow:hidden}.clients-table{width:100%;border-collapse:collapse;table-layout:fixed}.clients-table th,.clients-table td{padding:10px 7px;border-bottom:1px solid #1b3045;text-align:left;vertical-align:middle;font-size:12px;overflow-wrap:anywhere}.clients-table th{font-size:10px;color:#92a5b8;text-transform:uppercase}.c-code{width:8%}.c-client{width:20%}.c-plan{width:11%}.c-zone{width:10%}.c-pppoe{width:14%}.c-due{width:10%}.clients-table .c-debt{width:9%;white-space:nowrap;overflow-wrap:normal;word-break:normal}.c-debt b{display:inline-block;white-space:nowrap}.c-pay{width:9%}.c-actions{width:17%}.c-code span,.c-pppoe>span:first-child{white-space:nowrap}.icon-actions{display:flex;gap:5px;align-items:center;flex-wrap:wrap}.icon-actions form{margin:0}.ico{width:34px;height:34px;border:1px solid #2a4058;background:#132336;color:#b9c7d6;border-radius:7px;display:inline-grid;place-items:center;cursor:pointer;padding:0}.ico:hover{background:#1b3149;color:#fff}.ico svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.ico.invoice-create{color:#62d7ff;border-color:#2a7796}.ico.debt-promise{background:#dc5c18;color:white;border-color:#dc5c18}.ico.debt-edit{background:#6232db;color:white;border-color:#6232db}.ico.debt-pay{background:#199b39;color:white;border-color:#199b39}.ico.debt-promise,.ico.debt-edit,.ico.debt-pay{width:40px;height:40px}.ico.debt-promise svg,.ico.debt-edit svg,.ico.debt-pay svg{width:22px;height:22px}.ico.wa{color:#3ee38f}.ico.warnx{color:#ffcb69}.ico.good{color:#6af0ac}.ico.danger{color:#ff8791}.danger-text{color:#ff7b86}.good-text{color:#5ce3a0}.overdue-row{background:#3b15192e;box-shadow:inset 3px 0 #e34855}.toolbar2{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}.toolbar2 .field{flex:1;min-width:250px}.quick-links{display:flex;gap:8px;flex-wrap:wrap}
     @media(max-width:1300px){.c-zone,.c-pay{display:none}.c-client{width:24%}.c-actions{width:20%}}
     @media(max-width:1050px){.c-plan{display:none}.c-client{width:27%}.c-pppoe{width:18%}.c-actions{width:25%}}
     @media(max-width:780px){.clients-table thead{display:none}.clients-table,.clients-table tbody,.clients-table tr,.clients-table td{display:block;width:100%!important}.clients-table tr{background:#0b1725;border:1px solid #22374e;border-radius:12px;margin-bottom:10px;padding:10px}.clients-table td{border:0;padding:5px 0}.c-zone,.c-plan,.c-pay{display:block}.icon-actions{margin-top:6px}}

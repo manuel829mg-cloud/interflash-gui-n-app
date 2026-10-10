@@ -31,6 +31,7 @@ def ensure_schema():
     ''')
     for n,ddl in [('latitude','TEXT'),('longitude','TEXT'),('notes','TEXT'),('zone_id','INTEGER'),('router_name','TEXT DEFAULT "CCR2116"'),('install_date','TEXT'),('service_status','TEXT DEFAULT "ACTIVO"')]: _col(c,'customers',n,ddl)
     for n,ddl in [('period','TEXT'),('late_fee','REAL DEFAULT 0'),('generated_by','TEXT'),('plan_name','TEXT'),('plan_speed','TEXT')]: _col(c,'invoices',n,ddl)
+    _col(c,'payment_promises','promise_time',"TEXT DEFAULT '23:59'")
     for n,ddl in [('received_by','TEXT'),('proof','TEXT')]: _col(c,'payments',n,ddl)
     for k,v in {'business_name':'INTER Flash','business_rnc':'','business_phone':'','business_email':'','business_address':'','billing_footer':'Gracias por preferir INTER Flash.','billing_enabled':'1','auto_suspend':'0','auto_reactivate':'0','whatsapp_enabled':'0','monitor_stale_minutes':'10'}.items(): c.execute('INSERT OR IGNORE INTO app_settings(key,value) VALUES(?,?)',(k,v))
     for code,name,body in [('INVOICE','Factura generada','Hola {name}, tu factura de {amount} vence el {due_date}.'),('OVERDUE','Factura vencida','Hola {name}, tienes una factura vencida por {amount}.'),('PAYMENT','Pago recibido','Hola {name}, recibimos tu pago de {amount}. Gracias.'),('SUSPEND','Suspensión','Hola {name}, tu servicio está programado para suspensión.'),('RECONNECT','Reconexión','Hola {name}, tu servicio fue programado para reconexión.')]:
@@ -74,7 +75,7 @@ def run_billing():
         invs=c.execute("SELECT * FROM invoices WHERE customer_id=? AND status='PENDIENTE' AND due_date<?",(cu['id'],today.isoformat())).fetchall()
         if invs:
             overdue+=1; oldest=min(date.fromisoformat(i['due_date']) for i in invs); cut=int(cu['cut_days_after'] if cu['cut_days_after'] is not None else 6)
-            if setting('auto_suspend','0')=='1' and today>=oldest+timedelta(days=cut) and cu['pppoe'] and not c.execute("SELECT id FROM router_commands WHERE pppoe=? AND action='SUSPEND' AND status IN ('PENDIENTE','EN_PROCESO')",(cu['pppoe'],)).fetchone():
+            if setting('auto_suspend','0')=='1' and today>=oldest+timedelta(days=cut) and cu['pppoe'] and not c.execute("SELECT 1 FROM payment_promises WHERE customer_id=? AND status='PENDIENTE' AND (promise_date > ? OR (promise_date = ? AND COALESCE(promise_time,'23:59') > ?))",(cu['id'],today.isoformat(),today.isoformat(),datetime.now().strftime('%H:%M'))).fetchone() and not c.execute("SELECT id FROM router_commands WHERE pppoe=? AND action='SUSPEND' AND status IN ('PENDIENTE','EN_PROCESO')",(cu['pppoe'],)).fetchone():
                 c.execute('INSERT INTO router_commands(router_name,customer_id,pppoe,action,payload,status,created_at,requested_by) VALUES(?,?,?,?,?,?,?,?)',(cu['router_name'] or 'CCR2116',cu['id'],cu['pppoe'],'SUSPEND','{}','PENDIENTE',datetime.now().isoformat(timespec='seconds'),'AUTOMATICO')); commands+=1
     c.execute('INSERT INTO billing_runs(run_date,status,detail,created_at) VALUES(?,?,?,?)',(today.isoformat(),'OK',f'Facturas {created}; morosos {overdue}; comandos {commands}',datetime.now().isoformat(timespec='seconds'))); c.commit(); c.close(); return created,overdue,commands
 
@@ -101,7 +102,7 @@ def promise_new(customer_id):
         if (session.get('role') or 'ADMIN').upper() not in ('ADMIN','CAJA','COBRADOR'): return 'Sin permiso.',403
         from whatsapp_events import create_promise
         try:
-            create_promise(customer_id,request.form.get('invoice_id') or None,request.form.get('promise_date') or '',request.form.get('amount') or '0',request.form.get('notes') or '')
+            create_promise(customer_id,request.form.get('invoice_id') or None,request.form.get('promise_date') or '',None,request.form.get('notes') or '',request.form.get('promise_time') or '23:59')
             flash('Promesa registrada.')
             return redirect(url_for('customer_profile',id=customer_id))
         except (ValueError,TypeError) as exc:
@@ -125,7 +126,7 @@ def promise_new(customer_id):
     .promise-foot{{display:flex;gap:12px;padding:16px 25px;border-top:1px solid #ddd}}.promise-foot>*{{flex:1;text-align:center;padding:12px;border-radius:6px}}.promise-save{{background:#d53d0c;color:white;border:0;font-weight:bold;cursor:pointer}}
     </style><div class="promise-overlay"><section class="promise-modal" role="dialog" aria-modal="true" aria-label="Crear promesa de pago">
     <header class="promise-head"><div><h2><span class="promise-hand-icon" aria-hidden="true">🤝</span> Crear Promesa de Pago</h2><small>{esc(customer["name"])}</small></div><a href="{url_for('customers',overdue=1)}" style="color:white;font-size:26px" aria-label="Cerrar">×</a></header>
-    <form method="post"><div class="promise-body">
+    <form method="post" action="{url_for('promise_new',customer_id=customer_id)}"><div class="promise-body">
     <div class="promise-help"><b>¿Qué es una promesa de pago?</b><p>Acuerdo temporal que extiende la fecha de pago. El corte automático al incumplir requiere que esté habilitado y verificado en el sistema.</p></div>
     <label>Nueva Fecha de Pago *<span class="promise-date-wrap"><input id="promise-date" type="date" name="promise_date" min="{today}" required onclick="try{{this.showPicker()}}catch(e){{}}" /><button class="promise-date-icon" type="button" aria-label="Abrir calendario" onclick="var d=document.getElementById(\'promise-date\');try{{d.showPicker()}}catch(e){{d.focus();d.click()}}">▦</button></span></label>
     <label>Hora de Corte si no cumple *<input type="time" name="promise_time" value="23:59" required></label>

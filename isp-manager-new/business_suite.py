@@ -128,7 +128,7 @@ def promise_new(customer_id):
     <div class="promise-help"><b>¿Qué es una promesa de pago?</b><p>Acuerdo temporal que extiende la fecha de pago. El corte automático al incumplir requiere que esté habilitado y verificado en el sistema.</p></div>
     <label>Nueva Fecha de Pago *<span class="promise-date-row"><input id="promise-date" type="date" name="promise_date" min="{today}" required><button type="button" class="promise-calendar-button" aria-label="Abrir calendario" onclick="var d=document.getElementById(\'promise-date\');try{{if(d.showPicker){{d.showPicker();return;}}}}catch(e){{}}d.focus();d.click();">📅 Elegir fecha</button></span></label>
     <label>Hora de Corte si no cumple *<input type="time" name="promise_time" value="23:59" required></label>
-    <label>Factura<select name="invoice_id"><option value="">General</option>{opts}</select></label>
+    <label>Factura<select name="invoice_id" required>{opts}</select></label>
     <label>Monto acordado (RD$)<input type="number" step="0.01" min="0" name="amount" value="0"></label>
     <label>Motivo / Notas (Opcional)<textarea name="notes" rows="3" placeholder="Ej: Cliente solicita extensión por problemas económicos"></textarea></label>
     </div><footer class="promise-foot"><a href="{url_for('customers',overdue=1)}">Cancelar</a><button class="promise-save" type="submit">Crear Promesa</button></footer></form></section></div>'''

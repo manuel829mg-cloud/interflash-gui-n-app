@@ -305,6 +305,7 @@ def customers_plus():
     .clients-search-row .toolbar2{margin:0;gap:8px}
     .clients-table thead,.clients-table thead tr{height:auto!important;min-height:0!important}
     .clients-table thead th{height:auto!important;min-height:0!important;padding:5px 7px!important;line-height:1.25!important;vertical-align:middle!important}
+    .clients-table thead{vertical-align:bottom!important}.clients-table thead tr{height:28px!important}.clients-table thead th{padding:2px 7px 0!important;vertical-align:bottom!important}.clients-table .clients-search-row>td{padding:0 0 3px!important}
     .clients-table .clients-search-row{height:auto!important;min-height:0!important}
     .clients-table .clients-search-row>td{height:auto!important;padding:4px 0 6px!important}
     .clients-table tr[hidden]{display:none!important}

@@ -129,7 +129,7 @@ def _agent_rsc(root, token):
   :local data ("id=" . $id . "&ok=" . $ok . "&result=" . $result);
   /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=$data output=none check-certificate=yes;
 }
-/system scheduler add name="interflash-agent-scheduler" interval=5s on-event="/system script run interflash-agent" policy=read,write,test,sensitive start-time=startup
+/system scheduler add name="interflash-agent-scheduler" interval=5s on-event="/system script run interflash-agent" policy=read,write,test,sensitive start-time=startup disabled=yes
 :log info "INTERFLASH-AGENT-INSTALLED"
 '''
     return template.replace('__ROOT__', root).replace('__TOKEN__', token)
@@ -233,9 +233,9 @@ def control_script_fast():
 
     body = f'''<div class="head"><div><h1>Agente MikroTik</h1><p>Control PPPoE y PBR desde la plataforma.</p></div><a class="btn" href="{url_for('mikrotik_commands')}">← Cola</a></div>
     <div class="panel">
-      <div class="notice" style="background:#063f2a;color:#b8f6d6;margin-bottom:12px"><b>Instalación:</b> copia estas 3 líneas en el CCR2116. Actualiza el agente sin cambiar tu configuración de rutas, mangle o failover.</div>
+      <div class="notice" style="background:#063f2a;color:#b8f6d6;margin-bottom:12px"><b>Instalación:</b> copia estas 3 líneas en el CCR2116. El agente se instalará DESACTIVADO para revisar primero la cola de órdenes; no cambia rutas, mangle ni failover.</div>
       <textarea class="field" style="width:100%;height:150px;font-family:Consolas,monospace">{pbr_client.esc(installer)}</textarea>
-      <div class="notice" style="background:#4e3707;color:#fff;margin:14px 0 10px">El agente procesa SUSPEND, REACTIVATE, RESTART_PPPOE, CREATE_PPPOE, DELETE_PPPOE (solo desconectados), CHANGE_PROFILE, APPLY_PBR, REMOVE_PBR y SYNC_POOLS cada 5 segundos.</div>
+      <div class="notice" style="background:#4e3707;color:#fff;margin:14px 0 10px">El agente procesa SUSPEND, REACTIVATE, RESTART_PPPOE, CREATE_PPPOE, DELETE_PPPOE (solo desconectados), CHANGE_PROFILE, APPLY_PBR, REMOVE_PBR y SYNC_POOLS cada 5 segundos, únicamente después de habilitar el programador.</div>
       <div class="muted" style="margin-bottom:6px">Verificación opcional:</div>
       <textarea class="field" style="width:100%;height:90px;font-family:Consolas,monospace">{pbr_client.esc(verify)}</textarea>
     </div>'''

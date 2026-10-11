@@ -27,7 +27,7 @@ def _agent_rsc(root, token):
   :local id ($d->"id");
   :if (([:typeof $id] = "nil") || ($id = 0)) do={ :return; }
   :local action ($d->"action");
-  :if (($action != "CREATE_PPPOE") && ($action != "SUSPEND") && ($action != "REACTIVATE") && ($action != "CHANGE_PROFILE") && ($action != "RESTART_PPPOE")) do={ :return; }
+  :if (($action != "CREATE_PPPOE") && ($action != "SUSPEND") && ($action != "REACTIVATE") && ($action != "CHANGE_PROFILE") && ($action != "RESTART_PPPOE") && ($action != "DELETE_PPPOE")) do={ :return; }
   :local user ($d->"pppoe");
   :if (($action = "SUSPEND") || ($action = "REACTIVATE")) do={
     :local success false;
@@ -50,6 +50,25 @@ def _agent_rsc(root, token):
           } else={ :set result "REACTIVACION_NO_CONFIRMADA"; }
         }
       } on-error={ :set result "ERROR_CAMBIO_SERVICIO"; }
+    }
+    /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=" . $success . "&result=" . $result) output=none check-certificate=yes;
+    :return;
+  }
+  :if ($action = "DELETE_PPPOE") do={
+    :local success false;
+    :local result "USUARIO_VACIO";
+    :if ([:len $user] > 0) do={
+      :do {
+        :local secret [/ppp secret find where name=$user];
+        :if ([:len $secret] > 1) do={ :error "USUARIO_DUPLICADO"; }
+        :if ([:len $secret] = 1) do={ /ppp secret set $secret disabled=yes; }
+        /ppp active remove [/ppp active find where name=$user];
+        :if ([:len $secret] = 1) do={ /ppp secret remove $secret; }
+        :if (([:len [/ppp secret find where name=$user]] = 0) && ([:len [/ppp active find where name=$user]] = 0)) do={
+          :set success true;
+          :set result "PPPOE_ELIMINADO_CONFIRMADO";
+        } else={ :set result "ELIMINACION_NO_CONFIRMADA"; }
+      } on-error={ :set result "ERROR_ELIMINACION_PPPOE"; }
     }
     /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=" . $success . "&result=" . $result) output=none check-certificate=yes;
     :return;
@@ -123,7 +142,7 @@ def _agent_rsc(root, token):
   /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=true&result=PPPOE_CREADO") output=none check-certificate=yes;
 }
 /system scheduler add name="interflash-agent-scheduler" interval=5s on-event="/system script run interflash-agent" policy=read,write,test,sensitive start-time=startup disabled=yes
-:log info "INTERFLASH-SERVICE-AGENT-V3-INSTALLED"
+:log info "INTERFLASH-SERVICE-AGENT-V4-INSTALLED"
 '''
     return template.replace('__ROOT__', root).replace('__TOKEN__', token).replace('__AFTER__', datetime.now().isoformat(timespec='microseconds'))
 
@@ -224,11 +243,11 @@ def control_script_fast():
     verify = '''/system script print where name="interflash-agent"
 /system scheduler print where name="interflash-agent-scheduler"'''
 
-    body = f'''<div class="head"><div><h1>Agente MikroTik</h1><p>Creación de PPPoE, suspensión, reactivación y cambios de perfil confirmados por el router.</p></div><a class="btn" href="{url_for('mikrotik_commands')}">← Cola</a></div>
+    body = f'''<div class="head"><div><h1>Agente MikroTik</h1><p>Creación de PPPoE, suspensión, reactivación y cambios de perfil y eliminación de PPPoE confirmados por el router.</p></div><a class="btn" href="{url_for('mikrotik_commands')}">← Cola</a></div>
     <div class="panel">
       <div class="notice" style="background:#063f2a;color:#b8f6d6;margin-bottom:12px"><b>Instalación:</b> copia estas 3 líneas en el CCR2116. El agente se instalará DESACTIVADO para revisar primero la cola de órdenes; no cambia rutas, mangle ni failover.</div>
       <textarea class="field" style="width:100%;height:150px;font-family:Consolas,monospace">{pbr_client.esc(installer)}</textarea>
-      <div class="notice" style="background:#4e3707;color:#fff;margin:14px 0 10px">Agente v3: crea PPPoE, suspende, reactiva y cambia el perfil. Después de confirmar el perfil, renueva la sesión del cliente activo para aplicar la velocidad. Suspender deshabilita el usuario y desconecta su sesión activa. Solo ejecuta órdenes nuevas posteriores a esta instalación; las órdenes antiguas no se ejecutan. Queda desactivado al instalar.</div>
+      <div class="notice" style="background:#4e3707;color:#fff;margin:14px 0 10px">Agente v4: crea PPPoE, suspende, reactiva, cambia el perfil y elimina el usuario PPPoE del cliente enviado a la papelera. La eliminación desconecta su sesión y se confirma en la cola. Después de confirmar el perfil, renueva la sesión del cliente activo para aplicar la velocidad. Suspender deshabilita el usuario y desconecta su sesión activa. Solo ejecuta órdenes nuevas posteriores a esta instalación; las órdenes antiguas no se ejecutan. Queda desactivado al instalar.</div>
       <div class="muted" style="margin-bottom:6px">Verificación opcional:</div>
       <textarea class="field" style="width:100%;height:90px;font-family:Consolas,monospace">{pbr_client.esc(verify)}</textarea>
     </div>'''
@@ -251,25 +270,34 @@ def service_next():
     c.execute("""UPDATE router_commands AS old SET status='CANCELADO',
         result='Sustituida por una orden de servicio posterior'
         WHERE old.router_name=? AND old.status='PENDIENTE'
-        AND old.action IN ('SUSPEND','REACTIVATE')
+        AND old.action IN ('SUSPEND','REACTIVATE','DELETE_PPPOE')
         AND EXISTS (SELECT 1 FROM router_commands AS newer
           WHERE newer.router_name=old.router_name AND newer.pppoe=old.pppoe
-          AND newer.id>old.id AND newer.action IN ('SUSPEND','REACTIVATE')
+          AND newer.id>old.id AND newer.action IN ('SUSPEND','REACTIVATE','DELETE_PPPOE')
           AND newer.status NOT IN ('CANCELADO','ERROR'))""", (router,))
     c.execute("""UPDATE router_commands AS old SET status='CANCELADO',
         result='Sustituida por un cambio de perfil posterior'
         WHERE old.router_name=? AND old.status='PENDIENTE' AND old.action='CHANGE_PROFILE'
         AND EXISTS (SELECT 1 FROM router_commands AS newer
           WHERE newer.router_name=old.router_name AND newer.pppoe=old.pppoe
-          AND newer.id>old.id AND newer.action='CHANGE_PROFILE'
+          AND newer.id>old.id AND newer.action IN ('CHANGE_PROFILE','DELETE_PPPOE')
           AND newer.status NOT IN ('CANCELADO','ERROR'))""", (router,))
     row = c.execute("""SELECT * FROM router_commands WHERE router_name=?
         AND status='PENDIENTE' AND created_at>=?
-        AND action IN ('CREATE_PPPOE','SUSPEND','REACTIVATE','CHANGE_PROFILE','RESTART_PPPOE')
+        AND action IN ('CREATE_PPPOE','SUSPEND','REACTIVATE','CHANGE_PROFILE','RESTART_PPPOE','DELETE_PPPOE')
         ORDER BY id LIMIT 1""", (router, after)).fetchone()
     if not row:
         c.commit(); c.close()
         return jsonify(ok=True, id=0)
+    if row['action'] == 'DELETE_PPPOE':
+        shared = c.execute("""SELECT 1 FROM customers WHERE pppoe=?
+            AND COALESCE(router_name,'CCR2116')=? AND id!=?
+            AND COALESCE(status,'ACTIVO')!='ELIMINADO' LIMIT 1""",
+            (row['pppoe'], router, row['customer_id'] or 0)).fetchone()
+        if shared:
+            c.execute("UPDATE router_commands SET status='ERROR',result='PPPoE compartido con otro cliente; eliminacion bloqueada' WHERE id=?", (row['id'],))
+            c.commit(); c.close()
+            return jsonify(ok=True, id=0)
     c.execute("UPDATE router_commands SET status='EN_PROCESO' WHERE id=?", (row['id'],))
     c.commit(); c.close()
     return jsonify(ok=True, id=row['id'], action=row['action'],

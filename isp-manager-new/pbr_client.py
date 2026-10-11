@@ -285,7 +285,12 @@ def _auth():
 def control_next():
     if not _auth(): return jsonify(ok=False,error='unauthorized'),401
     router=(request.args.get('router') or 'CCR2116')[:80]
-    c=base.db(); row=c.execute("SELECT * FROM router_commands WHERE router_name=? AND status='PENDIENTE' ORDER BY id LIMIT 1",(router,)).fetchone()
+    action=(request.args.get('action') or '').strip().upper()
+    c=base.db()
+    if action:
+        row=c.execute("SELECT * FROM router_commands WHERE router_name=? AND status='PENDIENTE' AND action=? ORDER BY id LIMIT 1",(router,action)).fetchone()
+    else:
+        row=c.execute("SELECT * FROM router_commands WHERE router_name=? AND status='PENDIENTE' ORDER BY id LIMIT 1",(router,)).fetchone()
     if not row: c.close(); return jsonify(ok=True,id=0)
     c.execute("UPDATE router_commands SET status='EN_PROCESO' WHERE id=?",(row['id'],)); c.commit(); c.close()
     return jsonify(ok=True,id=row['id'],action=row['action'],pppoe=row['pppoe'],payload=_dec_payload(row['payload']))

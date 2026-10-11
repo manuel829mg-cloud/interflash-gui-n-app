@@ -104,13 +104,13 @@ def customer_service_action_plus(id, action):
         c.execute("UPDATE customers SET status='SUSPENDIDO',service_status='SUSPENDIDO' WHERE id=?", (id,))
         if cu['pppoe']:
             _queue(c, cu, 'SUSPEND')
-        msg = 'Cliente suspendido. La orden fue enviada al MikroTik.' if cu['pppoe'] else 'Cliente marcado como suspendido.'
+        msg = 'Suspensión pendiente de confirmación del MikroTik.' if cu['pppoe'] else 'Cliente marcado como suspendido.'
         ev = ('SUSPENDER', f'PPPoE {cu["pppoe"] or "-"}')
     elif action == 'REACTIVATE':
         c.execute("UPDATE customers SET status='ACTIVO',service_status='ACTIVO' WHERE id=?", (id,))
         if cu['pppoe']:
             _queue(c, cu, 'REACTIVATE')
-        msg = 'Cliente reactivado. La orden fue enviada al MikroTik.' if cu['pppoe'] else 'Cliente marcado como activo.'
+        msg = 'Reactivación pendiente de confirmación del MikroTik.' if cu['pppoe'] else 'Cliente marcado como activo.'
         ev = ('REACTIVAR', f'PPPoE {cu["pppoe"] or "-"}')
     else:
         c.execute("UPDATE customers SET status='ELIMINADO',service_status='ELIMINADO' WHERE id=?", (id,))

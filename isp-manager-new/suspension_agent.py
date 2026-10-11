@@ -12,7 +12,7 @@ def _root_url():
 
 
 def _agent_rsc(root, token):
-    # Minimal provisioning agent. It can only consume CREATE_PPPOE commands.
+    # Provisioning and service agent: only CREATE_PPPOE, SUSPEND and REACTIVATE.
     # The scheduler is installed disabled so the first execution can be tested manually.
     template = '''/system scheduler remove [find where name="interflash-agent-scheduler"]
 /system script remove [find where name="interflash-agent"]
@@ -21,14 +21,39 @@ def _agent_rsc(root, token):
   :local base "__ROOT__";
   :local token "__TOKEN__";
   :local hdr ("X-InterFlash-Agent: " . $token);
-  :local r [/tool fetch url=($base . "/api/mikrotik/agent/next?router=CCR2116&action=CREATE_PPPOE") http-method=get http-header-field=$hdr output=user check-certificate=yes as-value];
+  :local r [/tool fetch url=($base . "/api/mikrotik/service-next?router=CCR2116") http-method=get http-header-field=$hdr output=user check-certificate=yes as-value];
   :local d [:deserialize from=json value=($r->"data")];
   :if (($d->"ok") != true) do={ :return; }
   :local id ($d->"id");
   :if (([:typeof $id] = "nil") || ($id = 0)) do={ :return; }
   :local action ($d->"action");
-  :if ($action != "CREATE_PPPOE") do={ :return; }
+  :if (($action != "CREATE_PPPOE") && ($action != "SUSPEND") && ($action != "REACTIVATE")) do={ :return; }
   :local user ($d->"pppoe");
+  :if (($action = "SUSPEND") || ($action = "REACTIVATE")) do={
+    :local success false;
+    :local result "USUARIO_NO_EXISTE";
+    :local secret [/ppp secret find where name=$user];
+    :if (([:len $user] > 0) && ([:len $secret] = 1)) do={
+      :do {
+        :if ($action = "SUSPEND") do={
+          /ppp secret set $secret disabled=yes;
+          /ppp active remove [/ppp active find where name=$user];
+          :if (([/ppp secret get $secret disabled] = true) && ([:len [/ppp active find where name=$user]] = 0)) do={
+            :set success true;
+            :set result "SUSPENDIDO_CONFIRMADO";
+          } else={ :set result "CORTE_NO_CONFIRMADO"; }
+        } else={
+          /ppp secret set $secret disabled=no;
+          :if ([/ppp secret get $secret disabled] = false) do={
+            :set success true;
+            :set result "REACTIVADO_CONFIRMADO";
+          } else={ :set result "REACTIVACION_NO_CONFIRMADA"; }
+        }
+      } on-error={ :set result "ERROR_CAMBIO_SERVICIO"; }
+    }
+    /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=" . $success . "&result=" . $result) output=none check-certificate=yes;
+    :return;
+  }
   :local p ($d->"payload");
   :local prof ($p->"profile");
   :local pass ($p->"password");
@@ -69,7 +94,7 @@ def _agent_rsc(root, token):
   /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=true&result=PPPOE_CREADO") output=none check-certificate=yes;
 }
 /system scheduler add name="interflash-agent-scheduler" interval=5s on-event="/system script run interflash-agent" policy=read,write,test,sensitive start-time=startup disabled=yes
-:log info "INTERFLASH-CREATE-PPPOE-AGENT-INSTALLED"
+:log info "INTERFLASH-SERVICE-AGENT-V2-INSTALLED"
 '''
     return template.replace('__ROOT__', root).replace('__TOKEN__', token)
 
@@ -167,21 +192,49 @@ def control_script_fast():
 /import file-name=interflash-bootstrap.rsc
 /file remove interflash-bootstrap.rsc'''
 
-    verify = '''/system script print detail where name="interflash-agent"
+    verify = '''/system script print where name="interflash-agent"
 /system scheduler print where name="interflash-agent-scheduler"'''
 
-    body = f'''<div class="head"><div><h1>Agente MikroTik</h1><p>Creación segura de PPPoE desde la plataforma.</p></div><a class="btn" href="{url_for('mikrotik_commands')}">← Cola</a></div>
+    body = f'''<div class="head"><div><h1>Agente MikroTik</h1><p>Creación de PPPoE, suspensión y reactivación confirmadas por el router.</p></div><a class="btn" href="{url_for('mikrotik_commands')}">← Cola</a></div>
     <div class="panel">
       <div class="notice" style="background:#063f2a;color:#b8f6d6;margin-bottom:12px"><b>Instalación:</b> copia estas 3 líneas en el CCR2116. El agente se instalará DESACTIVADO para revisar primero la cola de órdenes; no cambia rutas, mangle ni failover.</div>
       <textarea class="field" style="width:100%;height:150px;font-family:Consolas,monospace">{pbr_client.esc(installer)}</textarea>
-      <div class="notice" style="background:#4e3707;color:#fff;margin:14px 0 10px">Este agente solo procesa CREATE_PPPOE. Rechaza usuarios existentes y queda desactivado hasta completar una prueba manual.</div>
+      <div class="notice" style="background:#4e3707;color:#fff;margin:14px 0 10px">Agente v2: procesa CREATE_PPPOE, SUSPEND y REACTIVATE. Suspender deshabilita el usuario y desconecta su sesión activa. Revisa la cola antes de ejecutar; queda desactivado al instalar.</div>
       <div class="muted" style="margin-bottom:6px">Verificación opcional:</div>
       <textarea class="field" style="width:100%;height:90px;font-family:Consolas,monospace">{pbr_client.esc(verify)}</textarea>
     </div>'''
     return base.shell('Agente MikroTik', body, 'routers')
 
 
+
+def service_next():
+    """Claim only supported commands and skip superseded service requests."""
+    if not pbr_client._auth():
+        return jsonify(ok=False, error='unauthorized'), 401
+    router = (request.args.get('router') or 'CCR2116')[:80]
+    c = base.db()
+    c.execute('BEGIN IMMEDIATE')
+    c.execute("""UPDATE router_commands AS old SET status='CANCELADO',
+        result='Sustituida por una orden de servicio posterior'
+        WHERE old.router_name=? AND old.status='PENDIENTE'
+        AND old.action IN ('SUSPEND','REACTIVATE')
+        AND EXISTS (SELECT 1 FROM router_commands AS newer
+          WHERE newer.router_name=old.router_name AND newer.pppoe=old.pppoe
+          AND newer.id>old.id AND newer.action IN ('SUSPEND','REACTIVATE')
+          AND newer.status NOT IN ('CANCELADO','ERROR'))""", (router,))
+    row = c.execute("""SELECT * FROM router_commands WHERE router_name=?
+        AND status='PENDIENTE' AND action IN ('CREATE_PPPOE','SUSPEND','REACTIVATE')
+        ORDER BY id LIMIT 1""", (router,)).fetchone()
+    if not row:
+        c.commit(); c.close()
+        return jsonify(ok=True, id=0)
+    c.execute("UPDATE router_commands SET status='EN_PROCESO' WHERE id=?", (row['id'],))
+    c.commit(); c.close()
+    return jsonify(ok=True, id=row['id'], action=row['action'],
+                   pppoe=row['pppoe'], payload=pbr_client._dec_payload(row['payload']))
+
 def setup(app):
+    app.add_url_rule('/api/mikrotik/service-next', endpoint='interflash_service_next', view_func=service_next, methods=['GET'])
     app.view_functions['pbr_control_script'] = control_script_fast
     app.view_functions['pbr_control_result'] = control_result_compat
     app.add_url_rule('/api/mikrotik/bootstrap.rsc', endpoint='mikrotik_bootstrap_rsc', view_func=bootstrap_rsc, methods=['GET'])

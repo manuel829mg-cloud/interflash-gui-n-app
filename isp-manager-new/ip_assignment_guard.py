@@ -84,7 +84,7 @@ def setup(app):
                 if existing and ip and ip == (existing['ip_address'] or '') and router == (existing['router_name'] or 'CCR2116'):
                     c = base.db()
                     try:
-                        duplicate = c.execute('SELECT id FROM customers WHERE ip_address=? AND COALESCE(router_name,?)=? AND id<>? LIMIT 1', (ip, router, cid)).fetchone()
+                        duplicate = c.execute('SELECT id FROM customers WHERE ip_address=? AND COALESCE(router_name,?)=? AND id<>? LIMIT 1', (ip, router, router, cid)).fetchone()
                     finally:
                         c.close()
                     if duplicate:

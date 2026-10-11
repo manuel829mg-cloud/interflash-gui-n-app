@@ -101,8 +101,21 @@ def _commercial_profiles(c, router):
             continue
         price = prices.pop()
         result.append({'name': name, 'rate_limit': row['rate_limit'], 'price': price,
-                       'label': f'{name} · RD${price:,.0f}'})
+                       'plan_ids': [p['id'] for p in matches], 'label': f'{name} · RD${price:,.0f}'})
     return result
+
+
+def _resolve_plan_profile(c, router, plan_id, pbr, current=''):
+    items = [x for x in _commercial_profiles(c, router) if int(plan_id) in x['plan_ids']]
+    if pbr:
+        items = [x for x in items if pbr.casefold() in x['name'].casefold()]
+    names = {x['name'] for x in items}
+    mapped = c.execute('SELECT profile_name FROM plan_profile_map WHERE router_name=? AND plan_id=? AND pbr_line=?', (router, plan_id, pbr)).fetchone()
+    if mapped and mapped['profile_name'] in names:
+        return mapped['profile_name']
+    if current in names:
+        return current
+    return next(iter(names)) if len(names) == 1 else ''
 
 
 def profiles_api():
@@ -181,12 +194,8 @@ def plan_profile_api():
             c.commit()
             return jsonify(ok=True, profile=profile)
 
-        row = c.execute('''SELECT profile_name FROM plan_profile_map
-                           WHERE router_name=? AND plan_id=? AND pbr_line=?''', (router, plan_id, pbr)).fetchone()
-        if not row and pbr:
-            row = c.execute('''SELECT profile_name FROM plan_profile_map
-                               WHERE router_name=? AND plan_id=? AND pbr_line=?''', (router, plan_id, '')).fetchone()
-        return jsonify(ok=True, profile=(row['profile_name'] if row else ''))
+        profile = _resolve_plan_profile(c, router, plan_id, pbr, str(request.args.get('current') or ''))
+        return jsonify(ok=True, profile=profile)
     finally:
         c.close()
 
@@ -244,7 +253,7 @@ def _profile_widget(options, outer_div=True):
       <div class="if-profile-row"><select id="if-profile-select" name="mikrotik_profile">{options}</select><button class="btn blue" type="button" onclick="IFPROFILE.refresh()">↻ Perfiles</button></div>
       <small id="if-profile-note" class="muted">Perfiles comerciales nuevos con precio del catálogo de planes.</small>
     </label>'''
-    return f'<div class="if-profile-field">{inner}</div>' if outer_div else inner
+    return f'<div class="if-profile-field" hidden>{inner}</div>'
 
 
 def _inject_profile_tools(html):
@@ -301,9 +310,9 @@ window.IFPROFILE=(function(){
   async function applyMap(){
     if(!plan())return;
     try{
-      const u='/api/mikrotik/plan-profile?router='+encodeURIComponent(router())+'&plan_id='+encodeURIComponent(plan())+'&pbr_line='+encodeURIComponent(pbr());
+      const u='/api/mikrotik/plan-profile?router='+encodeURIComponent(router())+'&plan_id='+encodeURIComponent(plan())+'&pbr_line='+encodeURIComponent(pbr())+'&current='+encodeURIComponent(sel()?sel().value:'');
       const r=await fetch(u,{headers:{Accept:'application/json'},cache:'no-store'});const d=await r.json();
-      if(d.ok&&d.profile&&sel()&&[...sel().options].some(o=>o.value===d.profile)){sel().value=d.profile;note('Perfil recomendado cargado para este plan/línea.');}
+      if(sel()){sel().value=d.ok&&d.profile?d.profile:'';}
     }catch(_e){}
   }
   async function saveMap(){
@@ -318,6 +327,7 @@ window.IFPROFILE=(function(){
     if(s)s.addEventListener('change',saveMap);
     if(p)p.addEventListener('change',applyMap);
     if(l)l.addEventListener('change',applyMap);
+    const rr=document.querySelector('[name="router_name"]');if(rr)rr.addEventListener('change',async()=>{fill(await read());await applyMap();});
     const form=s&&s.closest('form');
     if(form){form.addEventListener('submit',e=>{
       const line=document.querySelector('[name="pbr_line"]');
@@ -327,7 +337,7 @@ window.IFPROFILE=(function(){
       const pass=document.querySelector('[name="pppoe_password"]');
       if(line&&line.value&&ip&&!ip.value.trim()){e.preventDefault();alert('Selecciona una IP remota libre antes de aplicar PBR.');if(window.IFIP)IFIP.open();return;}
       if(create&&create.checked){
-        if(!user||!user.value.trim()||!pass||!pass.value||!s||!s.value){e.preventDefault();alert('Para crear/actualizar el PPPoE faltan usuario, contraseña o Perfil MikroTik.');return;}
+        if(!user||!user.value.trim()||!pass||!pass.value||!s||!s.value){e.preventDefault();alert('Completa el usuario y la contraseña. El plan debe tener un perfil asociado a la línea elegida.');return;}
       }
     });}
   });
@@ -418,7 +428,34 @@ def _patch_change_plan(app):
     app.view_functions['change_customer_plan'] = wrapped
 
 
+def _patch_unified_plan_values():
+    original = pbr_client._post_values
+    def values():
+        data = original()
+        if not data['plan_id']:
+            return data
+        c = base.db()
+        try:
+            cid = (request.view_args or {}).get('id')
+            old = c.execute('SELECT * FROM customers WHERE id=?', (cid,)).fetchone() if cid else None
+            unchanged = (old and str(old['plan_id']) == str(data['plan_id'])
+                         and (old['router_name'] or 'CCR2116') == data['router']
+                         and (old['pbr_line'] or '') == data['pbr'])
+            current = old['mikrotik_profile'] or '' if old else ''
+            profile = _resolve_plan_profile(c, data['router'], int(data['plan_id']), data['pbr'], current)
+            if not profile and unchanged:
+                profile = current
+            if not profile and (data['create_in_router'] or data['pppoe']):
+                raise ValueError('El plan no tiene un perfil único para la línea elegida. Revisa la asociación del plan antes de guardar.')
+            data['profile'] = profile
+            return data
+        finally:
+            c.close()
+    pbr_client._post_values = values
+
+
 def setup(app):
+    _patch_unified_plan_values()
     ensure_schema()
     _patch_agent_builder()
     _patch_customer_form()

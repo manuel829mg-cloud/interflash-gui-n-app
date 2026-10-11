@@ -96,13 +96,23 @@ def customer_profile(id):
     invr=''.join(f'<tr><td>#{x["id"]}</td><td>{esc(x["concept"])}</td><td>RD${x["amount"]:,.2f}</td><td>{esc(x["due_date"])}</td><td>{esc(x["status"])}</td></tr>' for x in inv) or '<tr><td colspan=5 class=muted>Sin facturas.</td></tr>'; payr=''.join(f'<tr><td>{esc(x["paid_at"])}</td><td>RD${x["amount"]:,.2f}</td><td>{esc(x["method"])}</td></tr>' for x in pay) or '<tr><td colspan=3 class=muted>Sin pagos.</td></tr>'; onur=''.join(f'<tr><td>{esc(x["vendor"])} {esc(x["model"])}</td><td>{esc(x["serial"])}</td><td>{esc(x["olt"])} / {esc(x["pon_port"])}</td><td>{esc(x["rx_power"] or "-")}</td></tr>' for x in onu) or '<tr><td colspan=4 class=muted>Sin ONU.</td></tr>'; cmdr=''.join(f'<tr><td>{esc(x["created_at"])}</td><td>{esc(x["action"])}</td><td>{esc(x["status"])}</td></tr>' for x in cmds) or '<tr><td colspan=3 class=muted>Sin comandos.</td></tr>'; plink=(request.url_root.rstrip('/')+url_for('customer_portal',token=portal['token'])) if portal and portal['enabled'] else ''
     body=f'''<div class="head"><div><h1>{esc(cu['name'])}</h1><p>{esc(cu['code'])} · {esc(cu['pppoe'] or 'Sin PPPoE')}</p></div><div><a class="btn" href="{url_for('customers')}">← Clientes</a> <a class="btn blue" href="{url_for('customer_edit',id=id)}">Editar</a> <a class="btn" href="{url_for('customer_service_info',id=id)}">Servicio / mapa</a></div></div><div class="panel"><div class="toolbar"><form method="post" action="{url_for('queue_customer_command',id=id,action='SUSPEND')}"><button class="btn" style="background:#6b1b23">Suspender</button></form><form method="post" action="{url_for('queue_customer_command',id=id,action='REACTIVATE')}"><button class="btn green">Reactivar</button></form><a class="btn blue" href="{url_for('promise_new',customer_id=id)}">🤝 Promesa de pago</a><form method="post" action="{url_for('portal_toggle',id=id)}"><button class="btn">Portal cliente</button></form></div>{f'<p class="muted">Portal: <a href="{plink}" target="_blank">{esc(plink)}</a></p>' if plink else ''}</div><div class="cards2"><div class="panel"><h3>Facturas</h3><table class="table">{invr}</table></div><div class="panel"><h3>Pagos</h3><table class="table">{payr}</table></div></div><div class="panel"><h3>ONU</h3><table class="table">{onur}</table></div><div class="panel"><h3>Comandos MikroTik</h3><table class="table">{cmdr}</table></div>'''; return base.shell('Ficha cliente',body,'customers')
 
+def _promise_time_from_form(form):
+    if 'promise_hour' not in form:
+        return form.get('promise_time') or '23:59'
+    hour = int(form.get('promise_hour') or 0)
+    minute = int(form.get('promise_minute') or 0)
+    period = (form.get('promise_period') or '').upper()
+    if not 1 <= hour <= 12 or not 0 <= minute <= 59 or period not in ('AM', 'PM'):
+        raise ValueError('Selecciona una hora válida con AM o PM.')
+    return f'{hour % 12 + (12 if period == "PM" else 0):02d}:{minute:02d}'
+
 def promise_new(customer_id):
     if not base.logged_in(): return redirect(url_for('login'))
     if request.method=='POST':
         if (session.get('role') or 'ADMIN').upper() not in ('ADMIN','CAJA','COBRADOR'): return 'Sin permiso.',403
         from whatsapp_events import create_promise
         try:
-            create_promise(customer_id,request.form.get('invoice_id') or None,request.form.get('promise_date') or '',None,request.form.get('notes') or '',request.form.get('promise_time') or '23:59')
+            create_promise(customer_id,request.form.get('invoice_id') or None,request.form.get('promise_date') or '',None,request.form.get('notes') or '',_promise_time_from_form(request.form))
             flash('Promesa registrada.')
             return redirect(url_for('customer_profile',id=customer_id))
         except (ValueError,TypeError) as exc:
@@ -115,6 +125,8 @@ def promise_new(customer_id):
     if not customer: return 'Cliente no encontrado',404
     opts=''.join(f'<option value="{x["id"]}">#{x["id"]} · RD${x["amount"]:,.2f}</option>' for x in inv)
     today=date.today().isoformat()
+    hour_options=''.join(f'<option value="{h}" {"selected" if h==11 else ""}>{h:02d}</option>' for h in range(1,13))
+    minute_options=''.join(f'<option value="{m}" {"selected" if m==59 else ""}>{m:02d}</option>' for m in range(60))
     body=f'''<style>
     .promise-overlay{{position:fixed;inset:0;background:#0009;display:flex;align-items:center;justify-content:center;z-index:500;padding:16px}}
     .promise-modal{{width:min(100%,610px);max-height:92vh;overflow:auto;background:#fff;color:#253248;border-radius:12px;box-shadow:0 20px 60px #0006}}
@@ -123,13 +135,13 @@ def promise_new(customer_id):
     .promise-body{{padding:25px}}.promise-help{{background:#fff8e9;border:1px solid #f3dba7;border-radius:8px;padding:15px;margin-bottom:20px}}
     .promise-body label{{display:block;font-weight:700;margin:14px 0}}.promise-body input,.promise-body select,.promise-body textarea{{display:block;width:100%;padding:12px;border:1px solid #d7dce3;border-radius:6px;background:white;color:#263242;margin-top:7px}}
     .promise-date-row{{display:flex;align-items:stretch;gap:8px}}.promise-date-row input{{flex:1;min-width:0}}.promise-calendar-button{{border:1px solid #d7dce3;border-radius:6px;background:#fff3e7;color:#a93512;padding:8px 12px;cursor:pointer;white-space:nowrap}}\n    .promise-date-wrap{{position:relative;display:block}}.promise-date-wrap input{{padding-right:55px;cursor:pointer}}.promise-date-icon{{position:absolute;right:6px;top:8px;height:calc(100% - 8px);width:42px;border:0;background:transparent;color:#344054;font-size:25px;cursor:pointer}}
-    .promise-foot{{display:flex;gap:12px;padding:16px 25px;border-top:1px solid #ddd}}.promise-foot>*{{flex:1;text-align:center;padding:12px;border-radius:6px}}.promise-save{{background:#d53d0c;color:white;border:0;font-weight:bold;cursor:pointer}}
+    .promise-time-12{{display:flex;align-items:center;gap:8px}}.promise-time-12 select{{flex:1;min-width:0}}\n    .promise-foot{{display:flex;gap:12px;padding:16px 25px;border-top:1px solid #ddd}}.promise-foot>*{{flex:1;text-align:center;padding:12px;border-radius:6px}}.promise-save{{background:#d53d0c;color:white;border:0;font-weight:bold;cursor:pointer}}
     </style><div class="promise-overlay"><section class="promise-modal" role="dialog" aria-modal="true" aria-label="Crear promesa de pago">
     <header class="promise-head"><div><h2><span class="promise-hand-icon" aria-hidden="true">🤝</span> Crear Promesa de Pago</h2><small>{esc(customer["name"])}</small></div><a href="{url_for('customers',overdue=1)}" style="color:white;font-size:26px" aria-label="Cerrar">×</a></header>
     <form method="post" action="{url_for('promise_new',customer_id=customer_id)}"><div class="promise-body">
     <div class="promise-help"><b>¿Qué es una promesa de pago?</b><p>Acuerdo temporal que extiende la fecha de pago. El corte automático al incumplir requiere que esté habilitado y verificado en el sistema.</p></div>
     <label>Nueva Fecha de Pago *<span class="promise-date-wrap"><input id="promise-date" type="date" name="promise_date" min="{today}" required onclick="try{{this.showPicker()}}catch(e){{}}" /><button class="promise-date-icon" type="button" aria-label="Abrir calendario" onclick="var d=document.getElementById(\'promise-date\');try{{d.showPicker()}}catch(e){{d.focus();d.click()}}">▦</button></span></label>
-    <label>Hora de Corte si no cumple *<input type="time" name="promise_time" value="23:59" required></label>
+    <label>Hora de Corte si no cumple *<span class="promise-time-12"><select name="promise_hour" aria-label="Hora de corte" required>{hour_options}</select><span>:</span><select name="promise_minute" aria-label="Minutos de corte" required>{minute_options}</select><select name="promise_period" aria-label="AM o PM" required><option value="AM">AM</option><option value="PM" selected>PM</option></select></span></label>
     <label>Motivo / Notas (Opcional)<textarea name="notes" rows="3" placeholder="Ej: Cliente solicita extensión por problemas económicos"></textarea></label>
     </div><footer class="promise-foot"><a href="{url_for('customers',overdue=1)}">Cancelar</a><button class="promise-save" type="submit">Crear Promesa</button></footer></form></section></div>'''
     return base.shell('Promesa de pago',body,'customers')

@@ -166,6 +166,16 @@ def setup(app):
                 import customer_provisioning
                 router = data.get('router_name') or _value(customer, 'router_name', 'CCR2116')
                 selected = data.get('mikrotik_profile') or ''
+                if selected.startswith('plan:'):
+                    chosen_id = selected.split(':', 1)[1]
+                    if not chosen_id.isdigit():
+                        raise ValueError('Selecciona un plan válido.')
+                    selected = resolve(c, chosen_id, router,
+                                       data.get('pbr_line') or _value(customer, 'pbr_line'),
+                                       data.get('ip_address') or _value(customer, 'ip_address'), customer)
+                    data['plan_id'] = chosen_id
+                    data['mikrotik_profile'] = selected
+                    plan_id = chosen_id
                 items = [x for x in customer_provisioning._commercial_profiles(c, router) if x['name'] == selected]
                 if items and len(items[0]['plan_ids']) == 1:
                     data['plan_id'] = str(items[0]['plan_ids'][0])

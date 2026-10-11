@@ -290,8 +290,9 @@ window.IFIP=(function(){
       const rd=await rr.json();
       if(!rd.ok) throw new Error(rd.error||'No se pudo solicitar la consulta');
       before=rd.before||before;
-      for(let i=0;i<16;i++){
-        await sleep(700);
+      for(let i=0;i<120;i++){
+        await sleep(1000);
+        // Large routers can take over a minute to send hundreds of pool/secret requests.
         // A 409 means the router snapshot is still incomplete or stale.
         // Keep waiting instead of aborting the refresh immediately.
         let d;
@@ -300,12 +301,12 @@ window.IFIP=(function(){
         } catch(e) {
           continue;
         }
-        if((d.updated_at&&d.updated_at!==before&&d.pools>0) || (!before&&d.pools>0)){
+        if(d.updated_at&&d.updated_at!==before&&d.pools>0){
           applyData(d,'actualizado ahora');
           return;
         }
       }
-      items=[];lastData=null;meta().textContent='Sin sincronización completa confirmada';list().innerHTML='<div class="if-ip-empty">No se confirmó la actualización del MikroTik. No se mostrarán IPs hasta verificar la sincronización.</div>';
+      items=[];lastData=null;meta().textContent='Sin sincronización completa confirmada (120 s)';list().innerHTML='<div class="if-ip-empty">No se confirmó la actualización del MikroTik. No se mostrarán IPs hasta verificar la sincronización.</div>';
     }catch(e){
       items=[];lastData=null;meta().textContent='Sin IPs verificadas';list().innerHTML='<div class="if-ip-empty">No se pudo verificar la lista actualizada de IPs ocupadas. Intenta sincronizar de nuevo.</div>';
     }

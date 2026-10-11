@@ -18,17 +18,28 @@ def _agent_rsc(root, token):
   :local base "__ROOT__";
   :local token "__TOKEN__";
   :local hdr ("X-InterFlash-Agent: " . $token);
-  :local r [/tool fetch url=($base . "/api/mikrotik/agent/next?router=CCR2116") http-method=get http-header-field=$hdr output=user check-certificate=yes as-value];
-  :local raw ($r->"data");
-  :if ([:len $raw] = 0) do={ :return; }
-  :local d [:deserialize from=json value=$raw];
-  :if ([:typeof $d] != "array") do={ :return; }
+  :local raw "";
+  :do {
+    :local r [/tool fetch url=($base . "/api/mikrotik/agent/next?router=CCR2116") http-method=get http-header-field=$hdr output=user check-certificate=yes as-value];
+    :if ([:typeof $r] = "array") do={
+      :local body ($r->"data");
+      :if ([:typeof $body] = "str") do={ :set raw $body; }
+    }
+  } on-error={ :log warning "INTERFLASH-AGENT: error HTTPS al consultar orden"; :return; }
+  :if ([:len $raw] = 0) do={ :log warning "INTERFLASH-AGENT: respuesta vacia"; :return; }
+  :local d;
+  :do { :set d [:deserialize from=json value=$raw]; } on-error={
+    :log warning "INTERFLASH-AGENT: respuesta JSON invalida";
+    :return;
+  };
+  :if ([:typeof $d] != "array") do={ :log warning "INTERFLASH-AGENT: JSON inesperado"; :return; }
   :if (($d->"ok") != true) do={ :return; }
   :local id ($d->"id");
   :if (([:typeof $id] = "nil") || ($id = 0)) do={ :return; }
   :local action ($d->"action");
   :local user ($d->"pppoe");
   :local p ($d->"payload");
+  :if ([:typeof $p] != "array") do={ :set p [:toarray ""]; }
   :local ok false;
   :local result "ACCION_NO_SOPORTADA";
   :do {
@@ -65,13 +76,19 @@ def _agent_rsc(root, token):
       :if ([:len $prof] = 0) do={ :error "Perfil PPPoE vacio"; }
       :if ([:len $pass] = 0) do={ :error "Password PPPoE vacio"; }
       :local sec [/ppp secret find where name=$user];
-      :if ([:len $sec] = 0) do={
-        /ppp secret add name=$user password=$pass profile=$prof service=pppoe disabled=no;
-        :set sec [/ppp secret find where name=$user];
-      } else={
-        /ppp secret set $sec password=$pass profile=$prof service=pppoe disabled=no;
+      :if ([:len $sec] > 0) do={ :error "PPPoE ya existe; no modificar cliente existente"; }
+      :if ([:len [/ppp profile find where name=$prof]] != 1) do={ :error "Perfil PPPoE inexistente"; }
+      :if ([:typeof $rip] = "str") do={
+        :if ([:len $rip] > 0) do={
+          :if ([:len [/ppp active find where address=$rip]] > 0) do={ :error "IP en uso por cliente activo"; }
+          :if ([:len [/ppp secret find where remote-address=$rip]] > 0) do={ :error "IP reservada en otro PPPoE"; }
+        }
       }
-      :if ([:len $rip] > 0) do={ /ppp secret set $sec remote-address=$rip; }
+      :if (([:typeof $rip] = "str") && ([:len $rip] > 0)) do={
+        /ppp secret add name=$user password=$pass profile=$prof remote-address=$rip service=pppoe disabled=no;
+      } else={
+        /ppp secret add name=$user password=$pass profile=$prof service=pppoe disabled=no;
+      }
       :set ok true;
       :set result "PPPOE_CREADO";
     }
@@ -125,9 +142,12 @@ def _agent_rsc(root, token):
   } on-error={
     :set ok false;
     :set result "ERROR";
+    :log warning ("INTERFLASH-AGENT: fallo al ejecutar orden " . $id . " accion " . $action);
   }
   :local data ("id=" . $id . "&ok=" . $ok . "&result=" . $result);
-  /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=$data output=none check-certificate=yes;
+  :do {
+    /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=$data output=none check-certificate=yes;
+  } on-error={ :log warning ("INTERFLASH-AGENT: fallo confirmando orden " . $id); };
 }
 /system scheduler add name="interflash-agent-scheduler" interval=5s on-event="/system script run interflash-agent" policy=read,write,test,sensitive start-time=startup disabled=yes
 :log info "INTERFLASH-AGENT-INSTALLED"

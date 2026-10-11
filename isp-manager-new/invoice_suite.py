@@ -44,7 +44,7 @@ def invoices_plus():
         paid=(r['status'] or '').upper()=='PAGADA'; cancelled=r['status']=='ANULADA'; overdue=(not paid and not cancelled and (r['due_date'] or '') < today)
         status='VENCIDA' if overdue else (r['status'] or 'PENDIENTE'); cls='bad' if overdue else 'ok' if paid else 'warn'
         collect='' if paid or cancelled else f'<a class="btn green" href="{url_for("invoice_detail",id=r["id"])}#registrar-pago">Cobrar</a>'
-        promise='' if paid or cancelled else f'<a class="btn" style="background:#f97316;border-color:#fdba74;color:#fff;padding:6px 9px;font-size:11px" href="{url_for("promise_new",customer_id=r["customer_id"])}" aria-label="Promesa de pago para {esc(r["customer"])}">Promesa de pago</a>'
+        promise='' if paid or cancelled else f'<a class="btn" style="background:#f97316;border-color:#fdba74;color:#fff" href="{url_for("promise_new",customer_id=r["customer_id"])}" aria-label="Promesa de pago para {esc(r["customer"])}">Promesa de pago</a>'
         trs.append(f'<tr><td><b>IF-{r["id"]:06d}</b></td><td>{esc(r["customer"])}</td><td>{esc(r["period"] or "-")}</td><td>{esc(r["concept"])}</td><td>RD&#36;{float(r["amount"]):,.2f}</td><td>{esc(r["issue_date"])}</td><td>{esc(r["due_date"])}</td><td><span class="tag {cls}">{esc(status)}</span></td><td class="invoice-actions"><div class="invoice-action-buttons">{promise} <a class="btn blue" href="{url_for("invoice_detail",id=r["id"])}">Ver</a> {collect}</div></td></tr>')
     body=f'''<div class="head"><div><h1>Facturas</h1><p>Facturación, impresión, cobros y comprobantes</p></div></div>
     <div class="panel" id="nueva-factura"><h3>Nueva factura</h3><form class="toolbar" method="post">
@@ -62,12 +62,12 @@ def invoices_plus():
     .invoice-list-panel{min-width:0;max-width:100%;overflow:visible}
     .invoice-fit-table{width:100%;max-width:100%;table-layout:fixed}
     .invoice-fit-table th,.invoice-fit-table td{padding:8px 5px;font-size:11px;white-space:normal;overflow-wrap:anywhere;vertical-align:middle}
-    .invoice-fit-table th:nth-child(1){width:10%}.invoice-fit-table th:nth-child(2){width:14%}
-    .invoice-fit-table th:nth-child(3){width:8%}.invoice-fit-table th:nth-child(4){width:12%}
-    .invoice-fit-table th:nth-child(5){width:11%}.invoice-fit-table th:nth-child(6),.invoice-fit-table th:nth-child(7){width:9%}
-    .invoice-fit-table th:nth-child(8){width:10%}.invoice-fit-table th:nth-child(9){width:17%}
-    .invoice-action-buttons{display:flex;flex-wrap:wrap;align-items:center;gap:4px}
-    .invoice-fit-table .btn{padding:6px 8px;font-size:11px;max-width:100%;white-space:normal;text-align:center}
+    .invoice-fit-table th:nth-child(1){width:8%}.invoice-fit-table th:nth-child(2){width:13%}
+    .invoice-fit-table th:nth-child(3){width:7%}.invoice-fit-table th:nth-child(4){width:10%}
+    .invoice-fit-table th:nth-child(5){width:10%}.invoice-fit-table th:nth-child(6),.invoice-fit-table th:nth-child(7){width:8%}
+    .invoice-fit-table th:nth-child(8){width:10%}.invoice-fit-table th:nth-child(9){width:26%}
+    .invoice-action-buttons{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:center;gap:4px;width:100%;min-width:0}
+    .invoice-fit-table .invoice-action-buttons .btn{display:flex;width:100%;min-width:0;height:40px;padding:4px;font-size:10px;line-height:1.1;max-width:100%;white-space:normal;overflow-wrap:normal;text-align:center;border-radius:7px}
     .invoice-fit-table .tag{font-size:10px;padding:4px 6px;max-width:100%;white-space:normal}
     #nueva-factura{min-width:0;max-width:100%}#nueva-factura .toolbar>*{min-width:0;max-width:100%}
     #nueva-factura .toolbar>.field{flex:1 1 145px;width:145px}

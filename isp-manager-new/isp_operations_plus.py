@@ -266,9 +266,11 @@ def customers_plus():
         service_title = 'Reactivar' if service_action == 'REACTIVATE' else 'Suspender'
         service_cls = 'service-suspended' if service_suspended else 'service-active'
         service_label = ('Suspendido · Reactivar cliente' if service_suspended else 'Activo · Suspender cliente')
-        service_color = '#dc3545' if service_suspended else '#16a34a'
-        service_style = f'background:{service_color}!important;border-color:{service_color}!important;color:#fff!important'
-        service_icon = service_icon.replace('class="reference-icon"', 'class="reference-icon" style="stroke:#fff!important;color:#fff!important"')
+        service_color = '#ff7b86' if service_suspended else '#39e998'
+        service_background = '#4a161b' if service_suspended else '#063f2a'
+        service_border = '#b94350' if service_suspended else '#148854'
+        service_style = f'background:{service_background}!important;border-color:{service_border}!important;color:{service_color}!important'
+        service_icon = service_icon.replace('class="reference-icon"', f'class="reference-icon" style="stroke:{service_color}!important;color:{service_color}!important"')
         wa_btn = f'<a class="ico wa" title="WhatsApp" target="_blank" href="https://wa.me/{wa}">{icon_wa}</a>' if wa else ''
         searchable = search_text(' '.join(str(value or '') for value in (
             r['name'], r['phone'], r['document'], r['pppoe'], r['onu_serial'],

@@ -182,6 +182,24 @@ def free_ips_refresh_api():
         c.close()
 
 
+def free_ips_refresh_status_api():
+    if not base.logged_in():
+        return jsonify(ok=False, error='login-required'), 401
+    router = (request.args.get('router') or 'CCR2116')[:80]
+    try:
+        command_id = int(request.args.get('command_id') or 0)
+    except (ValueError, TypeError):
+        return jsonify(ok=False, error='invalid-command-id'), 400
+    c = base.db()
+    try:
+        row = c.execute("SELECT status,result FROM router_commands WHERE id=? AND router_name=? AND action='SYNC_POOLS'", (command_id, router)).fetchone()
+        if not row:
+            return jsonify(ok=False, error='command-not-found'), 404
+        return jsonify(ok=True, status=row['status'], result=row['result'] or '')
+    finally:
+        c.close()
+
+
 def free_ips_api():
     if not base.logged_in():
         return jsonify(ok=False, error='login-required'), 401
@@ -292,6 +310,18 @@ window.IFIP=(function(){
       before=rd.before||before;
       for(let i=0;i<120;i++){
         await sleep(1000);
+        if(i%3===0 && rd.command_id){
+          try {
+            const sr=await fetch('/api/mikrotik/free-ips/refresh/status?router='+encodeURIComponent(router())+'&command_id='+encodeURIComponent(rd.command_id),{headers:{Accept:'application/json'},cache:'no-store'});
+            const st=await sr.json();
+            if(st.ok && (st.status==='ERROR'||st.status==='CANCELADO')){
+              items=[];lastData=null;
+              meta().textContent='Sincronización fallida · '+st.status;
+              list().innerHTML='<div class="if-ip-empty">El agente no completó la lectura de IPs. Revisa la cola MikroTik y vuelve a intentar.</div>';
+              return;
+            }
+          }catch(_e){}
+        }
         // Large routers can take over a minute to send hundreds of pool/secret requests.
         // A 409 means the router snapshot is still incomplete or stale.
         // Keep waiting instead of aborting the refresh immediately.
@@ -357,3 +387,4 @@ def setup(app):
     app.add_url_rule('/api/mikrotik/pool-state-v2', endpoint='mikrotik_pool_state_sync_v2', view_func=pool_state_sync_v2, methods=['POST'])
     app.add_url_rule('/api/mikrotik/free-ips', endpoint='mikrotik_free_ips_api', view_func=free_ips_api, methods=['GET'])
     app.add_url_rule('/api/mikrotik/free-ips/refresh', endpoint='mikrotik_free_ips_refresh_api', view_func=free_ips_refresh_api, methods=['POST'])
+    app.add_url_rule('/api/mikrotik/free-ips/refresh/status', endpoint='mikrotik_free_ips_refresh_status_api', view_func=free_ips_refresh_status_api, methods=['GET'])

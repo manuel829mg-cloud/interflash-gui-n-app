@@ -118,6 +118,12 @@ def _resolve_plan_profile(c, router, plan_id, pbr, current=''):
     return next(iter(names)) if len(names) == 1 else ''
 
 
+def _six_plan_choices(c):
+    return [{'name': f'plan:{p["id"]}', 'plan_ids': [p['id']], 'price': float(p['price']),
+             'label': f'{p["name"]} · {p["download_mbps"]}/{p["upload_mbps"]} Mbps · RD${p["price"]:,.0f}'}
+            for p in c.execute('SELECT * FROM plans WHERE active=1 ORDER BY download_mbps,price')]
+
+
 def profiles_api():
     if not base.logged_in():
         return jsonify(ok=False, error='login-required'), 401
@@ -125,7 +131,7 @@ def profiles_api():
     router = str(request.args.get('router') or 'CCR2116')[:80]
     c = base.db()
     try:
-        items = _commercial_profiles(c, router)
+        items = _six_plan_choices(c)
     finally:
         c.close()
     return jsonify(ok=True, router=router, items=items, count=len(items))
@@ -249,7 +255,7 @@ def _patch_agent_builder():
 
 
 def _profile_widget(options, outer_div=True):
-    inner = f'''<label>Perfil MikroTik
+    inner = f'''<label>Plan de internet
       <div class="if-profile-row"><select id="if-profile-select" name="mikrotik_profile">{options}</select><button class="btn blue" type="button" onclick="IFPROFILE.refresh()">↻ Perfiles</button></div>
       <small id="if-profile-note" class="muted">Perfiles comerciales nuevos con precio del catálogo de planes.</small>
     </label>'''
@@ -351,12 +357,20 @@ window.IFPROFILE=(function(){
         router_field = re.search(r'<select name="router_name">(.*?)</select>', html, re.S)
         selected_router = re.search(r'<option value="([^"]+)" selected', router_field.group(1)) if router_field else None
         router = selected_router.group(1) if selected_router else 'CCR2116'
-        items = _commercial_profiles(c, router)
+        items = _six_plan_choices(c)
     finally:
         c.close()
     def commercial_options(match):
         selected = re.search(r'<option value="([^"]*)" selected[^>]*>', match.group(2))
         current = selected.group(1) if selected else ''
+        if current:
+            cc = base.db()
+            try:
+                matches = [x for x in _commercial_profiles(cc, router) if escape(x['name'], quote=True) == current]
+                if matches and len(matches[0]['plan_ids']) == 1:
+                    current = f'plan:{matches[0]["plan_ids"][0]}'
+            finally:
+                cc.close()
         options = '<option value="">Selecciona un perfil comercial</option>'
         allowed = {escape(x['name'], quote=True) for x in items}
         if current and current not in allowed:

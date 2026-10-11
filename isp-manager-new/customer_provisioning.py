@@ -253,7 +253,7 @@ def _profile_widget(options, outer_div=True):
       <div class="if-profile-row"><select id="if-profile-select" name="mikrotik_profile">{options}</select><button class="btn blue" type="button" onclick="IFPROFILE.refresh()">↻ Perfiles</button></div>
       <small id="if-profile-note" class="muted">Perfiles comerciales nuevos con precio del catálogo de planes.</small>
     </label>'''
-    return f'<div class="if-profile-field" hidden>{inner}</div>'
+    return f'<div class="if-profile-field">{inner}</div>'
 
 
 def _inject_profile_tools(html):
@@ -294,7 +294,7 @@ window.IFPROFILE=(function(){
     const emptyText=s.options.length?s.options[0].textContent:'Sin perfil';
     s.innerHTML='';
     const z=document.createElement('option');z.value='';z.textContent=emptyText||'Sin perfil';s.appendChild(z);
-    (d.items||[]).forEach(x=>{const o=document.createElement('option');o.value=x.name;o.textContent=x.label||x.name;s.appendChild(o);});
+    (d.items||[]).forEach(x=>{const o=document.createElement('option');o.value=x.name;o.dataset.planId=String((x.plan_ids||[])[0]||'');o.textContent=x.label||x.name;s.appendChild(o);});
     if([...s.options].some(o=>o.value===keep))s.value=keep;
     note((d.count||0)+' perfil(es) comerciales con precio.');
   }
@@ -303,7 +303,7 @@ window.IFPROFILE=(function(){
     try{
       const r=await fetch('/api/mikrotik/profiles/refresh?router='+encodeURIComponent(router()),{method:'POST',headers:{Accept:'application/json'},cache:'no-store'});
       const d=await r.json();if(!d.ok)throw new Error(d.error||'Error');
-      for(let i=0;i<14;i++){await sleep(700);const p=await read();if((p.count||0)>0){fill(p);await applyMap();return;}}
+      for(let i=0;i<14;i++){await sleep(700);const p=await read();if((p.count||0)>0){fill(p);return;}}
       fill(await read());
     }catch(e){note('No pude sincronizar perfiles. Revisa que el agente nuevo esté instalado.');}
   }
@@ -324,10 +324,10 @@ window.IFPROFILE=(function(){
     const s=sel();
     const p=document.querySelector('[name="plan_id"]');
     const l=document.querySelector('[name="pbr_line"]');
-    if(s)s.addEventListener('change',saveMap);
-    if(p)p.addEventListener('change',applyMap);
-    if(l)l.addEventListener('change',applyMap);
-    const rr=document.querySelector('[name="router_name"]');if(rr)rr.addEventListener('change',async()=>{fill(await read());await applyMap();});
+    if(s)s.addEventListener('change',()=>{const o=s.selectedOptions[0];if(p&&o&&o.dataset.planId)p.value=o.dataset.planId;});
+    
+    
+    const rr=document.querySelector('[name="router_name"]');if(rr)rr.addEventListener('change',async()=>{fill(await read());});
     const form=s&&s.closest('form');
     if(form){form.addEventListener('submit',e=>{
       const line=document.querySelector('[name="pbr_line"]');
@@ -364,9 +364,11 @@ window.IFPROFILE=(function(){
         for item in items:
             value = escape(item['name'], quote=True)
             chosen = ' selected' if current == value else ''
-            options += f'<option value="{value}"{chosen}>{escape(item["label"])}</option>'
+            options += f'<option value="{value}" data-plan-id="{item["plan_ids"][0]}"{chosen}>{escape(item["label"])}</option>'
         return match.group(1) + options + match.group(3)
     html = select_pattern.sub(commercial_options, html)
+    html = re.sub(r'<div><label>Plan(<select name="plan_id">.*?</select>)</label></div>',
+                  r'<div hidden style="display:none"><label>Plan\1</label></div>', html, flags=re.S)
     return html + extra
 
 
@@ -432,8 +434,7 @@ def _patch_unified_plan_values():
     original = pbr_client._post_values
     def values():
         data = original()
-        if not data['plan_id']:
-            return data
+
         c = base.db()
         try:
             cid = (request.view_args or {}).get('id')
@@ -442,11 +443,25 @@ def _patch_unified_plan_values():
                          and (old['router_name'] or 'CCR2116') == data['router']
                          and (old['pbr_line'] or '') == data['pbr'])
             current = old['mikrotik_profile'] or '' if old else ''
-            profile = _resolve_plan_profile(c, data['router'], int(data['plan_id']), data['pbr'], current)
-            if not profile and unchanged:
+            selected = data['profile']
+            items = [x for x in _commercial_profiles(c, data['router']) if x['name'] == selected]
+            if items:
+                ids = items[0]['plan_ids']
+                if len(ids) != 1:
+                    raise ValueError('Este perfil tiene más de un plan asociado. Revisa el catálogo.')
+                data['plan_id'] = str(ids[0])
+                # The profile already encodes the provider line; keep PBR consistent.
+                lines = [line for line in pbr_client.PBR_LISTS if line.casefold() in selected.casefold()]
+                if len(lines) == 1:
+                    data['pbr'] = lines[0]
+                profile = selected
+            elif selected == current and unchanged:
                 profile = current
-            if not profile and (data['create_in_router'] or data['pppoe']):
-                raise ValueError('El plan no tiene un perfil único para la línea elegida. Revisa la asociación del plan antes de guardar.')
+            elif not selected and not data['pppoe'] and not data['create_in_router']:
+                profile = ''
+                data['plan_id'] = None
+            else:
+                raise ValueError('Selecciona un perfil comercial con precio antes de guardar.')
             data['profile'] = profile
             return data
         finally:

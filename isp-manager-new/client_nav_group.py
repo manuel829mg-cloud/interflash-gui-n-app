@@ -49,6 +49,7 @@ def setup():
         parts.append(group('soporte','◉','Soporte Técnico',['tickets_page','installations_page','monitoring_page','mikrotik_commands']))
         parts.append(item('routers','⌁','Routers'))
         parts.append(item('router_push_view','⌁','Routers'))
+        parts.append(item('mikrotik_ai_diagnostics','✦','Diagnóstico MikroTik IA'))
         parts.append(item('wan_lines','◫','Líneas'))
         parts.append(item('plans','◉','Planes'))
         parts.append(item('zones_page','⌖','Zonas'))

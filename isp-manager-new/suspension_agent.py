@@ -72,6 +72,16 @@ def _agent_rsc(root, token):
       :set ok true;
       :set result "PPPOE_CREADO";
     }
+    :if ($action="DELETE_PPPOE") do={
+      :if ([:len $user] = 0) do={ :error "Usuario PPPoE vacio"; }
+      :local sec [/ppp secret find where name=$user];
+      :if ([:len $sec] != 1) do={ :error "Se requiere exactamente un PPPoE"; }
+      :local act [/ppp active find where name=$user];
+      :if ([:len $act] > 0) do={ :error "Cliente conectado: no eliminar automaticamente"; }
+      /ppp secret remove $sec;
+      :set ok true;
+      :set result "PPPOE_ELIMINADO";
+    }
     :if ($action="CHANGE_PROFILE") do={
       :local prof ($p->"profile");
       :local sec [/ppp secret find where name=$user];
@@ -222,7 +232,7 @@ def control_script_fast():
     <div class="panel">
       <div class="notice" style="background:#063f2a;color:#b8f6d6;margin-bottom:12px"><b>Instalación:</b> copia estas 3 líneas en el CCR2116. Actualiza el agente sin cambiar tu configuración de rutas, mangle o failover.</div>
       <textarea class="field" style="width:100%;height:150px;font-family:Consolas,monospace">{pbr_client.esc(installer)}</textarea>
-      <div class="notice" style="background:#4e3707;color:#fff;margin:14px 0 10px">El agente procesa SUSPEND, REACTIVATE, RESTART_PPPOE, CREATE_PPPOE, CHANGE_PROFILE, APPLY_PBR, REMOVE_PBR y SYNC_POOLS cada 5 segundos.</div>
+      <div class="notice" style="background:#4e3707;color:#fff;margin:14px 0 10px">El agente procesa SUSPEND, REACTIVATE, RESTART_PPPOE, CREATE_PPPOE, DELETE_PPPOE (solo desconectados), CHANGE_PROFILE, APPLY_PBR, REMOVE_PBR y SYNC_POOLS cada 5 segundos.</div>
       <div class="muted" style="margin-bottom:6px">Verificación opcional:</div>
       <textarea class="field" style="width:100%;height:90px;font-family:Consolas,monospace">{pbr_client.esc(verify)}</textarea>
     </div>'''

@@ -266,6 +266,9 @@ def customers_plus():
         service_title = 'Reactivar' if service_action == 'REACTIVATE' else 'Suspender'
         service_cls = 'service-suspended' if service_suspended else 'service-active'
         service_label = ('Suspendido · Reactivar cliente' if service_suspended else 'Activo · Suspender cliente')
+        service_color = '#dc3545' if service_suspended else '#16a34a'
+        service_style = f'background:{service_color}!important;border-color:{service_color}!important;color:#fff!important'
+        service_icon = service_icon.replace('class="reference-icon"', 'class="reference-icon" style="stroke:#fff!important;color:#fff!important"')
         wa_btn = f'<a class="ico wa" title="WhatsApp" target="_blank" href="https://wa.me/{wa}">{icon_wa}</a>' if wa else ''
         searchable = search_text(' '.join(str(value or '') for value in (
             r['name'], r['phone'], r['document'], r['pppoe'], r['onu_serial'],
@@ -289,7 +292,7 @@ def customers_plus():
             {wa_btn}
             {map_btn}
             <a class="ico" title="Editar" href="{url_for('customer_edit',id=r['id'])}">{icon_edit}</a>
-            <form method="post" action="{url_for('customer_service_action',id=r['id'],action=service_action)}"><button class="ico {service_cls}" title="{service_label}" aria-label="{service_label}" onclick="return confirm('¿{service_title} este cliente?')">{service_icon}</button></form>
+            <form method="post" action="{url_for('customer_service_action',id=r['id'],action=service_action)}"><button class="ico {service_cls}" style="{service_style}" title="{service_label}" aria-label="{service_label}" onclick="return confirm('¿{service_title} este cliente?')">{service_icon}</button></form>
             <form method="post" action="{url_for('customer_service_action',id=r['id'],action='DELETE')}"><button class="ico danger" title="Eliminar" onclick="return confirm('¿Enviar este cliente a la papelera y eliminar su PPPoE del MikroTik?')">{icon_trash}</button></form>'''
         trs.append(f'''<tr class="{row_class}" data-client-search="{esc(searchable)}"{'' if visible else ' hidden'}>
           <td class="c-code"><span>{esc(r['code'] or '#'+str(r['id']))}</span></td>

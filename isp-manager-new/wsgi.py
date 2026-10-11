@@ -222,6 +222,10 @@ commercial_service.setup(app)
 import finance_ai
 finance_ai.setup(app)
 
+# Safe, read-only MikroTik diagnostics powered by the configured AI provider.
+import mikrotik_ai
+mikrotik_ai.setup(app)
+
 # Reject duplicate or stale PPPoE IP assignments before queuing router changes.
 import ip_assignment_guard
 ip_assignment_guard.setup(app)

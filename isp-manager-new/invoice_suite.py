@@ -44,8 +44,8 @@ def invoices_plus():
         paid=(r['status'] or '').upper()=='PAGADA'; cancelled=r['status']=='ANULADA'; overdue=(not paid and not cancelled and (r['due_date'] or '') < today)
         status='VENCIDA' if overdue else (r['status'] or 'PENDIENTE'); cls='bad' if overdue else 'ok' if paid else 'warn'
         collect='' if paid or cancelled else f'<a class="btn green" href="{url_for("invoice_detail",id=r["id"])}#registrar-pago">Cobrar</a>'
-        promise='' if paid or cancelled else f'<a class="btn" style="background:#f97316;border-color:#fdba74;color:#fff" href="{url_for("promise_new",customer_id=r["customer_id"])}" aria-label="Promesa de pago para {esc(r["customer"])}">Promesa de pago</a>'
-        trs.append(f'<tr><td><b>IF-{r["id"]:06d}</b></td><td>{esc(r["customer"])}</td><td>{esc(r["period"] or "-")}</td><td>{esc(r["concept"])}</td><td>RD&#36;{float(r["amount"]):,.2f}</td><td>{esc(r["issue_date"])}</td><td>{esc(r["due_date"])}</td><td><span class="tag {cls}">{esc(status)}</span></td><td style="white-space:nowrap"><a class="btn blue" href="{url_for("invoice_detail",id=r["id"])}">Ver</a> {collect} {promise}</td></tr>')
+        promise='' if paid or cancelled else f'<a class="btn" style="background:#f97316;border-color:#fdba74;color:#fff;padding:6px 9px;font-size:11px" href="{url_for("promise_new",customer_id=r["customer_id"])}" aria-label="Promesa de pago para {esc(r["customer"])}">Promesa de pago</a>'
+        trs.append(f'<tr><td><b>IF-{r["id"]:06d}</b></td><td>{esc(r["customer"])}</td><td>{esc(r["period"] or "-")}</td><td>{esc(r["concept"])}</td><td>RD&#36;{float(r["amount"]):,.2f}</td><td>{esc(r["issue_date"])}</td><td>{esc(r["due_date"])}</td><td><span class="tag {cls}">{esc(status)}</span></td><td style="white-space:nowrap">{promise} <a class="btn blue" href="{url_for("invoice_detail",id=r["id"])}">Ver</a> {collect}</td></tr>')
     body=f'''<div class="head"><div><h1>Facturas</h1><p>Facturación, impresión, cobros y comprobantes</p></div></div>
     <div class="panel" id="nueva-factura"><h3>Nueva factura</h3><form class="toolbar" method="post">
     <div class="invoice-client-picker" style="flex:1 1 100%;min-width:0">

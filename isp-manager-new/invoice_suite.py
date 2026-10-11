@@ -45,7 +45,7 @@ def invoices_plus():
         status='VENCIDA' if overdue else (r['status'] or 'PENDIENTE'); cls='bad' if overdue else 'ok' if paid else 'warn'
         collect='' if paid or cancelled else f'<a class="btn green" href="{url_for("invoice_detail",id=r["id"])}#registrar-pago">Cobrar</a>'
         promise='' if paid or cancelled else f'<a class="btn" style="background:#f97316;border-color:#fdba74;color:#fff;padding:6px 9px;font-size:11px" href="{url_for("promise_new",customer_id=r["customer_id"])}" aria-label="Promesa de pago para {esc(r["customer"])}">Promesa de pago</a>'
-        trs.append(f'<tr><td><b>IF-{r["id"]:06d}</b></td><td>{esc(r["customer"])}</td><td>{esc(r["period"] or "-")}</td><td>{esc(r["concept"])}</td><td>RD&#36;{float(r["amount"]):,.2f}</td><td>{esc(r["issue_date"])}</td><td>{esc(r["due_date"])}</td><td><span class="tag {cls}">{esc(status)}</span></td><td style="white-space:nowrap">{promise} <a class="btn blue" href="{url_for("invoice_detail",id=r["id"])}">Ver</a> {collect}</td></tr>')
+        trs.append(f'<tr><td><b>IF-{r["id"]:06d}</b></td><td>{esc(r["customer"])}</td><td>{esc(r["period"] or "-")}</td><td>{esc(r["concept"])}</td><td>RD&#36;{float(r["amount"]):,.2f}</td><td>{esc(r["issue_date"])}</td><td>{esc(r["due_date"])}</td><td><span class="tag {cls}">{esc(status)}</span></td><td class="invoice-actions"><div class="invoice-action-buttons">{promise} <a class="btn blue" href="{url_for("invoice_detail",id=r["id"])}">Ver</a> {collect}</div></td></tr>')
     body=f'''<div class="head"><div><h1>Facturas</h1><p>Facturación, impresión, cobros y comprobantes</p></div></div>
     <div class="panel" id="nueva-factura"><h3>Nueva factura</h3><form class="toolbar" method="post">
     <div class="invoice-client-picker" style="flex:1 1 100%;min-width:0">
@@ -57,7 +57,33 @@ def invoices_plus():
     <input class="field" name="concept" value="Servicio de Internet" required><input class="field" id="invoice-amount" value="{esc(selected_amount)}" type="number" step="0.01" name="amount" placeholder="Monto" required>
     <input class="field" type="month" name="period" value="{period}" required><input class="field" type="date" name="issue_date" value="{today}" required><input class="field" type="date" name="due_date" value="{today}" required>
     <button class="btn green">Crear factura</button></form></div>
-    <div class="panel"><table class="table"><tr><th>Factura</th><th>Cliente</th><th>Período</th><th>Concepto</th><th>Monto</th><th>Emisión</th><th>Vence</th><th>Estado</th><th>Acciones</th></tr>{''.join(trs) or '<tr><td colspan="9" class="muted">No hay facturas.</td></tr>'}</table></div>'''
+    <div class="panel invoice-list-panel"><table class="table invoice-fit-table"><tr><th>Factura</th><th>Cliente</th><th>Período</th><th>Concepto</th><th>Monto</th><th>Emisión</th><th>Vence</th><th>Estado</th><th>Acciones</th></tr>{''.join(trs) or '<tr><td colspan="9" class="muted">No hay facturas.</td></tr>'}</table></div>'''
+    body = '''<style>
+    .invoice-list-panel{min-width:0;max-width:100%;overflow:visible}
+    .invoice-fit-table{width:100%;max-width:100%;table-layout:fixed}
+    .invoice-fit-table th,.invoice-fit-table td{padding:8px 5px;font-size:11px;white-space:normal;overflow-wrap:anywhere;vertical-align:middle}
+    .invoice-fit-table th:nth-child(1){width:10%}.invoice-fit-table th:nth-child(2){width:14%}
+    .invoice-fit-table th:nth-child(3){width:8%}.invoice-fit-table th:nth-child(4){width:12%}
+    .invoice-fit-table th:nth-child(5){width:11%}.invoice-fit-table th:nth-child(6),.invoice-fit-table th:nth-child(7){width:9%}
+    .invoice-fit-table th:nth-child(8){width:10%}.invoice-fit-table th:nth-child(9){width:17%}
+    .invoice-action-buttons{display:flex;flex-wrap:wrap;align-items:center;gap:4px}
+    .invoice-fit-table .btn{padding:6px 8px;font-size:11px;max-width:100%;white-space:normal;text-align:center}
+    .invoice-fit-table .tag{font-size:10px;padding:4px 6px;max-width:100%;white-space:normal}
+    #nueva-factura{min-width:0;max-width:100%}#nueva-factura .toolbar>*{min-width:0;max-width:100%}
+    #nueva-factura .toolbar>.field{flex:1 1 145px;width:145px}
+    @media(max-width:700px){
+      .invoice-fit-table,.invoice-fit-table tbody,.invoice-fit-table tr,.invoice-fit-table td{display:block;width:100%}
+      .invoice-fit-table tr:has(th){display:none}
+      .invoice-fit-table tr{padding:10px;margin-bottom:10px;border:1px solid #22374e;border-radius:10px}
+      .invoice-fit-table td{display:grid;grid-template-columns:82px minmax(0,1fr);gap:8px;border:0;padding:5px 0}
+      .invoice-fit-table td::before{font-size:10px;color:#92a5b8;font-weight:700}
+      .invoice-fit-table td:nth-child(1)::before{content:"Factura"}.invoice-fit-table td:nth-child(2)::before{content:"Cliente"}
+      .invoice-fit-table td:nth-child(3)::before{content:"Período"}.invoice-fit-table td:nth-child(4)::before{content:"Concepto"}
+      .invoice-fit-table td:nth-child(5)::before{content:"Monto"}.invoice-fit-table td:nth-child(6)::before{content:"Emisión"}
+      .invoice-fit-table td:nth-child(7)::before{content:"Vence"}.invoice-fit-table td:nth-child(8)::before{content:"Estado"}
+      .invoice-fit-table td:nth-child(9)::before{content:"Acciones"}
+    }
+    </style>''' + body
     body += "\n    <script>\n    (() => {\n      const search = document.getElementById('invoice-client-search');\n      const select = document.getElementById('invoice-customer');\n      const status = document.getElementById('invoice-client-results');\n      const amount = document.getElementById('invoice-amount');\n      const options = Array.from(select.options).slice(1);\n      const normalize = value => value.normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().trim();\n      search.addEventListener('input', () => {\n        const query = normalize(search.value);\n        const terms = query.split(/\\s+/).filter(Boolean);\n        const selected = select.value;\n        const matches = options.filter(option => terms.every(term => normalize(option.dataset.search).includes(term)));\n        select.replaceChildren(new Option(matches.length ? 'Selecciona un cliente' : 'No se encontraron clientes', ''), ...matches);\n        if (selected && matches.some(option => option.value === selected)) select.value = selected;\n        else { select.value = ''; if (selected) amount.value = ''; }\n        select.size = query ? Math.min(6, matches.length + 1) : 1;\n        status.textContent = query ? matches.length + ' cliente(s) encontrado(s). Selecciona uno de la lista.' : '';\n      });\n      select.addEventListener('change', () => {\n        if (select.value) {\n          select.size = 1;\n          status.textContent = 'Cliente seleccionado: ' + select.selectedOptions[0].textContent;\n        }\n      });\n    })();\n    </script>\n"
     return base.shell('Facturas',body,'invoices')
 

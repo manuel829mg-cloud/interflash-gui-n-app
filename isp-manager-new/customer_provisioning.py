@@ -1,4 +1,6 @@
 import re
+import unicodedata
+from html import escape
 from datetime import datetime
 from flask import request, jsonify
 import app as base
@@ -76,18 +78,44 @@ def profile_state_v2():
         c.close()
 
 
+def _commercial_profiles(c, router):
+    """Only named commercial Plan profiles with a unique active price."""
+    plans = c.execute('SELECT * FROM plans WHERE active=1').fetchall()
+    rows = c.execute("SELECT name,MAX(rate_limit) rate_limit FROM push_ppp_profiles WHERE router_name=? GROUP BY name ORDER BY name", (router,)).fetchall()
+    mappings = c.execute('SELECT plan_id,profile_name FROM plan_profile_map WHERE router_name=?', (router,)).fetchall()
+    def normalized(value):
+        return ''.join(ch for ch in unicodedata.normalize('NFKD', str(value or '').casefold()) if not unicodedata.combining(ch))
+    result = []
+    for row in rows:
+        name = row['name'] or ''
+        if not re.match(r'^Plan\s+\d+\b', name, re.I):
+            continue
+        mapped = {m['plan_id'] for m in mappings if m['profile_name'] == name}
+        matches = [p for p in plans if p['id'] in mapped]
+        if not matches:
+            text = normalized(name)
+            matches = [p for p in plans if re.search(r'(?<!\w)' + re.escape(normalized(p['name'])) + r'(?!\w)', text)
+                       and re.search(r'(?<!\d)' + str(int(p['download_mbps'])) + r'\s*M\b', name, re.I)]
+        prices = {float(p['price']) for p in matches}
+        if len(prices) != 1:
+            continue
+        price = prices.pop()
+        result.append({'name': name, 'rate_limit': row['rate_limit'], 'price': price,
+                       'label': f'{name} · RD${price:,.0f}'})
+    return result
+
+
 def profiles_api():
     if not base.logged_in():
         return jsonify(ok=False, error='login-required'), 401
     ensure_schema()
     router = str(request.args.get('router') or 'CCR2116')[:80]
     c = base.db()
-    rows = c.execute('''SELECT name,MAX(rate_limit) rate_limit,MAX(local_address) local_address,MAX(remote_address) remote_address
-                        FROM push_ppp_profiles
-                        WHERE router_name=? AND COALESCE(name,'')<>''
-                        GROUP BY name ORDER BY name''', (router,)).fetchall()
-    c.close()
-    return jsonify(ok=True, router=router, items=[dict(x) for x in rows], count=len(rows))
+    try:
+        items = _commercial_profiles(c, router)
+    finally:
+        c.close()
+    return jsonify(ok=True, router=router, items=items, count=len(items))
 
 
 def profiles_refresh_api():
@@ -214,7 +242,7 @@ def _patch_agent_builder():
 def _profile_widget(options, outer_div=True):
     inner = f'''<label>Perfil MikroTik
       <div class="if-profile-row"><select id="if-profile-select" name="mikrotik_profile">{options}</select><button class="btn blue" type="button" onclick="IFPROFILE.refresh()">↻ Perfiles</button></div>
-      <small id="if-profile-note" class="muted">Perfiles sincronizados directamente desde el CCR2116.</small>
+      <small id="if-profile-note" class="muted">Perfiles comerciales nuevos con precio del catálogo de planes.</small>
     </label>'''
     return f'<div class="if-profile-field">{inner}</div>' if outer_div else inner
 
@@ -257,9 +285,9 @@ window.IFPROFILE=(function(){
     const emptyText=s.options.length?s.options[0].textContent:'Sin perfil';
     s.innerHTML='';
     const z=document.createElement('option');z.value='';z.textContent=emptyText||'Sin perfil';s.appendChild(z);
-    (d.items||[]).forEach(x=>{const o=document.createElement('option');o.value=x.name;o.textContent=x.name+(x.rate_limit?' · '+x.rate_limit:'');s.appendChild(o);});
+    (d.items||[]).forEach(x=>{const o=document.createElement('option');o.value=x.name;o.textContent=x.label||x.name;s.appendChild(o);});
     if([...s.options].some(o=>o.value===keep))s.value=keep;
-    note((d.count||0)+' perfil(es) disponibles desde '+router());
+    note((d.count||0)+' perfil(es) comerciales con precio.');
   }
   async function refresh(){
     note('Consultando perfiles del MikroTik...');
@@ -307,6 +335,28 @@ window.IFPROFILE=(function(){
 })();
 </script>
 '''
+    select_pattern = re.compile(r'(<select id="if-profile-select" name="mikrotik_profile">)(.*?)(</select>)', re.S)
+    c = base.db()
+    try:
+        router_field = re.search(r'<select name="router_name">(.*?)</select>', html, re.S)
+        selected_router = re.search(r'<option value="([^"]+)" selected', router_field.group(1)) if router_field else None
+        router = selected_router.group(1) if selected_router else 'CCR2116'
+        items = _commercial_profiles(c, router)
+    finally:
+        c.close()
+    def commercial_options(match):
+        selected = re.search(r'<option value="([^"]*)" selected[^>]*>', match.group(2))
+        current = selected.group(1) if selected else ''
+        options = '<option value="">Selecciona un perfil comercial</option>'
+        allowed = {escape(x['name'], quote=True) for x in items}
+        if current and current not in allowed:
+            options += f'<option value="{current}" selected hidden>Perfil actual conservado</option>'
+        for item in items:
+            value = escape(item['name'], quote=True)
+            chosen = ' selected' if current == value else ''
+            options += f'<option value="{value}"{chosen}>{escape(item["label"])}</option>'
+        return match.group(1) + options + match.group(3)
+    html = select_pattern.sub(commercial_options, html)
     return html + extra
 
 

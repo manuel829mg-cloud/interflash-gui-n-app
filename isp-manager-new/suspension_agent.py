@@ -12,9 +12,8 @@ def _root_url():
 
 
 def _agent_rsc(root, token):
-    template = '''/system scheduler remove [find where name="interflash-agent-scheduler"]
-/system script remove [find where name="interflash-agent"]
-/system script add name="interflash-agent" policy=read,write,test,sensitive source={
+    template = '''/system script remove [find where name="interflash-agent-candidate"]
+/system script add name="interflash-agent-candidate" policy=read,write,test,sensitive source={
   :local base "__ROOT__";
   :local token "__TOKEN__";
   :local hdr ("X-InterFlash-Agent: " . $token);
@@ -27,11 +26,13 @@ def _agent_rsc(root, token):
     }
   } on-error={ :log warning "INTERFLASH-AGENT: error HTTPS al consultar orden"; :return; }
   :if ([:len $raw] = 0) do={ :log warning "INTERFLASH-AGENT: respuesta vacia"; :return; }
-  :local d;
-  :do { :set d [:deserialize from=json value=$raw]; } on-error={
+  :local d [:toarray ""];
+  :do {
+    :set d [:deserialize from=json value=$raw];
+  } on-error={
     :log warning "INTERFLASH-AGENT: respuesta JSON invalida";
     :return;
-  };
+  }
   :if ([:typeof $d] != "array") do={ :log warning "INTERFLASH-AGENT: JSON inesperado"; :return; }
   :if (($d->"ok") != true) do={ :return; }
   :local id ($d->"id");
@@ -39,7 +40,7 @@ def _agent_rsc(root, token):
   :local action ($d->"action");
   :local user ($d->"pppoe");
   :local p ($d->"payload");
-  :if ([:typeof $p] != "array") do={ :set p [:toarray ""]; }
+  :if ([:typeof $p] != "array") do={ :log warning "INTERFLASH-AGENT: payload invalido"; :return; }
   :local ok false;
   :local result "ACCION_NO_SOPORTADA";
   :do {
@@ -149,6 +150,9 @@ def _agent_rsc(root, token):
     /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=$data output=none check-certificate=yes;
   } on-error={ :log warning ("INTERFLASH-AGENT: fallo confirmando orden " . $id); };
 }
+/system scheduler remove [find where name="interflash-agent-scheduler"]
+/system script remove [find where name="interflash-agent"]
+/system script set [find where name="interflash-agent-candidate"] name="interflash-agent"
 /system scheduler add name="interflash-agent-scheduler" interval=5s on-event="/system script run interflash-agent" policy=read,write,test,sensitive start-time=startup disabled=yes
 :log info "INTERFLASH-AGENT-INSTALLED"
 '''

@@ -299,46 +299,25 @@ window.IFIP=(function(){
     render();
   }
   async function refresh(){
-    list().innerHTML='<div class="if-ip-loading"><span class="if-ip-spinner"></span>Consultando MikroTik...</div>';
-    meta().textContent='Leyendo pools e IPs ocupadas en tiempo real';
-    let before='';
-    try{
-      try{const old=await read();before=old.updated_at||'';}catch(_e){}
-      const rr=await fetch('/api/mikrotik/free-ips/refresh?router='+encodeURIComponent(router()),{method:'POST',headers:{'Accept':'application/json'},cache:'no-store'});
-      const rd=await rr.json();
-      if(!rd.ok) throw new Error(rd.error||'No se pudo solicitar la consulta');
-      before=rd.before||before;
-      for(let i=0;i<120;i++){
-        await sleep(1000);
-        if(i%3===0 && rd.command_id){
-          try {
-            const sr=await fetch('/api/mikrotik/free-ips/refresh/status?router='+encodeURIComponent(router())+'&command_id='+encodeURIComponent(rd.command_id),{headers:{Accept:'application/json'},cache:'no-store'});
-            const st=await sr.json();
-            if(st.ok && (st.status==='ERROR'||st.status==='CANCELADO')){
-              items=[];lastData=null;
-              meta().textContent='Sincronización fallida · '+st.status;
-              list().innerHTML='<div class="if-ip-empty">El agente no completó la lectura de IPs. Revisa la cola MikroTik y vuelve a intentar.</div>';
-              return;
-            }
-          }catch(_e){}
-        }
-        // Large routers can take over a minute to send hundreds of pool/secret requests.
-        // A 409 means the router snapshot is still incomplete or stale.
-        // Keep waiting instead of aborting the refresh immediately.
-        let d;
-        try {
-          d=await read();
-        } catch(e) {
-          continue;
-        }
-        if(d.updated_at&&d.updated_at!==before&&d.pools>0){
-          applyData(d,'actualizado ahora');
+    list().innerHTML='<div class="if-ip-loading"><span class="if-ip-spinner"></span>Consultando IPs sincronizadas...</div>';
+    meta().textContent='Leyendo pools e IPs ocupadas del MikroTik';
+    // The separate pool-sync scheduler uploads snapshots every 10 minutes.
+    // Do not enqueue SYNC_POOLS: the command agent may be disabled and leave
+    // this modal spinning for 120 seconds with an unprocessable command.
+    for(let i=0;i<6;i++){
+      try {
+        const d=await read();
+        applyData(d,'sincronización verificada');
+        return;
+      } catch(e) {
+        if(i===5){
+          items=[];lastData=null;
+          meta().textContent='Sin IPs verificadas';
+          list().innerHTML='<div class="if-ip-empty">La sincronización de pools no está actualizada. Comprueba el programador interflash-pool-sync-scheduler del MikroTik y pulsa ↻ para reintentar. No se mostrarán IPs sin verificar.</div>';
           return;
         }
+        await sleep(2000);
       }
-      items=[];lastData=null;meta().textContent='Sin sincronización completa confirmada (120 s)';list().innerHTML='<div class="if-ip-empty">No se confirmó la actualización del MikroTik. No se mostrarán IPs hasta verificar la sincronización.</div>';
-    }catch(e){
-      items=[];lastData=null;meta().textContent='Sin IPs verificadas';list().innerHTML='<div class="if-ip-empty">No se pudo verificar la lista actualizada de IPs ocupadas. Intenta sincronizar de nuevo.</div>';
     }
   }
   function render(){

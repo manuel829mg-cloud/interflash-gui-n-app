@@ -17,7 +17,7 @@ def _ipv4(value):
 
 def _validate(router, ip, customer_id=None):
     if not ip:
-        return 'Selecciona una IP libre antes de guardar el cliente.'
+        return None  # IP opcional: el router puede asignarla dinamicamente si no hay PBR.
     if not _ipv4(ip):
         return 'La IP remota no es una dirección IPv4 válida.'
     free_ip_picker.ensure_schema()
@@ -91,6 +91,10 @@ def setup(app):
                         flash('IP duplicada: ya pertenece a otro cliente de Inter Flash.')
                         return redirect(url_for('customer_edit', id=cid)), 409
                     return _original(*args, **kwargs)
+            pbr = (request.form.get('pbr_line') or '').strip()
+            if pbr and not ip:
+                flash('Selecciona una IP libre para aplicar PBR.')
+                return redirect(url_for('customer_edit', id=cid) if cid else url_for('customer_new')), 409
             error = _validate(router, ip, cid)
             if error:
                 flash(error)

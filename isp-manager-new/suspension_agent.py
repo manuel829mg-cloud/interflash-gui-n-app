@@ -19,10 +19,13 @@ def _agent_rsc(root, token):
   :local token "__TOKEN__";
   :local hdr ("X-InterFlash-Agent: " . $token);
   :local r [/tool fetch url=($base . "/api/mikrotik/agent/next?router=CCR2116") http-method=get http-header-field=$hdr output=user check-certificate=yes as-value];
-  :local d [:deserialize from=json value=($r->"data")];
+  :local raw ($r->"data");
+  :if ([:len $raw] = 0) do={ :return; }
+  :local d [:deserialize from=json value=$raw];
+  :if ([:typeof $d] != "array") do={ :return; }
   :if (($d->"ok") != true) do={ :return; }
   :local id ($d->"id");
-  :if ($id = 0) do={ :return; }
+  :if (([:typeof $id] = "nil") || ($id = 0)) do={ :return; }
   :local action ($d->"action");
   :local user ($d->"pppoe");
   :local p ($d->"payload");

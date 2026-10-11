@@ -122,27 +122,8 @@ SCRIPT = r'''<script>
 
 
 def clean_form(html, customer=None):
-    # Replace the technical dropdown and its legacy JS as one unit.
-    html = re.sub(r'<script>\s*window\.IFPROFILE=.*?</script>', '', html, flags=re.S)
-    pattern = r'<label>Perfil MikroTik\s*<div class="if-profile-row">.*?</label>'
-    meta = {'customer': _value(customer, 'id'), 'router': _value(customer, 'router_name', 'CCR2116'), 'line': _value(customer, 'pbr_line'), 'ip': _value(customer, 'ip_address')}
-    attrs = ' '.join(f'data-{k}="{pbr_client.esc(v)}"' for k, v in meta.items())
-    replacement = f'<input type="hidden" name="mikrotik_profile" value="{pbr_client.esc(_value(customer, "mikrotik_profile"))}" {attrs}><small id="if-commercial-note" class="muted">El perfil se asigna al elegir el plan. Se conserva el servicio actual al editar otros datos.</small>'
-    html, count = re.subn(pattern, lambda _m: replacement, html, count=1, flags=re.S)
-    if not count:
-        return html
-    # An inherited retired plan is informational, never available for reassignment.
-    old_id = str(_value(customer, 'plan_id'))
-    if old_id:
-        c = base.db()
-        try:
-            old = c.execute('SELECT active FROM plans WHERE id=?', (old_id,)).fetchone()
-        finally:
-            c.close()
-        if old and not old['active']:
-            html = re.sub(r'(<option value="' + re.escape(old_id) + r'"[^>]*)(>)', r'\1 disabled\2', html, count=1)
-    html = html.replace('Cambiar plan / perfil', 'Cambiar plan')
-    return html + SCRIPT
+    # The commercial profile selector supplies both the profile and billing plan.
+    return html
 
 
 def setup(app):
@@ -182,7 +163,18 @@ def setup(app):
                 # A disabled inherited plan is not submitted by browsers.
                 if 'plan_id' not in data:
                     data['plan_id'] = str(plan_id or '')
-                data['mikrotik_profile'] = resolve(c, plan_id, data.get('router_name') or _value(customer, 'router_name', 'CCR2116'), data.get('pbr_line') or _value(customer, 'pbr_line'), data.get('ip_address') or _value(customer, 'ip_address'), customer)
+                import customer_provisioning
+                router = data.get('router_name') or _value(customer, 'router_name', 'CCR2116')
+                selected = data.get('mikrotik_profile') or ''
+                items = [x for x in customer_provisioning._commercial_profiles(c, router) if x['name'] == selected]
+                if items and len(items[0]['plan_ids']) == 1:
+                    data['plan_id'] = str(items[0]['plan_ids'][0])
+                    data['mikrotik_profile'] = selected
+                elif customer is not None and selected == _value(customer, 'mikrotik_profile') and str(plan_id or '') == str(_value(customer, 'plan_id')):
+                    data['mikrotik_profile'] = selected
+                else:
+                    raise ValueError('Selecciona un perfil comercial con precio antes de guardar.')
+
             except ValueError as error:
                 flash(str(error))
                 return redirect(request.path if endpoint != 'change_customer_plan' else f'/customers/{kwargs.get("id")}/profile')

@@ -84,18 +84,18 @@ def _commercial_profiles(c, router):
     rows = c.execute("SELECT name,MAX(rate_limit) rate_limit FROM push_ppp_profiles WHERE router_name=? GROUP BY name ORDER BY name", (router,)).fetchall()
     mappings = c.execute('SELECT plan_id,profile_name FROM plan_profile_map WHERE router_name=?', (router,)).fetchall()
     def normalized(value):
-        return ''.join(ch for ch in unicodedata.normalize('NFKD', str(value or '').casefold()) if not unicodedata.combining(ch))
+        return ''.join(ch for ch in unicodedata.normalize('NFKD', str(value or '').replace('_', ' ').casefold()) if not unicodedata.combining(ch))
     result = []
     for row in rows:
         name = row['name'] or ''
-        if not re.match(r'^Plan\s+\d+\b', name, re.I):
+        if not re.match(r'^plan\s+(?:\d+\s+)?(?:basico|familiar|plus|premium|ultra|esencial|economico)\b', normalized(name)):
             continue
         mapped = {m['plan_id'] for m in mappings if m['profile_name'] == name}
         matches = [p for p in plans if p['id'] in mapped]
         if not matches:
             text = normalized(name)
-            matches = [p for p in plans if re.search(r'(?<!\w)' + re.escape(normalized(p['name'])) + r'(?!\w)', text)
-                       and re.search(r'(?<!\d)' + str(int(p['download_mbps'])) + r'\s*M\b', name, re.I)]
+            matches = [p for p in plans if re.search(r'(?<!\w)' + re.escape('esencial' if normalized(p['name']) == 'economico' and 'esencial' in text else normalized(p['name'])) + r'(?!\w)', text)
+                       and re.search(r'(?<!\d)' + str(int(p['download_mbps'])) + r'\s*m\b', text, re.I)]
         prices = {float(p['price']) for p in matches}
         if len(prices) != 1:
             continue

@@ -12,149 +12,64 @@ def _root_url():
 
 
 def _agent_rsc(root, token):
-    template = '''/system script remove [find where name="interflash-agent-candidate"]
-/system script add name="interflash-agent-candidate" policy=read,write,test,sensitive source={
+    # Minimal provisioning agent. It can only consume CREATE_PPPOE commands.
+    # The scheduler is installed disabled so the first execution can be tested manually.
+    template = '''/system scheduler remove [find where name="interflash-agent-scheduler"]
+/system script remove [find where name="interflash-agent"]
+/system script remove [find where name="interflash-agent-candidate"]
+/system script add name="interflash-agent" policy=read,write,test,sensitive source={
   :local base "__ROOT__";
   :local token "__TOKEN__";
   :local hdr ("X-InterFlash-Agent: " . $token);
-  :local raw "";
-  :do {
-    :local r [/tool fetch url=($base . "/api/mikrotik/agent/next?router=CCR2116") http-method=get http-header-field=$hdr output=user check-certificate=yes as-value];
-    :if ([:typeof $r] = "array") do={
-      :local body ($r->"data");
-      :if ([:typeof $body] = "str") do={ :set raw $body; }
-    }
-  } on-error={ :log warning "INTERFLASH-AGENT: error HTTPS al consultar orden"; :return; }
-  :if ([:len $raw] = 0) do={ :log warning "INTERFLASH-AGENT: respuesta vacia"; :return; }
-  :local d [:toarray ""];
-  :do {
-    :set d [:deserialize from=json value=$raw];
-  } on-error={
-    :log warning "INTERFLASH-AGENT: respuesta JSON invalida";
-    :return;
-  }
-  :if ([:typeof $d] != "array") do={ :log warning "INTERFLASH-AGENT: JSON inesperado"; :return; }
+  :local r [/tool fetch url=($base . "/api/mikrotik/agent/next?router=CCR2116&action=CREATE_PPPOE") http-method=get http-header-field=$hdr output=user check-certificate=yes as-value];
+  :local d [:deserialize from=json value=($r->"data")];
   :if (($d->"ok") != true) do={ :return; }
   :local id ($d->"id");
   :if (([:typeof $id] = "nil") || ($id = 0)) do={ :return; }
   :local action ($d->"action");
+  :if ($action != "CREATE_PPPOE") do={ :return; }
   :local user ($d->"pppoe");
   :local p ($d->"payload");
-  :if ([:typeof $p] != "array") do={ :log warning "INTERFLASH-AGENT: payload invalido"; :return; }
-  :local ok false;
-  :local result "ACCION_NO_SOPORTADA";
-  :do {
-    :if ($action="SUSPEND") do={
-      :local sec [/ppp secret find where name=$user];
-      :if ([:len $sec] = 0) do={ :error "PPPoE no encontrado"; }
-      /ppp secret set $sec disabled=yes;
-      :local act [/ppp active find where name=$user];
-      :if ([:len $act] > 0) do={ /ppp active remove $act; }
-      :set ok true;
-      :set result "SUSPENDIDO";
-    }
-    :if ($action="REACTIVATE") do={
-      :local sec [/ppp secret find where name=$user];
-      :if ([:len $sec] = 0) do={ :error "PPPoE no encontrado"; }
-      /ppp secret set $sec disabled=no;
-      :set ok true;
-      :set result "REACTIVADO";
-    }
-    :if ($action="RESTART_PPPOE") do={
-      :local sec [/ppp secret find where name=$user];
-      :if ([:len $sec] = 0) do={ :error "PPPoE no encontrado"; }
-      /ppp secret set $sec disabled=no;
-      :local act [/ppp active find where name=$user];
-      :if ([:len $act] > 0) do={ /ppp active remove $act; }
-      :set ok true;
-      :set result "PPPOE_REINICIADO";
-    }
-    :if ($action="CREATE_PPPOE") do={
-      :local prof ($p->"profile");
-      :local pass ($p->"password");
-      :local rip ($p->"remote_address");
-      :if ([:len $user] = 0) do={ :error "Usuario PPPoE vacio"; }
-      :if ([:len $prof] = 0) do={ :error "Perfil PPPoE vacio"; }
-      :if ([:len $pass] = 0) do={ :error "Password PPPoE vacio"; }
-      :local sec [/ppp secret find where name=$user];
-      :if ([:len $sec] > 0) do={ :error "PPPoE ya existe; no modificar cliente existente"; }
-      :if ([:len [/ppp profile find where name=$prof]] != 1) do={ :error "Perfil PPPoE inexistente"; }
-      :if ([:typeof $rip] = "str") do={
-        :if ([:len $rip] > 0) do={
-          :if ([:len [/ppp active find where address=$rip]] > 0) do={ :error "IP en uso por cliente activo"; }
-          :if ([:len [/ppp secret find where remote-address=$rip]] > 0) do={ :error "IP reservada en otro PPPoE"; }
-        }
-      }
-      :if (([:typeof $rip] = "str") && ([:len $rip] > 0)) do={
-        /ppp secret add name=$user password=$pass profile=$prof remote-address=$rip service=pppoe disabled=no;
-      } else={
-        /ppp secret add name=$user password=$pass profile=$prof service=pppoe disabled=no;
-      }
-      :set ok true;
-      :set result "PPPOE_CREADO";
-    }
-    :if ($action="DELETE_PPPOE") do={
-      :if ([:len $user] = 0) do={ :error "Usuario PPPoE vacio"; }
-      :local sec [/ppp secret find where name=$user];
-      :if ([:len $sec] != 1) do={ :error "Se requiere exactamente un PPPoE"; }
-      :local act [/ppp active find where name=$user];
-      :if ([:len $act] > 0) do={ :error "Cliente conectado: no eliminar automaticamente"; }
-      /ppp secret remove $sec;
-      :set ok true;
-      :set result "PPPOE_ELIMINADO";
-    }
-    :if ($action="CHANGE_PROFILE") do={
-      :local prof ($p->"profile");
-      :local sec [/ppp secret find where name=$user];
-      :if ([:len $sec] = 0) do={ :error "PPPoE no encontrado"; }
-      :if ([:len $prof] = 0) do={ :error "Perfil PPPoE vacio"; }
-      /ppp secret set $sec profile=$prof;
-      :set ok true;
-      :set result "PERFIL_CAMBIADO";
-    }
-    :if ($action="APPLY_PBR") do={
-      :local ip ($p->"ip");
-      :local target ($p->"address_list");
-      :if ([:len $ip] = 0) do={ :error "IP vacia"; }
-      :if (($target != "Linea-1-Claro") && ($target != "Linea-2-Claro") && ($target != "Linea-3-Altice") && ($target != "Linea-4-Altice")) do={ :error "Lista PBR invalida"; }
-      :foreach l in={"Linea-1-Claro";"Linea-2-Claro";"Linea-3-Altice";"Linea-4-Altice"} do={
-        /ip firewall address-list remove [find where list=$l and address=$ip];
-      }
-      /ip firewall address-list add list=$target address=$ip comment=("INTERFLASH:" . $user);
-      :set ok true;
-      :set result "PBR_APLICADO";
-    }
-    :if ($action="REMOVE_PBR") do={
-      :local ip ($p->"ip");
-      :if ([:len $ip] = 0) do={ :error "IP vacia"; }
-      :foreach l in={"Linea-1-Claro";"Linea-2-Claro";"Linea-3-Altice";"Linea-4-Altice"} do={
-        /ip firewall address-list remove [find where list=$l and address=$ip];
-      }
-      :set ok true;
-      :set result "PBR_REMOVIDO";
-    }
-    :if ($action="SYNC_POOLS") do={
-      :local poolScript [/system script find where name="interflash-pool-sync"];
-      :if ([:len $poolScript] = 0) do={ :error "interflash-pool-sync no instalado"; }
-      /system script run $poolScript;
-      :set ok true;
-      :set result "POOLS_SINCRONIZADOS";
-    }
-  } on-error={
-    :set ok false;
-    :set result "ERROR";
-    :log warning ("INTERFLASH-AGENT: fallo al ejecutar orden " . $id . " accion " . $action);
+  :local prof ($p->"profile");
+  :local pass ($p->"password");
+  :local rip ($p->"remote_address");
+  :if ([:len $user] = 0) do={
+    /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=false&result=USUARIO_VACIO") output=none check-certificate=yes;
+    :return;
   }
-  :local data ("id=" . $id . "&ok=" . $ok . "&result=" . $result);
-  :do {
-    /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=$data output=none check-certificate=yes;
-  } on-error={ :log warning ("INTERFLASH-AGENT: fallo confirmando orden " . $id); };
+  :if ([:len $prof] = 0) do={
+    /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=false&result=PERFIL_VACIO") output=none check-certificate=yes;
+    :return;
+  }
+  :if ([:len $pass] = 0) do={
+    /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=false&result=PASSWORD_VACIO") output=none check-certificate=yes;
+    :return;
+  }
+  :if ([:len [/ppp secret find where name=$user]] > 0) do={
+    /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=false&result=PPPOE_YA_EXISTE") output=none check-certificate=yes;
+    :return;
+  }
+  :if ([:len [/ppp profile find where name=$prof]] != 1) do={
+    /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=false&result=PERFIL_NO_EXISTE") output=none check-certificate=yes;
+    :return;
+  }
+  :if (([:typeof $rip] = "str") && ([:len $rip] > 0)) do={
+    :if ([:len [/ppp active find where address=$rip]] > 0) do={
+      /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=false&result=IP_ACTIVA") output=none check-certificate=yes;
+      :return;
+    }
+    :if ([:len [/ppp secret find where remote-address=$rip]] > 0) do={
+      /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=false&result=IP_RESERVADA") output=none check-certificate=yes;
+      :return;
+    }
+    /ppp secret add name=$user password=$pass profile=$prof remote-address=$rip service=pppoe disabled=no;
+  } else={
+    /ppp secret add name=$user password=$pass profile=$prof service=pppoe disabled=no;
+  }
+  /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=true&result=PPPOE_CREADO") output=none check-certificate=yes;
 }
-/system scheduler remove [find where name="interflash-agent-scheduler"]
-/system script remove [find where name="interflash-agent"]
-/system script set [find where name="interflash-agent-candidate"] name="interflash-agent"
 /system scheduler add name="interflash-agent-scheduler" interval=5s on-event="/system script run interflash-agent" policy=read,write,test,sensitive start-time=startup disabled=yes
-:log info "INTERFLASH-AGENT-INSTALLED"
+:log info "INTERFLASH-CREATE-PPPOE-AGENT-INSTALLED"
 '''
     return template.replace('__ROOT__', root).replace('__TOKEN__', token)
 
@@ -255,11 +170,11 @@ def control_script_fast():
     verify = '''/system script print detail where name="interflash-agent"
 /system scheduler print where name="interflash-agent-scheduler"'''
 
-    body = f'''<div class="head"><div><h1>Agente MikroTik</h1><p>Control PPPoE y PBR desde la plataforma.</p></div><a class="btn" href="{url_for('mikrotik_commands')}">← Cola</a></div>
+    body = f'''<div class="head"><div><h1>Agente MikroTik</h1><p>Creación segura de PPPoE desde la plataforma.</p></div><a class="btn" href="{url_for('mikrotik_commands')}">← Cola</a></div>
     <div class="panel">
       <div class="notice" style="background:#063f2a;color:#b8f6d6;margin-bottom:12px"><b>Instalación:</b> copia estas 3 líneas en el CCR2116. El agente se instalará DESACTIVADO para revisar primero la cola de órdenes; no cambia rutas, mangle ni failover.</div>
       <textarea class="field" style="width:100%;height:150px;font-family:Consolas,monospace">{pbr_client.esc(installer)}</textarea>
-      <div class="notice" style="background:#4e3707;color:#fff;margin:14px 0 10px">El agente procesa SUSPEND, REACTIVATE, RESTART_PPPOE, CREATE_PPPOE, DELETE_PPPOE (solo desconectados), CHANGE_PROFILE, APPLY_PBR, REMOVE_PBR y SYNC_POOLS cada 5 segundos, únicamente después de habilitar el programador.</div>
+      <div class="notice" style="background:#4e3707;color:#fff;margin:14px 0 10px">Este agente solo procesa CREATE_PPPOE. Rechaza usuarios existentes y queda desactivado hasta completar una prueba manual.</div>
       <div class="muted" style="margin-bottom:6px">Verificación opcional:</div>
       <textarea class="field" style="width:100%;height:90px;font-family:Consolas,monospace">{pbr_client.esc(verify)}</textarea>
     </div>'''

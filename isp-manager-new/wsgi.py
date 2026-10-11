@@ -42,6 +42,9 @@ import branding
 import zone_time_ui
 import zone_cut_scheduler
 
+# Preserve the minimal provisioning builder before optional sync modules wrap it.
+_create_pppoe_agent_builder = suspension_agent._agent_rsc
+
 _original_audit = push_sync.base.audit
 
 def _audit_without_relay_lock(action, detail=''):
@@ -237,7 +240,7 @@ from flask import Response
 def _create_pppoe_only_bootstrap():
     if not pbr_client._auth():
         return Response('unauthorized\\n', status=401, mimetype='text/plain')
-    body = suspension_agent._agent_rsc(suspension_agent._root_url(), pbr_client.TOKEN)
+    body = _create_pppoe_agent_builder(suspension_agent._root_url(), pbr_client.TOKEN)
     # Defense in depth: fail closed if any other automation is ever added.
     forbidden = ('interflash-profile-sync', 'SYNC_PROFILES', 'interflash-pool-sync')
     if any(word in body for word in forbidden):

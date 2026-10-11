@@ -21,7 +21,7 @@ def _agent_rsc(root, token):
   :local base "__ROOT__";
   :local token "__TOKEN__";
   :local hdr ("X-InterFlash-Agent: " . $token);
-  :local r [/tool fetch url=($base . "/api/mikrotik/service-next?router=CCR2116") http-method=get http-header-field=$hdr output=user check-certificate=yes as-value];
+  :local r [/tool fetch url=($base . "/api/mikrotik/service-next?router=CCR2116&after=__AFTER__") http-method=get http-header-field=$hdr output=user check-certificate=yes as-value];
   :local d [:deserialize from=json value=($r->"data")];
   :if (($d->"ok") != true) do={ :return; }
   :local id ($d->"id");
@@ -96,7 +96,7 @@ def _agent_rsc(root, token):
 /system scheduler add name="interflash-agent-scheduler" interval=5s on-event="/system script run interflash-agent" policy=read,write,test,sensitive start-time=startup disabled=yes
 :log info "INTERFLASH-SERVICE-AGENT-V2-INSTALLED"
 '''
-    return template.replace('__ROOT__', root).replace('__TOKEN__', token)
+    return template.replace('__ROOT__', root).replace('__TOKEN__', token).replace('__AFTER__', datetime.now().isoformat(timespec='microseconds'))
 
 
 def bootstrap_rsc():
@@ -199,7 +199,7 @@ def control_script_fast():
     <div class="panel">
       <div class="notice" style="background:#063f2a;color:#b8f6d6;margin-bottom:12px"><b>Instalación:</b> copia estas 3 líneas en el CCR2116. El agente se instalará DESACTIVADO para revisar primero la cola de órdenes; no cambia rutas, mangle ni failover.</div>
       <textarea class="field" style="width:100%;height:150px;font-family:Consolas,monospace">{pbr_client.esc(installer)}</textarea>
-      <div class="notice" style="background:#4e3707;color:#fff;margin:14px 0 10px">Agente v2: procesa CREATE_PPPOE, SUSPEND y REACTIVATE. Suspender deshabilita el usuario y desconecta su sesión activa. Revisa la cola antes de ejecutar; queda desactivado al instalar.</div>
+      <div class="notice" style="background:#4e3707;color:#fff;margin:14px 0 10px">Agente v2: procesa CREATE_PPPOE, SUSPEND y REACTIVATE. Suspender deshabilita el usuario y desconecta su sesión activa. Solo ejecuta órdenes nuevas posteriores a esta instalación; las órdenes antiguas no se ejecutan. Queda desactivado al instalar.</div>
       <div class="muted" style="margin-bottom:6px">Verificación opcional:</div>
       <textarea class="field" style="width:100%;height:90px;font-family:Consolas,monospace">{pbr_client.esc(verify)}</textarea>
     </div>'''
@@ -212,6 +212,11 @@ def service_next():
     if not pbr_client._auth():
         return jsonify(ok=False, error='unauthorized'), 401
     router = (request.args.get('router') or 'CCR2116')[:80]
+    after = request.args.get('after') or ''
+    try:
+        datetime.fromisoformat(after)
+    except ValueError:
+        return jsonify(ok=False, error='installation-cutoff-required'), 400
     c = base.db()
     c.execute('BEGIN IMMEDIATE')
     c.execute("""UPDATE router_commands AS old SET status='CANCELADO',
@@ -223,8 +228,9 @@ def service_next():
           AND newer.id>old.id AND newer.action IN ('SUSPEND','REACTIVATE')
           AND newer.status NOT IN ('CANCELADO','ERROR'))""", (router,))
     row = c.execute("""SELECT * FROM router_commands WHERE router_name=?
-        AND status='PENDIENTE' AND action IN ('CREATE_PPPOE','SUSPEND','REACTIVATE')
-        ORDER BY id LIMIT 1""", (router,)).fetchone()
+        AND status='PENDIENTE' AND created_at>=?
+        AND action IN ('CREATE_PPPOE','SUSPEND','REACTIVATE')
+        ORDER BY id LIMIT 1""", (router, after)).fetchone()
     if not row:
         c.commit(); c.close()
         return jsonify(ok=True, id=0)

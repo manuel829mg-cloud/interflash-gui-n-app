@@ -73,7 +73,8 @@ def _float_power(v):
 
 def _real_state(cu, active_names, secret_disabled):
     local = (cu['status'] or 'ACTIVO').upper()
-    if local == 'SUSPENDIDO':
+    service = str(cu['service_status'] or '').upper() if 'service_status' in cu.keys() else ''
+    if local == 'SUSPENDIDO' or service == 'SUSPENDIDO':
         return 'SUSPENDIDO', 'bad'
     user = (cu['pppoe'] or '').strip()
     if not user:
@@ -259,10 +260,12 @@ def customers_plus():
         client_extra = []
         if r['phone']: client_extra.append(esc(r['phone']))
         if onu_status: client_extra.append(f'ONU: {"⚠ " if onu_bad else ""}{esc(onu_status)} {esc(r["onu_rx"] or "")}')
-        service_action = 'REACTIVATE' if (r['status'] or '').upper() == 'SUSPENDIDO' else 'SUSPEND'
+        service_suspended = state in ('SUSPENDIDO', 'DESHABILITADO')
+        service_action = 'REACTIVATE' if service_suspended else 'SUSPEND'
         service_icon = icon_play if service_action == 'REACTIVATE' else icon_pause
         service_title = 'Reactivar' if service_action == 'REACTIVATE' else 'Suspender'
-        service_cls = 'good' if service_action == 'REACTIVATE' else 'warnx'
+        service_cls = 'service-suspended' if service_suspended else 'service-active'
+        service_label = ('Suspendido · Reactivar cliente' if service_suspended else 'Activo · Suspender cliente')
         wa_btn = f'<a class="ico wa" title="WhatsApp" target="_blank" href="https://wa.me/{wa}">{icon_wa}</a>' if wa else ''
         searchable = search_text(' '.join(str(value or '') for value in (
             r['name'], r['phone'], r['document'], r['pppoe'], r['onu_serial'],
@@ -285,7 +288,7 @@ def customers_plus():
             {wa_btn}
             {map_btn}
             <a class="ico" title="Editar" href="{url_for('customer_edit',id=r['id'])}">{icon_edit}</a>
-            <form method="post" action="{url_for('customer_service_action',id=r['id'],action=service_action)}"><button class="ico {service_cls}" title="{service_title}" onclick="return confirm('¿{service_title} este cliente?')">{service_icon}</button></form>
+            <form method="post" action="{url_for('customer_service_action',id=r['id'],action=service_action)}"><button class="ico {service_cls}" title="{service_label}" aria-label="{service_label}" onclick="return confirm('¿{service_title} este cliente?')">{service_icon}</button></form>
             <form method="post" action="{url_for('customer_service_action',id=r['id'],action='DELETE')}"><button class="ico danger" title="Eliminar" onclick="return confirm('¿Enviar este cliente a la papelera y eliminar su PPPoE del MikroTik?')">{icon_trash}</button></form>'''
         trs.append(f'''<tr class="{row_class}" data-client-search="{esc(searchable)}"{'' if visible else ' hidden'}>
           <td class="c-code"><span>{esc(r['code'] or '#'+str(r['id']))}</span></td>
@@ -315,7 +318,7 @@ def customers_plus():
     .clients-table .icon-actions a.ico.debt-promise,.clients-table .icon-actions a.ico.debt-promise:hover{background-color:#f97316!important;color:#fff!important;border:2px solid #fdba74!important}
     .clients-table .icon-actions a.ico.debt-edit,.clients-table .icon-actions a.ico.debt-edit:hover{background-color:#7c3aed!important;color:#fff!important;border:2px solid #a78bfa!important}
     .clients-table .icon-actions a.ico.debt-pay,.clients-table .icon-actions a.ico.debt-pay:hover{background-color:#16a34a!important;color:#fff!important;border:2px solid #86efac!important}
-    .clients-table .icon-actions a.ico svg{stroke:#fff!important;opacity:1!important}.ico.debt-promise svg{width:28px;height:28px;stroke:#fff;fill:none}.ico.debt-edit svg,.ico.debt-pay svg{width:22px;height:22px}.ico.wa{color:#3ee38f}.ico.warnx{color:#ffcb69}.ico.good{color:#6af0ac}.ico.danger{color:#ff8791}.danger-text{color:#ff7b86}.good-text{color:#5ce3a0}.overdue-row{background:#3b15192e;box-shadow:inset 3px 0 #e34855}.toolbar2{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}.toolbar2 .field{flex:1;min-width:250px}.quick-links{display:flex;gap:8px;flex-wrap:wrap}
+    .clients-table .icon-actions a.ico svg{stroke:#fff!important;opacity:1!important}.ico.debt-promise svg{width:28px;height:28px;stroke:#fff;fill:none}.ico.debt-edit svg,.ico.debt-pay svg{width:22px;height:22px}.ico.service-suspended{background:#4a161b;color:#ff7b86;border-color:#b94350}.ico.service-suspended:hover{background:#65212a;color:#ffacb4}.ico.service-active{background:#063f2a;color:#39e998;border-color:#148854}.ico.service-active:hover{background:#095537;color:#8affc5}.ico.wa{color:#3ee38f}.ico.warnx{color:#ffcb69}.ico.good{color:#6af0ac}.ico.danger{color:#ff8791}.danger-text{color:#ff7b86}.good-text{color:#5ce3a0}.overdue-row{background:#3b15192e;box-shadow:inset 3px 0 #e34855}.toolbar2{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}.toolbar2 .field{flex:1;min-width:250px}.quick-links{display:flex;gap:8px;flex-wrap:wrap}
     @media(max-width:1300px){.c-zone,.c-pay{display:none}.c-client{width:24%}.c-actions{width:20%}}
     @media(max-width:1050px){.c-plan{display:none}.c-client{width:27%}.c-pppoe{width:18%}.c-actions{width:25%}}
     @media(max-width:780px){.clients-table thead{display:none}.clients-table,.clients-table tbody,.clients-table tr,.clients-table td{display:block;width:100%!important}.clients-table tr{background:#0b1725;border:1px solid #22374e;border-radius:12px;margin-bottom:10px;padding:10px}.clients-table td{border:0;padding:5px 0}.c-zone,.c-plan,.c-pay{display:block}.icon-actions{margin-top:6px}}

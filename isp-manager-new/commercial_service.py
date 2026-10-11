@@ -46,9 +46,6 @@ def resolve(c, plan_id, router, line, address, customer=None):
     old_plan = str(_value(customer, 'plan_id'))
     old_profile = str(_value(customer, 'mikrotik_profile'))
     old_router = _value(customer, 'router_name', 'CCR2116') or 'CCR2116'
-    # A normal edit never silently changes a legacy subscriber's service.
-    if customer is not None and str(plan_id or '') == old_plan and router == old_router:
-        return old_profile
     if not plan_id:
         return old_profile
     plan = c.execute('SELECT * FROM plans WHERE id=? AND active=1', (plan_id,)).fetchone()
@@ -58,6 +55,12 @@ def resolve(c, plan_id, router, line, address, customer=None):
     expected = (float(plan['upload_mbps']) * 1000000, float(plan['download_mbps']) * 1000000)
     candidates = [p for p in profiles if _rate(p['rate_limit']) == expected]
     current = next((p for p in profiles if p['name'] == old_profile), None)
+    # A selected commercial plan must match the real profile speed, even if
+    # the database plan was already saved during an unsuccessful attempt.
+    if (customer is not None and str(plan_id or '') == old_plan and router == old_router
+            and current is not None and _rate(current['rate_limit']) == expected):
+        return old_profile
+
     if current and router == old_router:
         candidates = [p for p in candidates if (p['remote_address'], p['local_address']) == (current['remote_address'], current['local_address'])]
     elif address and pbr_client._table_exists(c, 'mikrotik_ip_pools'):
@@ -67,6 +70,15 @@ def resolve(c, plan_id, router, line, address, customer=None):
         candidates = []
     if not candidates:
         raise ValueError(f'Falta un perfil compatible de {plan["download_mbps"]}/{plan["upload_mbps"]} Mbps para este cliente. Sincroniza los perfiles o configura esa velocidad en su pool.')
+    # Use the same commercial catalog as the form's server validation.
+    # A legacy pool-compatible profile must not win alphabetically and then
+    # be rejected as a noncommercial selection by the save wrapper.
+    import customer_provisioning
+    commercial = {item['name'] for item in customer_provisioning._commercial_profiles(c, router)
+                  if len(item['plan_ids']) == 1 and str(item['plan_ids'][0]) == str(plan_id)}
+    candidates = [p for p in candidates if p['name'] in commercial]
+    if not candidates:
+        raise ValueError(f'Falta vincular un perfil comercial de {plan["download_mbps"]}/{plan["upload_mbps"]} Mbps compatible con el pool del cliente. Sincroniza los perfiles después de crearlo.')
     mapped = c.execute('SELECT profile_name FROM plan_profile_map WHERE router_name=? AND plan_id=? AND pbr_line IN (?,\'\') ORDER BY pbr_line DESC', (router, plan_id, line)).fetchall()
     names = {p['name'] for p in candidates}
     for mapping in mapped:

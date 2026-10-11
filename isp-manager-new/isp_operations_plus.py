@@ -284,6 +284,7 @@ def customers_plus():
             <a class="ico debt-pay" title="Registrar pago" aria-label="Registrar pago para {esc(r['name'])}" href="{url_for('invoices',customer_id=r['id'])}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M17 6c-2-2-9-2-9 2 0 5 9 2 9 7 0 4-7 5-10 2"/></svg></a>'''
         else:
             actions_html = f'''<a class="ico invoice-create" title="Generar factura" aria-label="Generar factura para {esc(r['name'])}" href="{url_for('invoices',customer_id=r['id'])}#nueva-factura"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 15h8M12 11v8"/></svg></a>
+            <a class="ico debt-promise" title="Promesa de pago" aria-label="Promesa de pago para {esc(r['name'])}" href="{url_for('promise_new',customer_id=r['id'])}"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="m2 12 4-4 4 2 3-2 5 1 4 4-5 5-3-1-2 2-3-2-2 1-5-6Z"/><path d="m10 10 3 3 4 2M7 13l3 3M12 8l-2 3"/></svg></a>
             <a class="ico" title="Ficha" href="{url_for('customer_profile',id=r['id'])}">{icon_doc}</a>
             {wa_btn}
             {map_btn}

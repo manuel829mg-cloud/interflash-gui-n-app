@@ -229,3 +229,21 @@ mikrotik_ai.setup(app)
 # Reject duplicate or stale PPPoE IP assignments before queuing router changes.
 import ip_assignment_guard
 ip_assignment_guard.setup(app)
+
+# Keep the bootstrap endpoint limited to the CREATE_PPPOE agent.  Register
+# this final handler after all optional modules so legacy profile-sync
+# integrations cannot append commands to the downloaded installer.
+from flask import Response
+def _create_pppoe_only_bootstrap():
+    if not pbr_client._auth():
+        return Response('unauthorized\\n', status=401, mimetype='text/plain')
+    body = suspension_agent._agent_rsc(suspension_agent._root_url(), pbr_client.TOKEN)
+    # Defense in depth: fail closed if any other automation is ever added.
+    forbidden = ('interflash-profile-sync', 'SYNC_PROFILES', 'interflash-pool-sync')
+    if any(word in body for word in forbidden):
+        return Response('unsafe bootstrap content\\n', status=503, mimetype='text/plain')
+    return Response(body, mimetype='text/plain', headers={
+        'Content-Disposition': 'attachment; filename=interflash-bootstrap.rsc',
+        'Cache-Control': 'no-store, no-cache, max-age=0',
+    })
+app.view_functions['mikrotik_bootstrap_rsc'] = _create_pppoe_only_bootstrap

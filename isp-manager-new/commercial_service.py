@@ -61,7 +61,7 @@ def resolve(c, plan_id, router, line, address, customer=None):
             and current is not None and _rate(current['rate_limit']) == expected):
         return old_profile
 
-    if current and router == old_router:
+    if current and router == old_router and current['remote_address'] and current['local_address']:
         candidates = [p for p in candidates if (p['remote_address'], p['local_address']) == (current['remote_address'], current['local_address'])]
     elif address and pbr_client._table_exists(c, 'mikrotik_ip_pools'):
         pools = {p['name'] for p in c.execute('SELECT name,ranges FROM mikrotik_ip_pools WHERE router_name=?', (router,)) if _contains(p['ranges'], address)}

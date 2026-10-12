@@ -71,9 +71,14 @@ def create_promise(customer_id, invoice_id, promise_date, amount, notes, promise
             AND (? IS NULL OR i.id=?)""", (customer_id, invoice_id, invoice_id)).fetchone()[0]
         if not balance or float(balance) <= 0:
             raise ValueError('El cliente no tiene deuda pendiente para esta promesa.')
-        existing = c.execute("SELECT id FROM payment_promises WHERE customer_id=? AND status='PENDIENTE'", (customer_id,)).fetchone()
-        if existing:
-            raise ValueError('Este cliente ya tiene una promesa pendiente. Revísala antes de crear otra.')
+        # A renewed promise replaces earlier pending agreements atomically.
+        # Keep their history, but only the newly accepted deadline stays pending.
+        now = datetime.now()
+        c.execute("""UPDATE payment_promises SET status='VENCIDA'
+            WHERE customer_id=? AND status='PENDIENTE'
+            AND (promise_date < ? OR (promise_date = ? AND COALESCE(promise_time,'23:59') <= ?))""",
+            (customer_id, now.date().isoformat(), now.date().isoformat(), now.strftime('%H:%M')))
+        c.execute("UPDATE payment_promises SET status='CANCELADA' WHERE customer_id=? AND status='PENDIENTE'", (customer_id,))
         pid = c.execute("""INSERT INTO payment_promises
             (customer_id,invoice_id,promise_date,promise_time,amount,status,notes,created_at)
             VALUES(?,?,?,?,?,'PENDIENTE',?,?)""",

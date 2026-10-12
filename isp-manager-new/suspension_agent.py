@@ -48,8 +48,12 @@ def _agent_rsc(root, token):
         :if ($action = "SUSPEND") do={
           :if ([:len [/ppp profile find where name="IF-AVISO-TEST"]] != 1) do={ :error "PERFIL_AVISO_NO_EXISTE"; }
           :if ([/ip proxy get enabled] != true) do={ :error "PROXY_AVISO_DESACTIVADO"; }
-          :if ([:len [/ip firewall filter find where comment="IF-AVISO-TEST bloquear" disabled=no]] != 1) do={ :error "BLOQUEO_AVISO_NO_EXISTE"; }
-          :if ([:len [/ip firewall nat find where comment="IF-AVISO-TEST" disabled=no]] != 1) do={ :error "REDIRECCION_AVISO_NO_EXISTE"; }
+          :local portalRule [/ip firewall filter find where comment="IF-AVISO-TEST bloquear"];
+          :if ([:len $portalRule] != 1) do={ :error "BLOQUEO_AVISO_NO_EXISTE"; }
+          :if ([/ip firewall filter get $portalRule disabled] = true) do={ :error "BLOQUEO_AVISO_NO_EXISTE"; }
+          :local portalRule [/ip firewall nat find where comment="IF-AVISO-TEST"];
+          :if ([:len $portalRule] != 1) do={ :error "REDIRECCION_AVISO_NO_EXISTE"; }
+          :if ([/ip firewall nat get $portalRule disabled] = true) do={ :error "REDIRECCION_AVISO_NO_EXISTE"; }
           :if ($current != "IF-AVISO-TEST") do={ /system script set $saved comment=$current; }
           /ppp secret set $secret profile="IF-AVISO-TEST" disabled=no;
           /ppp active remove [/ppp active find where name=$user];

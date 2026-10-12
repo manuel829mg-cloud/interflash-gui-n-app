@@ -29,6 +29,50 @@ def _agent_rsc(root, token):
   :local action ($d->"action");
   :if (($action != "CREATE_PPPOE") && ($action != "SUSPEND") && ($action != "REACTIVATE") && ($action != "CHANGE_PROFILE") && ($action != "RESTART_PPPOE") && ($action != "DELETE_PPPOE")) do={ :return; }
   :local user ($d->"pppoe");
+  # IF-AVISO-INTEGRATION-v1: only the verified test account.
+  :if (($user = "manuel clinete") && (($action = "SUSPEND") || ($action = "REACTIVATE"))) do={
+    :local success false;
+    :local result "USUARIO_NO_EXISTE";
+    :local secret [/ppp secret find where name=$user];
+    :if ([:len $secret] = 1) do={
+      :do {
+        :local current [/ppp secret get $secret profile];
+        :local saved [/system script find where name="IF-AVISO-ORIGINAL-TEST"];
+        :if ([:len $saved] = 0) do={
+          :local original $current;
+          :if ($original = "IF-AVISO-TEST") do={ :set original "Plan 5 Ultra 300M - Linea-2-Claro - HSG"; }
+          /system script add name="IF-AVISO-ORIGINAL-TEST" source="" policy=read comment=$original;
+          :set saved [/system script find where name="IF-AVISO-ORIGINAL-TEST"];
+        }
+        :if ([:len $saved] != 1) do={ :error "RESPALDO_PERFIL_DUPLICADO"; }
+        :if ($action = "SUSPEND") do={
+          :if ([:len [/ppp profile find where name="IF-AVISO-TEST"]] != 1) do={ :error "PERFIL_AVISO_NO_EXISTE"; }
+          :if ([/ip proxy get enabled] != true) do={ :error "PROXY_AVISO_DESACTIVADO"; }
+          :if ([:len [/ip firewall filter find where comment="IF-AVISO-TEST bloquear" disabled=no]] != 1) do={ :error "BLOQUEO_AVISO_NO_EXISTE"; }
+          :if ([:len [/ip firewall nat find where comment="IF-AVISO-TEST" disabled=no]] != 1) do={ :error "REDIRECCION_AVISO_NO_EXISTE"; }
+          :if ($current != "IF-AVISO-TEST") do={ /system script set $saved comment=$current; }
+          /ppp secret set $secret profile="IF-AVISO-TEST" disabled=no;
+          /ppp active remove [/ppp active find where name=$user];
+          :if (([/ppp secret get $secret profile] = "IF-AVISO-TEST") && ([/ppp secret get $secret disabled] = false)) do={
+            :set success true; :set result "AVISO_SUSPENSION_APLICADO";
+          }
+        } else={
+          :if ($current = "IF-AVISO-TEST") do={
+            :local original [/system script get $saved comment];
+            :if ([:len [/ppp profile find where name=$original]] != 1) do={ :error "PERFIL_ORIGINAL_NO_EXISTE"; }
+            /ppp secret set $secret profile=$original disabled=no;
+            /ppp active remove [/ppp active find where name=$user];
+          } else={ /ppp secret set $secret disabled=no; }
+          :if (([/ppp secret get $secret profile] != "IF-AVISO-TEST") && ([/ppp secret get $secret disabled] = false)) do={
+            :set success true; :set result "REACTIVADO_PERFIL_RESTAURADO";
+          }
+        }
+      } on-error={ :set result "ERROR_AVISO_REVISAR_CONFIGURACION"; }
+    }
+    /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=" . $success . "&result=" . $result) output=none check-certificate=yes;
+    :return;
+  }
+
   :if (($action = "SUSPEND") || ($action = "REACTIVATE")) do={
     :local success false;
     :local result "USUARIO_NO_EXISTE";
@@ -142,7 +186,7 @@ def _agent_rsc(root, token):
   /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=true&result=PPPOE_CREADO") output=none check-certificate=yes;
 }
 /system scheduler add name="interflash-agent-scheduler" interval=5s on-event="/system script run interflash-agent" policy=read,write,test,sensitive start-time=startup disabled=yes
-:log info "INTERFLASH-SERVICE-AGENT-V4-INSTALLED"
+:log info "INTERFLASH-SERVICE-AGENT-V5-PORTAL-TEST-INSTALLED"
 '''
     return template.replace('__ROOT__', root).replace('__TOKEN__', token).replace('__AFTER__', datetime.now().isoformat(timespec='microseconds'))
 
@@ -247,7 +291,7 @@ def control_script_fast():
     <div class="panel">
       <div class="notice" style="background:#063f2a;color:#b8f6d6;margin-bottom:12px"><b>Instalación:</b> copia estas 3 líneas en el CCR2116. El agente se instalará DESACTIVADO para revisar primero la cola de órdenes; no cambia rutas, mangle ni failover.</div>
       <textarea class="field" style="width:100%;height:150px;font-family:Consolas,monospace">{pbr_client.esc(installer)}</textarea>
-      <div class="notice" style="background:#4e3707;color:#fff;margin:14px 0 10px">Agente v4: crea PPPoE, suspende, reactiva, cambia el perfil y elimina el usuario PPPoE del cliente enviado a la papelera. La eliminación desconecta su sesión y se confirma en la cola. Después de confirmar el perfil, renueva la sesión del cliente activo para aplicar la velocidad. Suspender deshabilita el usuario y desconecta su sesión activa. Solo ejecuta órdenes nuevas posteriores a esta instalación; las órdenes antiguas no se ejecutan. Queda desactivado al instalar.</div>
+      <div class="notice" style="background:#4e3707;color:#fff;margin:14px 0 10px">Agente v4: crea PPPoE, suspende, reactiva, cambia el perfil y elimina el usuario PPPoE del cliente enviado a la papelera. La eliminación desconecta su sesión y se confirma en la cola. Después de confirmar el perfil, renueva la sesión del cliente activo para aplicar la velocidad. Para manuel clinete, Suspender aplica el perfil IF-AVISO-TEST y Reactivar restaura el perfil original. Los demás usuarios conservan el corte habitual. Solo ejecuta órdenes nuevas posteriores a esta instalación; las órdenes antiguas no se ejecutan. Queda desactivado al instalar.</div>
       <div class="muted" style="margin-bottom:6px">Verificación opcional:</div>
       <textarea class="field" style="width:100%;height:90px;font-family:Consolas,monospace">{pbr_client.esc(verify)}</textarea>
     </div>'''

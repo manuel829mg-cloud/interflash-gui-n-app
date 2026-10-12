@@ -23,11 +23,11 @@ def _agent_rsc(root, token):
   :local hdr ("X-InterFlash-Agent: " . $token);
   :local r [/tool fetch url=($base . "/api/mikrotik/service-next?router=CCR2116&after=__AFTER__") http-method=get http-header-field=$hdr output=user check-certificate=yes as-value];
   :local d [:deserialize from=json value=($r->"data")];
-  :if (($d->"ok") != true) do={ :return; }
+  :if (($d->"ok") != true) do={ :return 0; }
   :local id ($d->"id");
-  :if (([:typeof $id] = "nil") || ($id = 0)) do={ :return; }
+  :if (([:typeof $id] = "nil") || ($id = 0)) do={ :return 0; }
   :local action ($d->"action");
-  :if (($action != "CREATE_PPPOE") && ($action != "SUSPEND") && ($action != "REACTIVATE") && ($action != "CHANGE_PROFILE") && ($action != "RESTART_PPPOE") && ($action != "DELETE_PPPOE")) do={ :return; }
+  :if (($action != "CREATE_PPPOE") && ($action != "SUSPEND") && ($action != "REACTIVATE") && ($action != "CHANGE_PROFILE") && ($action != "RESTART_PPPOE") && ($action != "DELETE_PPPOE")) do={ :return 0; }
   :local user ($d->"pppoe");
   # IF-AVISO-INTEGRATION-v1: only the verified test account.
   :if (($user = "manuel clinete") && (($action = "SUSPEND") || ($action = "REACTIVATE"))) do={
@@ -70,7 +70,7 @@ def _agent_rsc(root, token):
       } on-error={ :set result "ERROR_AVISO_REVISAR_CONFIGURACION"; }
     }
     /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=" . $success . "&result=" . $result) output=none check-certificate=yes;
-    :return;
+    :return 0;
   }
 
   :if (($action = "SUSPEND") || ($action = "REACTIVATE")) do={
@@ -96,7 +96,7 @@ def _agent_rsc(root, token):
       } on-error={ :set result "ERROR_CAMBIO_SERVICIO"; }
     }
     /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=" . $success . "&result=" . $result) output=none check-certificate=yes;
-    :return;
+    :return 0;
   }
   :if ($action = "DELETE_PPPOE") do={
     :local success false;
@@ -115,7 +115,7 @@ def _agent_rsc(root, token):
       } on-error={ :set result "ERROR_ELIMINACION_PPPOE"; }
     }
     /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=" . $success . "&result=" . $result) output=none check-certificate=yes;
-    :return;
+    :return 0;
   }
   :if (($action = "CHANGE_PROFILE") || ($action = "RESTART_PPPOE")) do={
     :local success false;
@@ -144,7 +144,7 @@ def _agent_rsc(root, token):
       } on-error={ :set result "ERROR_CAMBIO_PERFIL"; }
     }
     /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=" . $success . "&result=" . $result) output=none check-certificate=yes;
-    :return;
+    :return 0;
   }
   :local p ($d->"payload");
   :local prof ($p->"profile");
@@ -152,32 +152,32 @@ def _agent_rsc(root, token):
   :local rip ($p->"remote_address");
   :if ([:len $user] = 0) do={
     /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=false&result=USUARIO_VACIO") output=none check-certificate=yes;
-    :return;
+    :return 0;
   }
   :if ([:len $prof] = 0) do={
     /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=false&result=PERFIL_VACIO") output=none check-certificate=yes;
-    :return;
+    :return 0;
   }
   :if ([:len $pass] = 0) do={
     /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=false&result=PASSWORD_VACIO") output=none check-certificate=yes;
-    :return;
+    :return 0;
   }
   :if ([:len [/ppp secret find where name=$user]] > 0) do={
     /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=false&result=PPPOE_YA_EXISTE") output=none check-certificate=yes;
-    :return;
+    :return 0;
   }
   :if ([:len [/ppp profile find where name=$prof]] != 1) do={
     /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=false&result=PERFIL_NO_EXISTE") output=none check-certificate=yes;
-    :return;
+    :return 0;
   }
   :if (([:typeof $rip] = "str") && ([:len $rip] > 0)) do={
     :if ([:len [/ppp active find where address=$rip]] > 0) do={
       /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=false&result=IP_ACTIVA") output=none check-certificate=yes;
-      :return;
+      :return 0;
     }
     :if ([:len [/ppp secret find where remote-address=$rip]] > 0) do={
       /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=false&result=IP_RESERVADA") output=none check-certificate=yes;
-      :return;
+      :return 0;
     }
     /ppp secret add name=$user password=$pass profile=$prof remote-address=$rip service=pppoe disabled=no;
   } else={

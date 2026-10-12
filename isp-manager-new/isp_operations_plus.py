@@ -645,9 +645,9 @@ def dashboard_plus():
     cards=[]
     for (a,b,d,cls),icon in zip(kpis,icons):
         card=f'<div class="kpi {cls} dashboard-stat"><div class="stat-heading"><span class="stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">{icon}</svg></span><div class="label">{a}</div></div><div class="value">{b}</div><div class="sub">{d}</div></div>'
-        if a in ('Clientes', 'Suspendidos', 'Clientes con factura'):
-            target = url_for('customers',overdue='1') if a == 'Clientes con factura' else (url_for('customers', status='SUSPENDIDO') if a == 'Suspendidos' else url_for('customers'))
-            label = 'Ver clientes con factura vencida' if a == 'Clientes con factura vencida' else ('Ver clientes suspendidos' if a == 'Suspendidos' else 'Ver lista de clientes')
+        if a in ('Clientes', 'Suspendidos', 'Clientes con factura', 'Órdenes MikroTik'):
+            target = url_for('mikrotik_commands') if a == 'Órdenes MikroTik' else (url_for('customers',overdue='1') if a == 'Clientes con factura' else (url_for('customers', status='SUSPENDIDO') if a == 'Suspendidos' else url_for('customers')))
+            label = 'Ver órdenes MikroTik' if a == 'Órdenes MikroTik' else ('Ver clientes con factura pendiente' if a == 'Clientes con factura' else ('Ver clientes suspendidos' if a == 'Suspendidos' else 'Ver lista de clientes'))
             card=card.replace('<div class="kpi ', f'<a href="{target}" aria-label="{label}" class="dashboard-client-link kpi ', 1)
             card=card[:-6] + '</a>'
         cards.append(card)

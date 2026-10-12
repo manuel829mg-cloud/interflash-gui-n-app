@@ -38,6 +38,7 @@ def _agent_rsc(root, token):
         :if ($action = "SUSPEND") do={
           /ppp secret set $secret disabled=yes;
           /ppp active remove [/ppp active find where name=$user];
+          :delay 2s;
           :if (([/ppp secret get $secret disabled] = true) && ([:len [/ppp active find where name=$user]] = 0)) do={
             :set success true;
             :set result "SUSPENDIDO_CONFIRMADO";

@@ -16,6 +16,30 @@ import finance_ai
 
 MAX_TABLES = 10
 MAX_ROWS = 4
+WAN_INTERFACES = ('WAN1-CLARO', 'WAN2-CLARO', 'WAN3-ALTICE', 'WAN4-ALTICE')
+
+def wan_snapshot(c, tables):
+    """Include every WAN explicitly, independently of generic table sampling."""
+    result = []
+    for iface in WAN_INTERFACES:
+        item = {'interfaz': iface}
+        for table, label in (('wan_line_health', 'prueba_ping'), ('push_router_traffic', 'trafico')):
+            samples = []
+            if table in tables:
+                rows = c.execute(f'SELECT * FROM "{table}" WHERE interface_name=?', (iface,)).fetchall()
+                for row in rows:
+                    sample = {k: _safe_value(k, row[k]) for k in row.keys()}
+                    sample['fuente'] = table
+                    stamp = row['updated_at']
+                    try:
+                        age = (datetime.now() - datetime.fromisoformat(stamp)).total_seconds()
+                        sample['vigencia'] = 'reciente' if 0 <= age <= 45 else 'desactualizada'
+                    except (TypeError, ValueError):
+                        sample['vigencia'] = 'desconocida'
+                    samples.append(sample)
+            item[label] = samples
+        result.append(item)
+    return result
 
 def esc(v):
     return escape(str(v if v is not None else ''))
@@ -47,8 +71,12 @@ def _safe_value(name, value):
 def snapshot():
     c = base.db()
     tables = [r['name'] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").fetchall()]
-    interesting = [t for t in tables if any(k in t.lower() for k in ('wan','traffic','router','pool','ppp','optical','onu'))][:MAX_TABLES]
-    data = {'fecha': datetime.now().isoformat(timespec='seconds'), 'tablas': {}}
+    priority = [t for t in ('wan_line_health', 'push_router_traffic') if t in tables]
+    others = [t for t in tables if t not in priority and any(k in t.lower() for k in ('wan','traffic','router','pool','ppp','optical','onu'))]
+    interesting = (priority + others)[:MAX_TABLES]
+    data = {'fecha': datetime.now().isoformat(timespec='seconds'),
+            'fecha_significado': 'Hora de consulta del servidor, no fecha de medición del router.',
+            'wan': wan_snapshot(c, tables), 'tablas': {}}
     for table in interesting:
         cols = [r['name'] for r in c.execute(f'PRAGMA table_info("{table}")').fetchall()]
         try:
@@ -80,7 +108,16 @@ def ask_mikrotik(question, data):
         'max_output_tokens': 1400,
         'instructions': (
             'Eres el técnico de diagnóstico MikroTik de INTER Flash para un ISP dominicano. '
-            'Analiza únicamente los datos sincronizados que recibes. No tienes acceso directo al router. '
+            'Analiza los datos sincronizados y los datos manuales aportados en la consulta. No tienes acceso directo al router. '
+            'Si el administrador pide analizar solo su captura, respeta ese alcance y excluye el JSON sincronizado. '
+            'Distingue siempre captura manual, fuente sincronizada y fecha de cada medición. '
+            'La fecha de consulta no actualiza las mediciones. Datos desactualizados o sin fecha no prueban el estado actual. '
+            'Para WAN revisa las cuatro interfaces del bloque wan; una fuente ausente significa datos faltantes. '
+            'Las muestras de tablas no son totales de sesiones ni de clientes. '
+            'Running confirma enlace físico, no acceso a internet. link-downs es un contador acumulado. '
+            'Una ruta de respaldo sin A no prueba avería. Rutas activas no prueban failover ni configuración correcta. '
+            'La pérdida corresponde solo al destino y muestra de ping recibidos, no a toda la conexión; '
+            'no inventes latencia, errores físicos, rutas ni pruebas de conmutación ausentes. '
             'No afirmes haber ejecutado cambios. No inventes comandos, interfaces, gateways, IP, perfiles ni causas. '
             'Separa: hallazgos confirmados, posibles causas, datos que faltan, y plan de reparación propuesto. '
             'Toda reparación debe requerir autorización explícita del administrador antes de ejecutarse. '

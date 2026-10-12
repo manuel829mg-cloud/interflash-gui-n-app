@@ -3,7 +3,7 @@ import os
 import threading
 from datetime import date, datetime
 from html import escape
-from flask import redirect, url_for, session
+from flask import redirect, url_for, session, request, abort, flash
 import app as base
 import business_suite as bs
 import admin_suite
@@ -143,11 +143,16 @@ def page():
     cards = ''.join(f'<div class="panel"><b>{label}</b><p>{"ACTIVA" if settings.get(key)=="1" else "DESACTIVADA"}</p></div>' for key,label in [('billing_enabled','Facturación'),('auto_suspend','Corte por zona'),('auto_reactivate','Reactivación al pagar'),('whatsapp_enabled','Avisos por WhatsApp')])
     def rows(items, keys):
         return ''.join('<tr>'+''.join('<td>'+esc(r[k])+'</td>' for k in keys)+'</tr>' for r in items) or '<tr><td colspan="5">Sin registros todavía.</td></tr>'
+    import secrets
+    csrf = session.setdefault('cut_promise_csrf', secrets.token_urlsafe(32))
+    promise_actions = ''.join(
+        f'<form method="post" action="{url_for("cancel_customer_promises",id=r["id"])}"><input type="hidden" name="csrf" value="{esc(csrf)}"><p>{esc(r["name"])} · promesa hasta {esc(r["promise_until"])} <button class="btn" type="submit">Cancelar promesa de {esc(r["name"])}</button></p></form>'
+        for r in cut_diagnostics if r['promise_until'])
     body = f'''<div class="head"><div><h1>Estado de automatizaciones</h1><p>Facturación, cortes, pagos, mensajes y copias de seguridad</p></div><a class="btn" href="{url_for('settings_page')}">Configuración</a></div>
     <div class="cards2">{cards}</div>
     <div class="panel"><h3>Simulación de cortes · {len(preview)} clientes</h3><p>Consulta de solo lectura. No ejecuta cortes. Respeta la zona, fecha, hora y promesas vigentes. Si el corte automático está desactivado, esta lista es solo una previsión.</p>
     <table class="table"><tr><th>Cliente</th><th>Zona</th><th>Factura vencida</th><th>Corte desde</th></tr>{rows(preview,['customer_name','zone_name','oldest_due','scheduled_at'])}</table></div>
-    <div class="panel"><h3>Diagnóstico de clientes con factura pendiente</h3><p>Estado administrativo, zona que usa el motor de corte y promesa vigente. Consulta de solo lectura.</p><table class="table"><tr><th>Cliente</th><th>Estado</th><th>Zona guardada</th><th>Zona del motor</th><th>Corte días después</th><th>Hora</th><th>Vence factura</th><th>Promesa hasta</th></tr>{rows(cut_diagnostics,['name','status','zone','effective_zone','cut_days_after','cut_time','oldest_due','promise_until'])}</table></div>
+    <div class="panel"><h3>Diagnóstico de clientes con factura pendiente</h3><p>Estado administrativo, zona que usa el motor de corte y promesa vigente. Consulta de solo lectura.</p><table class="table"><tr><th>Cliente</th><th>Estado</th><th>Zona guardada</th><th>Zona del motor</th><th>Corte días después</th><th>Hora</th><th>Vence factura</th><th>Promesa hasta</th></tr>{rows(cut_diagnostics,['name','status','zone','effective_zone','cut_days_after','cut_time','oldest_due','promise_until'])}</table>{promise_actions}</div>
     <div class="panel"><h3>Tareas automáticas</h3><table class="table"><tr><th>Tarea</th><th>Estado</th><th>Detalle</th><th>Última revisión</th></tr>{rows(runs,['task','status','detail','updated_at'])}</table></div>
     <div class="cards2"><div class="panel"><h3>Órdenes MikroTik</h3><table class="table">{rows(commands,['status','n'])}</table><a class="btn" href="{url_for('mikrotik_commands')}">Ver cola</a></div>
     <div class="panel"><h3>Avisos por WhatsApp</h3><p>Los avisos se preparan el día del vencimiento. PENDIENTE significa en cola, pendiente del emisor configurado; ENVIADO indica que el proveedor aceptó el envío, no confirma lectura.</p><table class="table">{rows(messages,['status','n'])}</table></div></div>
@@ -156,10 +161,36 @@ def page():
     return base.shell('Estado de automatizaciones', body, 'operations_health')
 
 
+def cancel_customer_promises(id):
+    if not base.logged_in():
+        return redirect(url_for('login'))
+    if (session.get('role') or 'ADMIN').upper() != 'ADMIN':
+        abort(403)
+    import secrets
+    if not secrets.compare_digest(str(request.form.get('csrf') or ''), str(session.get('cut_promise_csrf') or 'missing')):
+        abort(400)
+    c = base.db()
+    try:
+        c.execute('BEGIN IMMEDIATE')
+        customer = c.execute('SELECT name FROM customers WHERE id=?', (id,)).fetchone()
+        if customer is None:
+            abort(404)
+        count = c.execute("UPDATE payment_promises SET status='CANCELADA' WHERE customer_id=? AND status='PENDIENTE'", (id,)).rowcount
+        if count:
+            c.execute('INSERT INTO audit_log(action,detail,created_at) VALUES(?,?,?)',
+                ('PROMISE_CANCEL', f'Cliente #{id}: {count} promesa(s) cancelada(s) por {session.get("user") or "ADMIN"}', datetime.now().isoformat(timespec='seconds')))
+        c.commit()
+    finally:
+        c.close()
+    flash(f'{count} promesa(s) cancelada(s). El corte por zona se revisa automáticamente.')
+    return redirect(url_for('operations_health'))
+
+
 def setup(app):
     global _started
     ensure_schema()
     app.add_url_rule('/operations/health',endpoint='operations_health',view_func=page)
+    app.add_url_rule('/operations/promises/<int:id>/cancel',endpoint='cancel_customer_promises',view_func=cancel_customer_promises,methods=['POST'])
     if not any(x[0]=='operations_health' for x in base.NAV):
         base.NAV.append(('operations_health','✓','Estado de automatizaciones'))
     if not _started and os.getenv('INTERFLASH_TESTING') != '1':

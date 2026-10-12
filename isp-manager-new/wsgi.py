@@ -255,12 +255,3 @@ def _create_pppoe_only_bootstrap():
     })
 app.view_functions['mikrotik_bootstrap_rsc'] = _create_pppoe_only_bootstrap
 
-# Public, generic suspension notice: no customer data or administrator session.
-@app.get('/aviso-suspension')
-def interflash_suspension_notice():
-    page = """<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Servicio suspendido · Inter Flash</title><style>*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:#0c1726;color:#eaf2fc;font-family:Arial,sans-serif}.card{width:100%;max-width:540px;padding:36px;border:1px solid #30445e;border-radius:24px;background:#15263b}.logo{display:inline-grid;place-items:center;width:60px;height:60px;border-radius:50%;background:#09a86b;color:white;font-weight:800;font-size:24px}h1{font-size:28px;line-height:1.2}p{color:#c6d5e6;line-height:1.7}.tag{color:#ffd395;font-weight:bold}small{display:block;color:#99b0c9;line-height:1.6}</style></head><body><main class="card"><span class="logo">IF</span><p>INTER FLASH</p><div class="tag">SERVICIO SUSPENDIDO</div><h1>Tu conexión está temporalmente suspendida</h1><p>Comunícate con Inter Flash para consultar tu balance, registrar tu pago o solicitar una promesa de pago.</p><small>Si ya realizaste el pago, contacta con administración para verificarlo y restablecer tu servicio.</small></main></body></html>"""
-    return Response(page, mimetype='text/html', headers={
-        'Cache-Control': 'no-store',
-        'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'",
-        'X-Content-Type-Options': 'nosniff',
-    })

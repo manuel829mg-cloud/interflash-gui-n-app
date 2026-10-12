@@ -302,7 +302,7 @@ def zones_page():
           <div class="field-group"><label for="cut-days">Corte días después *</label><input id="cut-days" class="field" type="number" name="cut_days_after" value="{form_cut_days}" min="0"></div>
           <div class="field-group"><label for="cut-time">Hora de corte *</label><select id="cut-time" class="field" name="cut_time">{time_options}</select></div>
           <div class="field-group" style="grid-column:1/-1"><label><input type="checkbox" name="whatsapp_reminder_enabled" value="1" {reminder_checked}> Recordatorio por WhatsApp</label><p class="muted">Avisa únicamente a clientes con pagos pendientes. Requiere avisos automáticos de WhatsApp activos. Envío desde las 8:00, hora dominicana.</p></div>
-          <div class="field-group"><label for="reminder-days">Días antes del corte</label><input id="reminder-days" class="field" type="number" name="whatsapp_reminder_days" value="{reminder_days}" min="0" max="31" required></div>
+          <input type="hidden" name="whatsapp_reminder_days" value="{reminder_days}">
           <div style="display:flex;gap:9px"><button class="primary-zone-btn" type="submit">+ {button_text}</button>{cancel_button}</div>
         </form>
       </div>

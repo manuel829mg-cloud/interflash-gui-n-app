@@ -253,7 +253,7 @@ def customer_edit_pbr(id):
         if 'latitude' in request.form or 'longitude' in request.form:
             c.execute('UPDATE customers SET latitude=?,longitude=? WHERE id=?', (x['latitude'],x['longitude'],id))
         notes=[]
-        if x['create_in_router'] and x['pppoe'] and x['password'] and x['profile'] and (not row['pppoe'] or x['pppoe'] != row['pppoe']):
+        if x['create_in_router'] and x['pppoe'] and x['password'] and x['profile']:
             _queue(c,id,x['pppoe'],x['router'],'CREATE_PPPOE',{'password':x['password'],'profile':x['profile'],'remote_address':x['ip']}); notes.append('PPPoE enviado a la cola')
         elif x['pppoe'] and x['profile'] and (x['profile'] != old_profile or c.execute("SELECT 1 FROM router_commands WHERE customer_id=? AND action='CHANGE_PROFILE' AND status IN ('PENDIENTE','ERROR','CANCELADO') AND id=(SELECT MAX(id) FROM router_commands WHERE customer_id=? AND action='CHANGE_PROFILE')", (id,id)).fetchone()):
             _queue(c,id,x['pppoe'],x['router'],'CHANGE_PROFILE',{'profile':x['profile']}); notes.append('cambio de perfil enviado a la cola')

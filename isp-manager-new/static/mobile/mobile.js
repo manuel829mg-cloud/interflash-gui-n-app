@@ -12,17 +12,8 @@
     buttons.forEach(x => x.hidden = true);
   }));
   window.addEventListener('appinstalled', () => buttons.forEach(b => b.hidden = true));
-  const side = document.querySelector('.app > .side');
-  if (side) {
-    const button = document.createElement('button');
-    button.className = 'if-menu-toggle'; button.textContent = '☰ Menú';
-    button.setAttribute('aria-expanded', 'false');
-    button.addEventListener('click', () => {
-      const open = document.body.classList.toggle('if-menu-open');
-      button.setAttribute('aria-expanded', String(open));
-      button.textContent = open ? '✕ Cerrar' : '☰ Menú';
-    });
-    document.addEventListener('keydown', e => { if (e.key === 'Escape') {document.body.classList.remove('if-menu-open');button.setAttribute('aria-expanded','false');button.textContent='☰ Menú';} });
-    document.body.append(button);
-  }
+  // Use the platform's header menu as the only mobile navigation toggle.
+  const style = document.createElement('style');
+  style.textContent = '@media(max-width:700px){body.menu-open .app>.side{display:block!important}.if-menu-toggle{display:none!important}}';
+  document.head.append(style);
 })();

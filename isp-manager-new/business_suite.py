@@ -152,10 +152,48 @@ def portal_toggle(id):
     token=secrets.token_urlsafe(32); c=base.db(); c.execute('INSERT INTO portal_tokens(customer_id,token,enabled,created_at) VALUES(?,?,1,?) ON CONFLICT(customer_id) DO UPDATE SET token=excluded.token,enabled=1,created_at=excluded.created_at',(id,token,datetime.now().isoformat(timespec='seconds'))); c.commit(); c.close(); flash('Portal generado.'); return redirect(url_for('customer_profile',id=id))
 
 def customer_portal(token):
-    c=base.db(); p=c.execute('SELECT * FROM portal_tokens WHERE token=? AND enabled=1',(token,)).fetchone()
-    if not p: c.close(); return 'Portal no disponible',404
-    cu=c.execute('''SELECT cu.*,p.name plan_name FROM customers cu LEFT JOIN plans p ON p.id=cu.plan_id WHERE cu.id=?''',(p['customer_id'],)).fetchone(); inv=c.execute('SELECT * FROM invoices WHERE customer_id=? ORDER BY id DESC',(p['customer_id'],)).fetchall(); pay=c.execute('SELECT * FROM payments WHERE customer_id=? ORDER BY id DESC LIMIT 20',(p['customer_id'],)).fetchall(); c.close(); invr=''.join(f'<tr><td>{esc(x["concept"])}</td><td>RD${x["amount"]:,.2f}</td><td>{esc(x["due_date"])}</td><td>{esc(x["status"])}</td></tr>' for x in inv); payr=''.join(f'<tr><td>{esc(x["paid_at"])}</td><td>RD${x["amount"]:,.2f}</td><td>{esc(x["method"])}</td></tr>' for x in pay)
-    return render_template_string('''<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Portal INTER Flash</title><style>{{css}}</style></head><body><div style="max-width:900px;margin:30px auto;padding:16px"><div class="panel"><h2>{{name}}</h2><p>Plan: <b>{{plan}}</b> · Estado: <b>{{status}}</b></p></div><div class="panel"><h3>Facturas</h3><table class="table">{{invr|safe}}</table></div><div class="panel"><h3>Pagos</h3><table class="table">{{payr|safe}}</table></div></div></body></html>''',css=base.BASE_CSS,name=cu['name'],plan=cu['plan_name'] or '-',status=cu['status'],invr=invr,payr=payr)
+    from urllib.parse import quote
+    from branding import LOGO_URL
+    c = base.db()
+    try:
+        portal = c.execute('SELECT * FROM portal_tokens WHERE token=? AND enabled=1', (token,)).fetchone()
+        if not portal:
+            return 'Portal no disponible', 404
+        cu = c.execute("SELECT * FROM customers WHERE id=? AND status<>'ELIMINADO'", (portal['customer_id'],)).fetchone()
+        if not cu:
+            return 'Portal no disponible', 404
+        invoices = c.execute("""SELECT i.id,i.concept,i.due_date,i.status,
+            MAX(0,i.amount-COALESCE((SELECT SUM(amount) FROM payments WHERE invoice_id=i.id),0)) balance
+            FROM invoices i WHERE i.customer_id=? AND i.status<>'ANULADA' ORDER BY i.id DESC""", (cu['id'],)).fetchall()
+        banks = c.execute('SELECT bank,account_type,account_number,label FROM bank_accounts WHERE active=1 ORDER BY bank').fetchall()
+        settings = dict(c.execute('SELECT key,value FROM app_settings').fetchall())
+        promise = c.execute("""SELECT promise_date,promise_time FROM payment_promises WHERE customer_id=? AND status='PENDIENTE'
+            AND (promise_date>? OR (promise_date=? AND COALESCE(promise_time,'23:59')>?)) ORDER BY id DESC LIMIT 1""",
+            (cu['id'],date.today().isoformat(),date.today().isoformat(),datetime.now().strftime('%H:%M'))).fetchone()
+    finally:
+        c.close()
+    balance = sum(float(i['balance']) for i in invoices if i['status']=='PENDIENTE')
+    suspended = cu['status']=='SUSPENDIDO' and not promise
+    phone = ''.join(ch for ch in settings.get('business_phone','') if ch.isascii() and ch.isdigit())
+    if len(phone)==10 and phone[:3] in ('809','829','849'):
+        phone = '1'+phone
+    whatsapp = 'https://wa.me/'+phone+'?text=' if 10<=len(phone)<=15 else ''
+    reference = str(cu['code'] or cu['id'])
+    proof = whatsapp+quote('Hola INTER Flash, quiero enviar mi comprobante de pago. Cliente '+reference) if whatsapp else ''
+    request_promise = whatsapp+quote('Hola INTER Flash, solicito una promesa de pago para el cliente '+reference+'. Fecha propuesta: ') if whatsapp else ''
+    html = """<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Mi servicio · INTER Flash</title><style>
+    *{box-sizing:border-box}body{margin:0;background:#081522;color:#eaf2fa;font:16px system-ui,sans-serif}main{max-width:680px;margin:32px auto;padding:20px}.brand{display:flex;align-items:center;gap:14px;margin-bottom:24px}.brand img{width:68px;height:68px;object-fit:contain;border-radius:50%}.brand b{font-size:24px}.card{background:#112638;border:1px solid #27465c;border-radius:20px;padding:24px;margin:16px 0}.tag{color:#ffc479;font-size:13px;font-weight:800}.ok{color:#71dfb4}h1{font-size:clamp(25px,5vw,34px);line-height:1.15;margin:12px 0}p{color:#b7c9d9;line-height:1.6}.amount{font-size:36px;font-weight:800;margin:8px 0 20px}.actions{display:grid;gap:10px}.button{display:block;text-align:center;text-decoration:none;background:#2da9ed;color:#051826;border-radius:10px;padding:14px;font-weight:750}.secondary{background:#203b50;color:#eaf2fa}.green{background:#33cd88}details{margin:16px 0}summary{cursor:pointer;font-weight:700;padding:8px 0}.item{padding:14px 0;border-top:1px solid #29475d;overflow-wrap:anywhere}.small{font-size:13px}footer{color:#91aabd;text-align:center;font-size:12px;padding:20px}.status{color:#71dfb4}
+    </style></head><body><main><header class="brand"><img src="{{logo}}" alt="Logo INTER Flash"><div><b>INTER Flash</b><br><span>Tu conexión, cerca de ti</span></div></header><section class="card">
+    {% if suspended %}<span class="tag">AVISO DE SERVICIO</span><h1>Servicio suspendido por pago pendiente</h1><p>Para recuperar tu conexión, consulta tu factura y envíanos el comprobante de pago.</p>
+    {% elif promise %}<span class="tag ok">PROMESA DE PAGO VIGENTE</span><h1>Tu plazo de pago está registrado</h1><p>Fecha acordada: {{promise.promise_date}} a las {{promise.promise_time}}. Si la reconexión está pendiente, contacta con soporte.</p>
+    {% else %}<span class="tag ok">MI SERVICIO</span><h1>Consulta tu cuenta</h1><p>Estado registrado: {{status}}.</p>{% endif %}
+    <p class="small">Balance pendiente</p><div class="amount">RD${{'{:,.2f}'.format(balance)}}</div><div class="actions"><a class="button" href="#facturas">Ver mis facturas</a><a class="button secondary" href="#cuentas">Consultar cuentas bancarias</a>{% if proof %}<a class="button green" href="{{proof}}" rel="noreferrer">Enviar comprobante por WhatsApp</a>{% if suspended %}<a class="button secondary" href="{{request_promise}}" rel="noreferrer">Solicitar promesa de pago</a>{% endif %}{% else %}<p>El contacto de WhatsApp aún no está configurado. Comunícate con tu oficina de INTER Flash.</p>{% endif %}</div><p class="small">Enviar un comprobante o solicitar una promesa no reactiva el servicio por sí solo. INTER Flash debe verificar el pago o aprobar la promesa.</p></section>
+    <section class="card" id="facturas"><h2>Mis facturas</h2>{% for i in invoices %}<div class="item"><b>Factura #{{i.id}} · {{i.concept}}</b><p>Vence: {{i.due_date}} · {{i.status}}<br>Balance: RD${{'{:,.2f}'.format(i.balance)}}</p></div>{% else %}<p>No tienes facturas disponibles.</p>{% endfor %}</section>
+    <section class="card" id="cuentas"><h2>Cuentas para pagar</h2>{% for b in banks %}<div class="item"><b>{{b.bank}}</b><p>{{b.account_type or ''}}<br>{{b.account_number}}<br>{{b.label or ''}}</p></div>{% else %}<p>Solicita las cuentas bancarias a INTER Flash.</p>{% endfor %}<p class="small">Incluye tu referencia de cliente al enviar el comprobante.</p></section><footer>INTER Flash · No compartas el enlace personal de tu cuenta.</footer></main></body></html>"""
+    response = base.app.make_response(render_template_string(html,logo=LOGO_URL,status=cu['status'],suspended=suspended,promise=promise,balance=balance,invoices=invoices,banks=banks,proof=proof,request_promise=request_promise))
+    response.headers['Cache-Control']='no-store'
+    response.headers['Referrer-Policy']='no-referrer'
+    return response
 
 def backup_download():
     if not base.logged_in(): return redirect(url_for('login'))
@@ -205,3 +243,4 @@ def setup(app):
         if item[0] not in {x[0] for x in base.NAV}: base.NAV.append(item)
     app.view_functions['customers']=customers_full; app.view_functions['login']=login_full
     for rule,ep,fn,methods in [('/customers/<int:id>/profile','customer_profile',customer_profile,['GET']),('/customers/<int:customer_id>/promise','promise_new',promise_new,['GET','POST']),('/customers/<int:id>/portal','portal_toggle',portal_toggle,['POST']),('/portal/<token>','customer_portal',customer_portal,['GET']),('/backup/download','backup_download',backup_download,['GET']),('/users','users_page',users_page,['GET','POST']),('/settings','settings_page',settings_page,['GET','POST'])]: app.add_url_rule(rule,endpoint=ep,view_func=fn,methods=methods)
+

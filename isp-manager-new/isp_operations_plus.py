@@ -207,7 +207,8 @@ def customers_plus():
         return redirect(url_for('login'))
     q = (request.args.get('q') or '').strip()
     status_filter = 'SUSPENDIDO' if request.args.get('status') == 'SUSPENDIDO' else ''
-    overdue_filter = request.args.get('overdue') == '1'
+    overdue_value = request.args.get('overdue')
+    overdue_filter = overdue_value in ('1', 'vencida')
     c = base.db()
     sql = '''SELECT cu.*,p.name plan_name,p.price plan_price,z.name zone_name,
              COALESCE((SELECT SUM(MAX(0, COALESCE(i.amount,0)+COALESCE(i.late_fee,0)-COALESCE((SELECT SUM(py.amount) FROM payments py WHERE py.invoice_id=i.id),0))) FROM invoices i WHERE i.customer_id=cu.id AND UPPER(COALESCE(i.status,'PENDIENTE')) NOT IN ('PAGADA','ANULADA','CANCELADA')),0) debt,
@@ -225,6 +226,9 @@ def customers_plus():
         args.append(status_filter)
     if overdue_filter:
         sql += "AND EXISTS (SELECT 1 FROM invoices i WHERE i.customer_id=cu.id AND UPPER(COALESCE(i.status,'PENDIENTE')) NOT IN ('PAGADA','ANULADA','CANCELADA') AND MAX(0, COALESCE(i.amount,0)+COALESCE(i.late_fee,0)-COALESCE((SELECT SUM(py.amount) FROM payments py WHERE py.invoice_id=i.id),0))>0) "
+    if overdue_value == 'vencida':
+        sql += "AND EXISTS (SELECT 1 FROM invoices i WHERE i.customer_id=cu.id AND UPPER(COALESCE(i.status,'PENDIENTE')) NOT IN ('PAGADA','ANULADA','CANCELADA') AND MAX(0, COALESCE(i.amount,0)+COALESCE(i.late_fee,0)-COALESCE((SELECT SUM(py.amount) FROM payments py WHERE py.invoice_id=i.id),0))>0 AND COALESCE(i.due_date,'')<>'' AND i.due_date<?) "
+        args.append(date.today().isoformat())
     sql += 'ORDER BY cu.id DESC'
     rows = c.execute(sql, args).fetchall()
     active_names = {r['name'] for r in c.execute('SELECT name FROM push_pppoe_active').fetchall()} if _table_exists(c, 'push_pppoe_active') else set()
@@ -329,10 +333,10 @@ def customers_plus():
     @media(max-width:1050px){.c-plan{display:none}.c-client{width:27%}.c-pppoe{width:18%}.c-actions{width:25%}}
     @media(max-width:780px){.clients-table thead{display:none}.clients-table,.clients-table tbody,.clients-table tr,.clients-table td{display:block;width:100%!important}.clients-table tr{background:#0b1725;border:1px solid #22374e;border-radius:12px;margin-bottom:10px;padding:10px}.clients-table td{border:0;padding:5px 0}.c-zone,.c-plan,.c-pay{display:block}.icon-actions{margin-top:6px}}
     </style>'''
-    body=f'''{css}<div class="head"><div><h1>{'Clientes con factura pendiente' if overdue_filter else ('Clientes suspendidos' if status_filter else 'Clientes')}</h1><p>Estado PPPoE real, facturación, ONU y acciones rápidas</p></div><div class="quick-links"><a class="btn" href="{url_for('onu_overview')}">ONU / ONT</a><a class="btn" href="{url_for('customer_trash')}">Papelera</a><a class="btn green" href="{url_for('customer_new')}">+ Nuevo cliente</a></div></div>
+    body=f'''{css}<div class="head"><div><h1>{'Morosos' if overdue_value == 'vencida' else 'Clientes con factura pendiente' if overdue_filter else ('Clientes suspendidos' if status_filter else 'Clientes')}</h1><p>Estado PPPoE real, facturación, ONU y acciones rápidas</p></div><div class="quick-links"><a class="btn" href="{url_for('onu_overview')}">ONU / ONT</a><a class="btn" href="{url_for('customer_trash')}">Papelera</a><a class="btn green" href="{url_for('customer_new')}">+ Nuevo cliente</a></div></div>
     <div class="panel clients-panel">
     
-    <table class="clients-table"><thead><tr><th>Código</th><th>Cliente</th><th>Plan</th><th>Zona</th><th>PPPoE / estado / IP</th><th>Vence</th><th>Deuda</th><th>Último pago</th><th>Acciones</th></tr></thead><tbody><tr class="clients-search-row"><td colspan="9"><form id="clients-search-form" class="toolbar2" method="get">{'<input type="hidden" name="status" value="SUSPENDIDO">' if status_filter else ''}{'<input type="hidden" name="overdue" value="1">' if overdue_filter else ''}<input id="clients-search" class="field" name="q" aria-label="Buscar clientes" autocomplete="off" value="{esc(q)}" placeholder="Buscar cliente, teléfono, cédula, PPPoE, IP, ONU"><button class="btn blue">Buscar</button><a id="clients-search-clear" class="btn" href="{url_for('customers', **dict(([('status',status_filter)] if status_filter else []) + ([('overdue','1')] if overdue_filter else [])))}">Limpiar</a></form></td></tr>{''.join(trs)}<tr id="clients-search-empty"{' hidden' if visible_count else ''}><td colspan="9" class="muted" role="status">No hay clientes que coincidan con la búsqueda.</td></tr></tbody></table></div>'''
+    <table class="clients-table"><thead><tr><th>Código</th><th>Cliente</th><th>Plan</th><th>Zona</th><th>PPPoE / estado / IP</th><th>Vence</th><th>Deuda</th><th>Último pago</th><th>Acciones</th></tr></thead><tbody><tr class="clients-search-row"><td colspan="9"><form id="clients-search-form" class="toolbar2" method="get">{'<input type="hidden" name="status" value="SUSPENDIDO">' if status_filter else ''}{('<input type="hidden" name="overdue" value="'+overdue_value+'">') if overdue_filter else ''}<input id="clients-search" class="field" name="q" aria-label="Buscar clientes" autocomplete="off" value="{esc(q)}" placeholder="Buscar cliente, teléfono, cédula, PPPoE, IP, ONU"><button class="btn blue">Buscar</button><a id="clients-search-clear" class="btn" href="{url_for('customers', **dict(([('status',status_filter)] if status_filter else []) + ([('overdue',overdue_value)] if overdue_filter else [])))}">Limpiar</a></form></td></tr>{''.join(trs)}<tr id="clients-search-empty"{' hidden' if visible_count else ''}><td colspan="9" class="muted" role="status">No hay clientes que coincidan con la búsqueda.</td></tr></tbody></table></div>'''
     body += r'''    <script>
     (() => {
       const form = document.getElementById('clients-search-form');
@@ -645,9 +649,16 @@ def dashboard_plus():
     cards=[]
     for (a,b,d,cls),icon in zip(kpis,icons):
         card=f'<div class="kpi {cls} dashboard-stat"><div class="stat-heading"><span class="stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">{icon}</svg></span><div class="label">{a}</div></div><div class="value">{b}</div><div class="sub">{d}</div></div>'
-        if a in ('Clientes', 'Suspendidos', 'Clientes con factura', 'Órdenes MikroTik'):
-            target = url_for('mikrotik_commands') if a == 'Órdenes MikroTik' else (url_for('customers',overdue='1') if a == 'Clientes con factura' else (url_for('customers', status='SUSPENDIDO') if a == 'Suspendidos' else url_for('customers')))
-            label = 'Ver órdenes MikroTik' if a == 'Órdenes MikroTik' else ('Ver clientes con factura pendiente' if a == 'Clientes con factura' else ('Ver clientes suspendidos' if a == 'Suspendidos' else 'Ver lista de clientes'))
+        targets = {
+            'Clientes': (url_for('customers'), 'Ver lista de clientes'),
+            'Suspendidos': (url_for('customers', status='SUSPENDIDO'), 'Ver clientes suspendidos'),
+            'Clientes con factura': (url_for('customers', overdue='1'), 'Ver clientes con factura pendiente'),
+            'Órdenes MikroTik': (url_for('mikrotik_commands'), 'Ver órdenes MikroTik'),
+            'Morosos': (url_for('customers', overdue='vencida'), 'Ver clientes morosos'),
+            'Papelera': (url_for('customer_trash'), 'Ver clientes eliminados'),
+        }
+        if a in targets:
+            target, label = targets[a]
             card=card.replace('<div class="kpi ', f'<a href="{target}" aria-label="{label}" class="dashboard-client-link kpi ', 1)
             card=card[:-6] + '</a>'
         cards.append(card)

@@ -126,6 +126,16 @@ def page():
         backups = c.execute('SELECT * FROM backup_runs ORDER BY id DESC LIMIT 5').fetchall()
         commands = c.execute('SELECT status,COUNT(*) n FROM router_commands GROUP BY status').fetchall()
         messages = c.execute('SELECT status,COUNT(*) n FROM whatsapp_outbox GROUP BY status').fetchall()
+        cut_diagnostics = c.execute("""SELECT cu.id,cu.name,cu.status,cu.zone_id,cu.zone,
+            z.name effective_zone,z.active,z.cut_days_after,z.cut_time,
+            MIN(i.due_date) oldest_due,
+            (SELECT MAX(p.promise_date || ' ' || COALESCE(p.promise_time,'23:59'))
+             FROM payment_promises p WHERE p.customer_id=cu.id AND p.status='PENDIENTE'
+             AND (p.promise_date>? OR (p.promise_date=? AND COALESCE(p.promise_time,'23:59')>?))) promise_until
+            FROM customers cu JOIN invoices i ON i.customer_id=cu.id AND i.status='PENDIENTE'
+            LEFT JOIN zones z ON """ + zones._zone_join() + """
+            WHERE COALESCE(cu.status,'ACTIVO')<>'ELIMINADO'
+            GROUP BY cu.id""", (date.today().isoformat(),date.today().isoformat(),datetime.now().strftime('%H:%M'))).fetchall()
     finally:
         c.close()
     preview = zones.process_zone_cuts(dry_run=True)
@@ -137,6 +147,7 @@ def page():
     <div class="cards2">{cards}</div>
     <div class="panel"><h3>Simulación de cortes · {len(preview)} clientes</h3><p>Consulta de solo lectura. No ejecuta cortes. Respeta la zona, fecha, hora y promesas vigentes. Si el corte automático está desactivado, esta lista es solo una previsión.</p>
     <table class="table"><tr><th>Cliente</th><th>Zona</th><th>Factura vencida</th><th>Corte desde</th></tr>{rows(preview,['customer_name','zone_name','oldest_due','scheduled_at'])}</table></div>
+    <div class="panel"><h3>Diagnóstico de clientes con factura pendiente</h3><p>Estado administrativo, zona que usa el motor de corte y promesa vigente. Consulta de solo lectura.</p><table class="table"><tr><th>Cliente</th><th>Estado</th><th>Zona guardada</th><th>Zona del motor</th><th>Corte días después</th><th>Hora</th><th>Vence factura</th><th>Promesa hasta</th></tr>{rows(cut_diagnostics,['name','status','zone','effective_zone','cut_days_after','cut_time','oldest_due','promise_until'])}</table></div>
     <div class="panel"><h3>Tareas automáticas</h3><table class="table"><tr><th>Tarea</th><th>Estado</th><th>Detalle</th><th>Última revisión</th></tr>{rows(runs,['task','status','detail','updated_at'])}</table></div>
     <div class="cards2"><div class="panel"><h3>Órdenes MikroTik</h3><table class="table">{rows(commands,['status','n'])}</table><a class="btn" href="{url_for('mikrotik_commands')}">Ver cola</a></div>
     <div class="panel"><h3>Avisos por WhatsApp</h3><p>Los avisos se preparan el día del vencimiento. PENDIENTE significa en cola, pendiente del emisor configurado; ENVIADO indica que el proveedor aceptó el envío, no confirma lectura.</p><table class="table">{rows(messages,['status','n'])}</table></div></div>

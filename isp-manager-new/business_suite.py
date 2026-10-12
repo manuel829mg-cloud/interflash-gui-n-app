@@ -1,7 +1,7 @@
 import os, secrets, sqlite3, tempfile, urllib.request, json
 from datetime import date, datetime, timedelta
 from html import escape
-from flask import request, redirect, url_for, flash, session, send_file, render_template_string
+from flask import request, redirect, url_for, flash, session, get_flashed_messages, send_file, render_template_string
 from werkzeug.security import generate_password_hash, check_password_hash
 import app as base
 
@@ -125,6 +125,7 @@ def promise_new(customer_id):
     if not customer: return 'Cliente no encontrado',404
     opts=''.join(f'<option value="{x["id"]}">#{x["id"]} · RD${x["amount"]:,.2f}</option>' for x in inv)
     today=date.today().isoformat()
+    errors = ''.join(f'<p role="alert" style="background:#fff0f0;color:#9b1c1c;padding:12px;border:1px solid #efaaaa;border-radius:6px">{esc(message)}</p>' for message in get_flashed_messages())
     hour_options=''.join(f'<option value="{h}" {"selected" if h==11 else ""}>{h:02d}</option>' for h in range(1,13))
     minute_options=''.join(f'<option value="{m}" {"selected" if m==59 else ""}>{m:02d}</option>' for m in range(60))
     body=f'''<style>
@@ -139,7 +140,7 @@ def promise_new(customer_id):
     </style><div class="promise-overlay"><section class="promise-modal" role="dialog" aria-modal="true" aria-label="Crear promesa de pago">
     <header class="promise-head"><div><h2><span class="promise-hand-icon" aria-hidden="true">🤝</span> Crear Promesa de Pago</h2><small>{esc(customer["name"])}</small></div><a href="{url_for('customers',overdue=1)}" style="color:white;font-size:26px" aria-label="Cerrar">×</a></header>
     <form method="post" action="{url_for('promise_new',customer_id=customer_id)}"><div class="promise-body">
-    <div class="promise-help"><b>¿Qué es una promesa de pago?</b><p>Acuerdo temporal que extiende la fecha de pago. El corte automático al incumplir requiere que esté habilitado y verificado en el sistema.</p></div>
+    {errors}<div class="promise-help"><b>¿Qué es una promesa de pago?</b><p>Acuerdo temporal que extiende la fecha de pago. El corte automático al incumplir requiere que esté habilitado y verificado en el sistema.</p></div>
     <label>Nueva Fecha de Pago *<span class="promise-date-wrap"><input id="promise-date" type="date" name="promise_date" min="{today}" required onclick="try{{this.showPicker()}}catch(e){{}}" /><button class="promise-date-icon" type="button" aria-label="Abrir calendario" onclick="var d=document.getElementById(\'promise-date\');try{{d.showPicker()}}catch(e){{d.focus();d.click()}}">▦</button></span></label>
     <label>Hora de Corte si no cumple *<span class="promise-time-12"><select name="promise_hour" aria-label="Hora de corte" required>{hour_options}</select><span>:</span><select name="promise_minute" aria-label="Minutos de corte" required>{minute_options}</select><select name="promise_period" aria-label="AM o PM" required><option value="AM">AM</option><option value="PM" selected>PM</option></select></span></label>
     <label>Motivo / Notas (Opcional)<textarea name="notes" rows="3" placeholder="Ej: Cliente solicita extensión por problemas económicos"></textarea></label>

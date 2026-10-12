@@ -32,13 +32,18 @@ def health_api():
     ensure_schema()
     c=base.db(); now=datetime.now().isoformat(timespec='seconds'); received_count=0
     try:
+        c.execute('BEGIN IMMEDIATE')
         for part in raw.split('|'):
             cols=part.split(',')
             if len(cols)!=3:
                 continue
             iface=cols[0][:120].strip()
+            if iface not in {line[0] for line in LINES}:
+                continue
             try:
-                received=max(0,int(cols[1])); sent=max(1,int(cols[2]))
+                received=int(cols[1]); sent=int(cols[2])
+                if sent < 1 or received < 0 or received > sent:
+                    continue
             except (TypeError,ValueError):
                 continue
             loss=max(0.0,min(100.0,((sent-received)*100.0)/sent))
@@ -49,10 +54,12 @@ def health_api():
                            packet_loss=excluded.packet_loss,updated_at=excluded.updated_at''',
                       (router,iface,received,sent,loss,now))
             received_count+=1
+            import wan_alerts
+            wan_alerts.observe(c,router,iface,loss,now)
         c.commit()
     finally:
         c.close()
-    return jsonify(ok=True,received=received_count)
+    return jsonify(ok=received_count > 0,received=received_count), (200 if received_count else 422)
 
 def page():
     if not base.logged_in():
@@ -75,11 +82,11 @@ def page():
         if loss is None:
             status,cls='SIN DATOS','warn'
         elif loss >= 100:
-            status,cls='OFFLINE','bad'
+            status,cls='SIN RESPUESTA ICMP','bad'
         elif loss > 0:
             status,cls='INESTABLE','warn'
         else:
-            status,cls='ONLINE','ok'
+            status,cls='PRUEBA OK','ok'
         rx=push_sync._fmt_mbps(t['rx_bps']) if t else '0.00 Mbps'
         tx=push_sync._fmt_mbps(t['tx_bps']) if t else '0.00 Mbps'
         loss_txt='—' if loss is None else f'{loss:.0f}%'
@@ -92,12 +99,13 @@ def page():
           <div class="grid6" style="grid-template-columns:repeat(3,minmax(90px,1fr));margin-top:12px">
             <div><div class="muted">Descarga</div><b>{rx}</b></div>
             <div><div class="muted">Subida</div><b>{tx}</b></div>
-            <div><div class="muted">Pérdida real</div><b>{loss_txt}</b></div>
+            <div><div class="muted">Pérdida en prueba</div><b>{loss_txt}</b></div>
           </div>
           <div class="muted" style="margin-top:12px">Prueba {escape(probe)} · {escape(table)}<br>Última prueba: {updated}</div>
         </div>''')
     body=f'''<div class="head"><div><h1>Estado de líneas</h1><p>Claro y Altice en vivo · estado, consumo y pérdida de paquetes.</p></div>
-      <a class="btn blue" href="{url_for('router_push_traffic_script',name='CCR2116')}">Activar / actualizar monitor</a></div>
+      <div><a class="btn blue" href="{url_for('router_push_traffic_script',name='CCR2116')}">Activar / actualizar monitor</a>
+      <a class="btn" href="{url_for('wan_alerts')}">Alertas de líneas</a></div></div>
     <div style="padding:11px;border-radius:8px;background:#17304b;color:#bfdbfe;margin-bottom:14px">
       Las pruebas son de solo lectura. No cambian rutas, mangle ni gateways del CCR2116.
     </div>

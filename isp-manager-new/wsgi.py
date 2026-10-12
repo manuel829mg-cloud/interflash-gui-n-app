@@ -74,6 +74,10 @@ admin_suite.setup(app)
 traffic_monitor_fix.setup(app)
 traffic_monitor_v2.setup(app)
 wan_monitor.setup(app)
+import wan_alerts
+wan_alerts.setup(app)
+import failover_preflight
+failover_preflight.setup(app)
 optical_monitor.setup(app)
 whatsapp_suite.setup(app)
 branding.setup(app)

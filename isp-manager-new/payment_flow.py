@@ -53,9 +53,10 @@ def record_payment(customer_id=None, invoice_id=None, amount=None, method='EFECT
         # Only an allocated, fully settled invoice can trigger reconnection.
         if inv and amount == balance and not overdue:
             c.execute("UPDATE router_commands SET status='CANCELADO',result='Deuda pagada antes del corte' WHERE customer_id=? AND action='SUSPEND' AND status='PENDIENTE' AND requested_by LIKE 'ZONA:%'", (customer_id,))
-            in_flight = c.execute("SELECT 1 FROM router_commands WHERE customer_id=? AND action='SUSPEND' AND status='EN_PROCESO' LIMIT 1", (customer_id,)).fetchone()
             queued = c.execute("SELECT 1 FROM router_commands WHERE customer_id=? AND action='REACTIVATE' AND status IN ('PENDIENTE','EN_PROCESO') LIMIT 1", (customer_id,)).fetchone()
-            if settings.get('auto_reactivate') == '1' and cu['pppoe'] and (cu['status'] == 'SUSPENDIDO' or in_flight) and not queued:
+            # A failed cut acknowledgement can leave status ACTIVO while PPP is disabled.
+            # Fully paid invoices must reconcile router access regardless of cached status.
+            if settings.get('auto_reactivate') == '1' and cu['pppoe'] and not queued:
                 c.execute('''INSERT INTO router_commands(router_name,customer_id,pppoe,action,payload,status,created_at,requested_by)
                              VALUES(?,?,?,'REACTIVATE','{}','PENDIENTE',?,'PAGO')''',
                           (cu['router_name'] or 'CCR2116',customer_id,cu['pppoe'],now))

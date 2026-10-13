@@ -123,11 +123,11 @@ def zones_page():
 
         try:
             suspend_count = int(request.form.get('suspend_invoice_count', '1'))
-            if suspend_count not in (1, 2, 3):
+            if not 1 <= suspend_count <= 12:
                 raise ValueError()
         except (TypeError, ValueError):
             c.close()
-            flash('Selecciona 1, 2 o 3 facturas vencidas para suspender el servicio.')
+            flash('Selecciona entre 1 y 12 facturas vencidas para suspender el servicio.')
             return redirect(url_for('zones_page', edit=zone_id) if zone_id else url_for('zones_page'))
 
         reminder_enabled = int(request.form.get('whatsapp_reminder_enabled') == '1')
@@ -191,7 +191,7 @@ def zones_page():
     )
 
     suspend_count = edit_zone['suspend_invoice_count'] if edit_zone else 1
-    suspend_options = ''.join(f'<option value="{n}"{" selected" if n == suspend_count else ""}>{n} factura{"s" if n > 1 else ""} vencida{"s" if n > 1 else ""}</option>' for n in (1, 2, 3))
+    suspend_options = ''.join(f'<option value="{n}"{" selected" if n == suspend_count else ""}>{n} factura{"s" if n > 1 else ""} vencida{"s" if n > 1 else ""}</option>' for n in range(1, 13))
 
     total_zones = len(rows)
     zones_billing = sum(1 for r in rows if r['invoice_days_before'] is not None)

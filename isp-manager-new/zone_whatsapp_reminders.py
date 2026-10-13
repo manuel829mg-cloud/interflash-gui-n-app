@@ -20,7 +20,7 @@ def candidates(c, now):
         GROUP BY cu.id,z.id''').fetchall()
     for row in rows:
         try:
-            due = suspension_due_date(c, row['customer_id'], max(1, min(3, int(row['suspend_invoice_count'] or 1))))
+            due = suspension_due_date(c, row['customer_id'], max(1, min(12, int(row['suspend_invoice_count'] or 1))))
             if due is None:
                 continue
             cut = due + timedelta(days=max(0,int(row['cut_days_after'])))

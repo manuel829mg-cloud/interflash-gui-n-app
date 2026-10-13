@@ -169,7 +169,7 @@ def process_zone_cuts(now=None, dry_run=False):
         retry_after = (now - timedelta(minutes=10)).isoformat(timespec='seconds')
 
         for row in rows:
-            required = max(1, min(3, int(row['suspend_invoice_count'] or 1)))
+            required = max(1, min(12, int(row['suspend_invoice_count'] or 1)))
             oldest_due = suspension_due_date(c, row['customer_id'], required, now.date())
             if oldest_due is None:
                 continue

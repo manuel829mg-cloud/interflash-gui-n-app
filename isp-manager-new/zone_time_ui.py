@@ -187,7 +187,7 @@ def zones_page():
     reminder_options = ''.join(
         f'<option value="{days}"{" selected" if days == reminder_days else ""}>'
         f'{"El mismo día del corte" if days == 0 else "1 día antes del corte" if days == 1 else str(days) + " días antes del corte"}</option>'
-        for days in range(32)
+        for days in sorted(set(range(13)) | {int(reminder_days)})
     )
 
     suspend_count = edit_zone['suspend_invoice_count'] if edit_zone else 1

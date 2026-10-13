@@ -182,9 +182,17 @@ def setup(app):
                     chosen_id = selected.split(':', 1)[1]
                     if not chosen_id.isdigit():
                         raise ValueError('Selecciona un plan válido.')
-                    selected = resolve(c, chosen_id, router,
-                                       data.get('pbr_line') or _value(customer, 'pbr_line'),
-                                       data.get('ip_address') or _value(customer, 'ip_address'), customer)
+                    line = data.get('pbr_line', _value(customer, 'pbr_line'))
+                    address = data.get('ip_address', _value(customer, 'ip_address'))
+                    keep_service = (endpoint == 'customer_edit' and customer is not None
+                                    and chosen_id == str(_value(customer, 'plan_id'))
+                                    and router == (_value(customer, 'router_name') or 'CCR2116')
+                                    and line == _value(customer, 'pbr_line')
+                                    and address == _value(customer, 'ip_address')
+                                    and data.get('pppoe', _value(customer, 'pppoe')) == _value(customer, 'pppoe')
+                                    and not data.get('create_in_router'))
+                    selected = (str(_value(customer, 'mikrotik_profile')) if keep_service else
+                                resolve(c, chosen_id, router, line, address, customer))
                     data['plan_id'] = chosen_id
                     data['mikrotik_profile'] = selected
                     plan_id = chosen_id

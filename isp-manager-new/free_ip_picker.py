@@ -299,6 +299,7 @@ window.IFIP=(function(){
     render();
   }
   async function refresh(){
+    items=[];lastData=null;
     list().innerHTML='<div class="if-ip-loading"><span class="if-ip-spinner"></span>Consultando IPs sincronizadas...</div>';
     meta().textContent='Leyendo pools e IPs ocupadas del MikroTik';
     // The separate pool-sync scheduler uploads snapshots every 10 minutes.
@@ -341,10 +342,29 @@ window.IFIP=(function(){
       b.appendChild(s);b.appendChild(sm);b.onclick=()=>choose(x.ip);list().appendChild(b);
     });
   }
-  function choose(ip){
-    const e=document.querySelector('[name="ip_address"]');
-    if(e){e.value=ip;e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));}
-    close();
+  let choosing=false;
+  async function choose(ip){
+    if(choosing)return;
+    choosing=true;
+    meta().textContent='Verificando que la IP siga libre...';
+    try{
+      const selectedRouter=router();
+      const d=await read();
+      if(router()!==selectedRouter){await refresh();return;}
+      applyData(d,'disponibilidad actualizada');
+      if(!d.items.some(x=>x.ip===ip)){
+        const e=document.querySelector('[name="ip_address"]');
+        if(e&&e.value===ip)e.value='';
+        meta().textContent='Esta IP ya está ocupada. Se retiró de la lista; selecciona otra.';
+        return;
+      }
+      const e=document.querySelector('[name="ip_address"]');
+      if(e){e.value=ip;e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));}
+      close();
+    }catch(e){
+      items=[];lastData=null;render();
+      meta().textContent='No se pudo verificar la IP. Pulsa ↻ para actualizar.';
+    }finally{choosing=false;}
   }
   function open(){modal().style.display='flex';document.body.style.overflow='hidden';filter().value='';refresh();setTimeout(()=>filter().focus(),100);}
   function close(){modal().style.display='none';document.body.style.overflow='';}

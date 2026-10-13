@@ -10,6 +10,7 @@ import app as base
 import ultramsg_suite as ultra
 import whapi_suite as whapi
 import greenapi_suite as greenapi
+import waha_suite as waha
 
 GRAPH_VERSION = os.getenv('WHATSAPP_GRAPH_VERSION', 'v23.0').strip() or 'v23.0'
 ACCESS_TOKEN = os.getenv('WHATSAPP_ACCESS_TOKEN', '').strip()
@@ -135,10 +136,10 @@ def ensure_schema():
 
 
 def _meta_ready():
-    return greenapi.enabled() or whapi.enabled() or ultra.enabled() or bool(ACCESS_TOKEN and PHONE_NUMBER_ID)
+    return waha.enabled() or greenapi.enabled() or whapi.enabled() or ultra.enabled() or bool(ACCESS_TOKEN and PHONE_NUMBER_ID)
 
 def _provider_label():
-    return 'GREEN-API' if greenapi.enabled() else 'Whapi.Cloud' if whapi.enabled() else 'UltraMsg' if ultra.enabled() else 'Meta Cloud API'
+    return 'WAHA' if waha.enabled() else 'GREEN-API' if greenapi.enabled() else 'Whapi.Cloud' if whapi.enabled() else 'UltraMsg' if ultra.enabled() else 'Meta Cloud API'
 
 
 def _thread_for_phone(c, phone, display_name='', customer_id=None):
@@ -195,6 +196,8 @@ def _meta_post(payload):
 
 
 def _send_text(phone, body):
+    if waha.enabled():
+        return waha.send_text(_wa_phone(phone), body)
     if greenapi.enabled():
         return greenapi.send_text(_wa_phone(phone), body)
     if whapi.enabled():
@@ -219,6 +222,8 @@ def _send_text(phone, body):
 
 
 def _send_template(phone, name, language='es'):
+    if waha.enabled():
+        return False, '', 'Con WAHA usa una respuesta rápida de texto.'
     if greenapi.enabled():
         return False, '', 'Con GREEN-API usa una respuesta rápida de texto; las plantillas de Meta requieren Meta.'
     if whapi.enabled():
@@ -242,6 +247,8 @@ def _send_template(phone, name, language='es'):
 
 
 def _record_outgoing(c, thread_id, body, provider_id, status, error=''):
+    if provider_id.startswith('waha:'):
+        status = waha.confirmed_status(c, provider_id, status)
     if provider_id.startswith('greenapi:'):
         status = greenapi.confirmed_status(c, provider_id, status)
     if provider_id.startswith('whapi:'):
@@ -263,7 +270,7 @@ def _process_queue_item(c, row):
         ok, provider_id, err = _send_text(row['phone'], row['body'] or '')
         visible_body = row['body'] or ''
     if ok:
-        status=greenapi.confirmed_status(c,provider_id,'ACEPTADO') if provider_id.startswith('greenapi:') else whapi.confirmed_status(c,provider_id,'ACEPTADO') if provider_id.startswith('whapi:') else ultra.confirmed_status(c,provider_id,'ACEPTADO') if provider_id.startswith('ultra:') else 'ACEPTADO'
+        status=waha.confirmed_status(c,provider_id,'ACEPTADO') if provider_id.startswith('waha:') else greenapi.confirmed_status(c,provider_id,'ACEPTADO') if provider_id.startswith('greenapi:') else whapi.confirmed_status(c,provider_id,'ACEPTADO') if provider_id.startswith('whapi:') else ultra.confirmed_status(c,provider_id,'ACEPTADO') if provider_id.startswith('ultra:') else 'ACEPTADO'
         c.execute("UPDATE whatsapp_queue SET status=?,provider_id=?,sent_at=?,last_error=NULL WHERE id=?",
                   (status,provider_id,_now(),row['id']))
         if row['thread_id']:
@@ -456,7 +463,7 @@ def inbox():
     .wa-kpis{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}}.wa-layout{{display:grid;grid-template-columns:360px 1fr;gap:14px;min-height:640px}}.wa-side,.wa-chat{{background:#0d1a29;border:1px solid #22374e;border-radius:12px;overflow:hidden}}.wa-side-head{{padding:14px;border-bottom:1px solid #22374e}}.wa-side-head form{{display:flex;gap:7px}}.wa-side-head input{{width:100%}}.wa-threads{{max-height:590px;overflow:auto}}.wa-thread{{display:grid;grid-template-columns:44px 1fr auto;gap:10px;padding:12px;border-bottom:1px solid #1b3045;align-items:center}}.wa-thread:hover,.wa-thread.on{{background:#122438}}.wa-avatar{{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;background:#075e54;color:#fff;font-weight:900}}.wa-thread-main{{min-width:0}}.wa-thread-main b,.wa-thread-main small,.wa-thread-main span{{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.wa-thread-main small{{color:#7f94aa;margin:2px 0}}.wa-thread-main span{{color:#9fb0c0;font-size:12px}}.wa-unread{{min-width:22px;height:22px;padding:0 6px;border-radius:999px;background:#16c784;color:#052d1f;display:grid;place-items:center;font-size:11px;font-weight:900}}.wa-chat{{display:flex;flex-direction:column}}.wa-chat-head{{padding:14px 16px;border-bottom:1px solid #22374e;display:flex;justify-content:space-between;align-items:center}}.wa-chat-head small{{display:block;color:#8397aa;margin-top:3px}}.wa-messages{{height:520px;min-height:240px;flex:1;overflow:auto;padding:18px;background:radial-gradient(circle at 30% 10%,#10243a,#0a1522 55%)}}.wa-msg{{max-width:72%;padding:10px 12px;border-radius:11px;margin:8px 0;line-height:1.35}}.wa-msg.in{{background:#182a3d;margin-right:auto}}.wa-msg.out{{background:#075e54;margin-left:auto}}.wa-msg small{{display:block;color:#b9c8d5;font-size:10px;margin-top:6px;text-align:right}}.wa-compose{{padding:12px;border-top:1px solid #22374e;display:grid;grid-template-columns:190px 1fr auto;gap:8px;align-items:end}}.wa-compose textarea{{resize:vertical;min-height:44px}}.wa-empty{{padding:40px;text-align:center;color:#8397aa}}.wa-config{{display:grid;grid-template-columns:1fr 1fr;gap:12px}}@media(max-width:950px){{.wa-layout{{grid-template-columns:1fr}}.wa-side{{max-height:360px}}.wa-kpis{{grid-template-columns:repeat(2,1fr)}}}}@media(max-width:650px){{.wa-compose{{grid-template-columns:1fr}}.wa-config{{grid-template-columns:1fr}}.wa-kpis{{grid-template-columns:1fr}}}}
     .wa-kpis .kpi{{padding:12px}}.wa-kpis .value{{font-size:24px}}.wa-status{{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:12px 0;color:#aebdcb;font-size:12px}}.wa-customer{{padding:14px 16px;background:#102237;border-bottom:1px solid #22374e}}.wa-customer h3{{margin:0 0 8px;font-size:13px;color:#9fb0c0}}.wa-customer>.tag{{margin-left:10px}}.wa-facts{{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0}}.wa-facts small{{display:block;color:#9fb0c0;margin-bottom:4px}}.wa-actions{{display:flex;flex-wrap:wrap;gap:7px;margin:12px 0 8px}}.wa-actions .btn{{font-size:12px;padding:8px 10px}}.wa-msg>div{{white-space:pre-wrap;overflow-wrap:anywhere}}.wa-messages{{height:420px}}@media(max-width:650px){{.wa-facts{{grid-template-columns:1fr}}.wa-msg{{max-width:90%}}}}
     </style>
-    <div class="head"><div><h1>WhatsApp</h1><p>Bandeja de chats y cola de mensajes · {esc(_provider_label())}.</p></div><div style="display:flex;gap:8px;flex-wrap:wrap">{sync_button}<a class="btn" href="{url_for('whatsapp_queue')}">Cola</a><a class="btn green" href="{url_for('greenapi_settings')}">GREEN-API</a><a class="btn blue" href="{url_for('whatsapp_settings')}">Configuración</a></div></div>
+    <div class="head"><div><h1>WhatsApp</h1><p>Bandeja de chats y cola de mensajes · {esc(_provider_label())}.</p></div><div style="display:flex;gap:8px;flex-wrap:wrap">{sync_button}<a class="btn" href="{url_for('whatsapp_queue')}">Cola</a><a class="btn green" href="{url_for('waha_settings')}">WAHA</a><a class="btn blue" href="{url_for('whatsapp_settings')}">Configuración</a></div></div>
     <div class="wa-status"><span class="tag">{esc(_provider_label())}</span><span id="wa-reception">{esc(reception)}</span><small id="wa-sync">Actualización automática</small></div><div class="wa-kpis"><div class="kpi green1"><div class="label">Conexión</div><div class="value" style="font-size:18px">{'CONFIGURADA' if _meta_ready() else 'PENDIENTE'}</div><div class="sub">{esc(_provider_label())}</div></div><div class="kpi blue1"><div class="label">Chats</div><div class="value">{len(threads)}</div><div class="sub">Cargados</div></div><div class="kpi orange1"><div class="label">No leídos</div><div class="value">{unread}</div><div class="sub">Mensajes</div></div><div class="kpi {'orange1' if queue_pending else 'green1'}"><div class="label">Cola pendiente</div><div class="value">{queue_pending}</div><div class="sub">{'En proceso o por enviar' if queue_pending else 'Sin mensajes pendientes'}</div></div></div>
     <div class="muted" style="margin:8px 0">{(str(queue_error) + ' envíos fallidos registrados en el historial. Consulta el detalle en Cola.') if queue_error else ''}</div>
     <details class="panel"><summary class="btn">+ Nueva conversación</summary><form method="post" action="{url_for('whatsapp_new_thread')}" class="toolbar" style="margin:0"><input class="field" name="phone" placeholder="Número para nueva conversación" required><input class="field" name="name" placeholder="Nombre (opcional)"><button class="btn green">Crear conversación</button></form></details>
@@ -583,11 +590,11 @@ def settings_page():
         ('WHATSAPP_GRAPH_VERSION',bool(GRAPH_VERSION),f'Actual: {GRAPH_VERSION}'),
     ]
     vr=''.join(f'''<tr><td><code>{esc(n)}</code></td><td><span class="tag {'ok' if ok else 'warn'}">{'CARGADO' if ok else 'OPCIONAL' if n=='WHATSAPP_BUSINESS_NUMBER' else 'FALTA'}</span></td><td>{esc(desc)}</td></tr>''' for n,ok,desc in vars_rows)
-    body=f'''<div class="head"><div><h1>Configuración WhatsApp</h1><p>Proveedor de envío: {esc(_provider_label())}.</p></div><a class="btn" href="{url_for('whatsapp_inbox')}">← WhatsApp</a></div><div class="panel"><h3>GREEN-API por QR</h3><p>Conecta tu instancia autorizada de GREEN-API.</p><a class="btn green" href="{url_for('greenapi_settings')}">Configurar GREEN-API</a></div><div class="panel"><h3>Plantillas internas</h3><p class="muted">Textos disponibles como respuestas rápidas en tus conversaciones.</p><table class="table"><tr><th>Nombre</th><th>Código</th><th>Texto</th></tr>{trs}</table></div>'''
+    body=f'''<div class="head"><div><h1>Configuración WhatsApp</h1><p>Proveedor de envío: {esc(_provider_label())}.</p></div><a class="btn" href="{url_for('whatsapp_inbox')}">← WhatsApp</a></div><div class="panel"><h3>WAHA por QR</h3><p>Conecta el WhatsApp vinculado en tu computadora.</p><a class="btn green" href="{url_for('waha_settings')}">Configurar WAHA</a></div><div class="panel"><h3>Plantillas internas</h3><p class="muted">Textos disponibles como respuestas rápidas en tus conversaciones.</p><table class="table"><tr><th>Nombre</th><th>Código</th><th>Texto</th></tr>{trs}</table></div>'''
     c = base.db()
     reception = _reception_summary(c)
     c.close()
-    webhook_url = url_for('greenapi_webhook', _external=True, _scheme='https')
+    webhook_url = url_for('waha_webhook' if waha.enabled() else 'greenapi_webhook', _external=True, _scheme='https')
     body += f'''<div class="panel"><h3>Estado de recepción</h3><p>{esc(reception)}</p><p class="muted">Webhook: {esc(webhook_url)}</p></div>
     <div class="panel"><h3>Prueba de envío</h3><form method="post" action="{url_for('whatsapp_send')}" class="toolbar"><input class="field" name="phone" placeholder="Número de otro teléfono, ej. 18095551234" required><input class="field" name="body" value="Hola, esta es una prueba de INTER Flash." required><button class="btn green">Enviar prueba</button></form><p class="muted">Comprueba la llegada en el teléfono destinatario. Se aplican los límites de tu plan.</p></div>'''
     return base.shell('Configuración WhatsApp',_tabs('general')+body,'whatsapp_inbox')
@@ -666,6 +673,7 @@ def setup(app):
     ultra.setup(app)
     whapi.setup(app)
     greenapi.setup(app)
+    waha.setup(app)
     import whatsapp_menu
     whatsapp_menu.setup(app)
     import greenapi_chats

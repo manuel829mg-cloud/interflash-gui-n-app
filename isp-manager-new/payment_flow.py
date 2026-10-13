@@ -101,7 +101,50 @@ def payment_endpoint(invoice_id=None, quick=False):
     return redirect(url_for('payment_receipt',id=pid))
 
 
+def reconcile_paid_cut_errors():
+    """Recover paid accounts whose last cut failed acknowledgement."""
+    c = base.db()
+    try:
+        c.execute('BEGIN IMMEDIATE')
+        enabled = c.execute("SELECT value FROM app_settings WHERE key='auto_reactivate'").fetchone()
+        if not enabled or enabled[0] != '1':
+            return 0
+        now = datetime.now().isoformat(timespec='seconds')
+        rows = c.execute("""SELECT cu.id,cu.pppoe,cu.router_name
+            FROM customers cu JOIN router_commands cut ON cut.customer_id=cu.id
+            WHERE cu.status<>'ELIMINADO' AND COALESCE(TRIM(cu.pppoe),'')<>''
+              AND cut.action='SUSPEND' AND cut.status='ERROR'
+              AND cut.result='CORTE_NO_CONFIRMADO'
+              AND cut.id=(SELECT MAX(rc.id) FROM router_commands rc
+                 WHERE rc.customer_id=cu.id AND rc.action IN ('SUSPEND','REACTIVATE')
+                 AND rc.status<>'CANCELADO')
+              AND EXISTS(SELECT 1 FROM payments p JOIN invoices i ON i.id=p.invoice_id
+                 WHERE p.customer_id=cu.id AND i.customer_id=cu.id AND i.status='PAGADA'
+                 AND p.paid_at>=cut.created_at
+                 AND i.amount<=COALESCE((SELECT SUM(pp.amount) FROM payments pp WHERE pp.invoice_id=i.id),0))
+              AND NOT EXISTS(SELECT 1 FROM invoices i WHERE i.customer_id=cu.id
+                 AND i.status='PENDIENTE' AND i.due_date<=?
+                 AND i.amount>COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id=i.id),0))
+              AND NOT EXISTS(SELECT 1 FROM router_commands rc WHERE rc.customer_id=cu.id
+                 AND rc.action='REACTIVATE' AND rc.status IN ('PENDIENTE','EN_PROCESO'))""",
+              (date.today().isoformat(),)).fetchall()
+        for cu in rows:
+            c.execute("""INSERT INTO router_commands(router_name,customer_id,pppoe,action,payload,status,created_at,requested_by)
+                VALUES(?,?,?,'REACTIVATE','{}','PENDIENTE',?,'PAGO_RECUPERACION')""",
+                (cu['router_name'] or 'CCR2116',cu['id'],cu['pppoe'],now))
+        c.commit()
+        return len(rows)
+    except Exception:
+        c.rollback()
+        raise
+    finally:
+        c.close()
+
+
 def setup(app):
+    if __import__('os').environ.get('INTERFLASH_TESTING') != '1':
+        recovered = reconcile_paid_cut_errors()
+        print(f'INTERFLASH_PAID_CUT_RECOVERY={recovered}', flush=True)
     original = app.view_functions['payments']
     app.view_functions['payments'] = lambda: payment_endpoint() if request.method == 'POST' else original()
     app.view_functions['invoice_payment'] = lambda id: payment_endpoint(id)

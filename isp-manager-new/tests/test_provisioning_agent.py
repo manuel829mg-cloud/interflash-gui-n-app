@@ -19,6 +19,20 @@ class ProvisioningAgentTests(unittest.TestCase):
         self.assertIn('"&ok=" . $created . "&result=" . $createResult', script)
         self.assertIn('disabled=yes', script)
 
+    def test_pbr_is_supported_by_the_active_agent(self):
+        script = suspension_agent._agent_rsc("https://example.invalid", "test-token")
+        self.assertIn('($action = "APPLY_PBR")', script)
+        self.assertIn('($action = "REMOVE_PBR")', script)
+        self.assertIn('PBR_CONFIRMADO', script)
+        self.assertIn('PBR_DATOS_INVALIDOS', script)
+        self.assertIn('comment=("INTERFLASH:" . $user)', script)
+
+    def test_service_queue_includes_pbr(self):
+        import inspect
+        source = inspect.getsource(suspension_agent.service_next)
+        self.assertIn("'APPLY_PBR'", source)
+        self.assertIn("'REMOVE_PBR'", source)
+
     def test_existing_pppoe_is_not_overwritten(self):
         script = suspension_agent._agent_rsc("https://example.invalid", "test-token")
         self.assertIn('result=PPPOE_YA_EXISTE', script)

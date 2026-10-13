@@ -333,12 +333,15 @@ def customers_plus():
     @media(max-width:1050px){.c-plan{display:none}.c-client{width:27%}.c-pppoe{width:18%}.c-actions{width:25%}}
     @media(max-width:780px){.clients-table thead{display:none}.clients-table,.clients-table tbody,.clients-table tr,.clients-table td{display:block;width:100%!important}.clients-table tr{background:#0b1725;border:1px solid #22374e;border-radius:12px;margin-bottom:10px;padding:10px}.clients-table td{border:0;padding:5px 0}.c-zone,.c-plan,.c-pay{display:block}.icon-actions{margin-top:6px}}
     .clients-panel>#clients-search-form{margin:0 0 12px;gap:8px}
+    body:has(.clients-panel) .main{min-width:0;max-width:100%}
+    body:has(.clients-panel) .content{width:100%;max-width:none;padding-left:12px;padding-right:12px}
+    body .panel.clients-panel{padding-left:10px;padding-right:10px;max-width:100%;min-width:0}
     /* Approved customer layout: shared header/cell widths and readable text. */
     body .clients-panel .clients-table .c-client,body .clients-panel .clients-table .c-plan{word-break:normal;overflow-wrap:break-word;text-align:left}
     body .clients-panel .clients-table .c-plan small{white-space:nowrap;word-break:normal;overflow-wrap:normal}
     @media(min-width:781px){
       body .clients-panel{overflow-x:auto}
-      body .clients-panel .clients-table{table-layout:fixed;width:100%;min-width:960px}
+      body .clients-panel .clients-table{table-layout:fixed;width:100%;max-width:100%;min-width:0}
       body .clients-panel .clients-table th,body .clients-panel .clients-table td{padding:12px 7px;vertical-align:middle}
       body .clients-panel .clients-table thead th{white-space:normal!important;padding:10px 7px!important;vertical-align:middle!important;line-height:1.3!important}
       body .clients-panel .clients-table .c-code{width:7%}
@@ -351,8 +354,17 @@ def customers_plus():
       body .clients-panel .clients-table .c-pay{width:9%;display:table-cell}
       body .clients-panel .clients-table .c-actions{width:23%;min-width:0}
       body .clients-panel .clients-table .c-code span,body .clients-panel .clients-table .c-due,body .clients-panel .clients-table .c-pay{white-space:nowrap;overflow-wrap:normal}
-      body .clients-panel .clients-table .icon-actions{width:auto;display:flex;flex-flow:row nowrap;gap:4px}
-      body .clients-panel .clients-table .ico{width:26px;height:30px;flex:0 0 26px}
+      body .clients-panel .clients-table .icon-actions{width:100%;max-width:206px;display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:3px;align-items:center}
+      body .clients-panel .clients-table .icon-actions>*{min-width:0;max-width:26px}
+      body .clients-panel .clients-table .icon-actions form{width:100%;display:block}
+      body .clients-panel .clients-table .ico{width:100%;max-width:26px;min-width:0;height:30px;padding:0}
+      body .clients-panel .clients-table .ico svg{max-width:100%}
+    }
+    @media(min-width:781px) and (max-width:1200px){
+      body .clients-panel .clients-table th,body .clients-panel .clients-table td{padding-left:4px;padding-right:4px;font-size:11px}
+      body .clients-panel .clients-table .c-code span{white-space:normal;overflow-wrap:anywhere}
+      body .clients-panel .clients-table .c-plan small{white-space:normal;overflow-wrap:normal;word-break:normal}
+      body .clients-panel .clients-table .c-due,body .clients-panel .clients-table .c-pay{white-space:normal;overflow-wrap:normal}
     }
     </style>'''
     body=f'''{css}<div class="head"><div><h1>{'Morosos' if overdue_value == 'vencida' else 'Clientes con factura pendiente' if overdue_filter else ('Clientes suspendidos' if status_filter else 'Clientes')}</h1><p>Estado PPPoE real, facturación, ONU y acciones rápidas</p></div><div class="quick-links"><a class="btn" href="{url_for('onu_overview')}">ONU / ONT</a><a class="btn" href="{url_for('customer_trash')}">Papelera</a><a class="btn green" href="{url_for('customer_new')}">+ Nuevo cliente</a></div></div>

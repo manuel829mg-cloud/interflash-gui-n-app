@@ -40,7 +40,7 @@ def process(now=None):
     now = now or datetime.now(RD).replace(tzinfo=None)
     if now.tzinfo is not None:
         now = now.astimezone(RD).replace(tzinfo=None)
-    if not 8 <= now.hour < 20:
+    if not 10 <= now.hour < 20:
         return 0
     c = base.db()
     try:
@@ -57,7 +57,7 @@ def process(now=None):
 
 def valid(c, outbox_id, now=None):
     now = now or datetime.now(RD).replace(tzinfo=None)
-    if not 8 <= now.hour < 20:
+    if not 10 <= now.hour < 20:
         return False
     event = c.execute('SELECT event_key FROM whatsapp_event_keys WHERE outbox_id=?',(outbox_id,)).fetchone()
     if event:

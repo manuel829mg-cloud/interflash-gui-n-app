@@ -165,6 +165,8 @@ def zones_page():
     edit_id = _int_value(request.args.get('edit'), 0)
     edit_zone = c.execute('SELECT * FROM zones WHERE id=?', (edit_id,)).fetchone() if edit_id else None
     rows = c.execute('SELECT * FROM zones ORDER BY name').fetchall()
+    from zone_summary import totals
+    summaries = totals(c)
     zone_counts = _zone_customer_counts(c, rows)
     client_count = sum(zone_counts.values())
     c.close()
@@ -191,13 +193,16 @@ def zones_page():
     trs = ''.join(
         f'<tr class="zone-row" data-zone="{esc(str(r["name"]).lower())}">'
         f'<td><div class="zone-name"><span class="zone-pin">◆</span><b>{esc(r["name"])}</b></div></td>'
-        f'<td><span class="client-pill">👥 {zone_counts.get(int(r["id"]), 0)}</span></td>'
+        f'<td><a class="client-pill" href="/zones/{r["id"]}/summary">👥 {summaries.get(r["id"], {}).get("clients", 0)}</a>'
+        f'<div class="muted">Deuda: RD${summaries.get(r["id"], {}).get("balance", 0):,.2f}</div>'
+        f'<a href="/zones/{r["id"]}/summary?filter=suspended">Suspendidos: {summaries.get(r["id"], {}).get("suspended", 0)}</a></td>'
         f'<td>{r["billing_day"]}</td>'
         f'<td>{r["invoice_days_before"]} días antes</td>'
         f'<td>{r["cut_days_after"]} días después</td>'
         f'<td><span class="time-pill">{esc(_time12(r["cut_time"]))}</span></td>'
         f'<td>{"El día de vencimiento" if r["whatsapp_reminder_enabled"] else "Desactivado"}</td>'
         f'<td><div class="zone-actions">'
+        f'<a class="edit-btn" href="/zones/{r["id"]}/summary">Resumen e historial</a>'
         f'<a class="edit-btn" href="{url_for("zones_page", edit=r["id"])}#zone-form">✎&nbsp; Editar</a>'
         f'<form method="post" style="display:inline" onsubmit="return confirm(\'¿Seguro que deseas eliminar esta zona?\')">'
         f'<input type="hidden" name="action" value="delete">'
@@ -389,4 +394,6 @@ def zones_page():
 
 
 def setup(app):
+    from zone_summary import setup as summary_setup
+    summary_setup(app)
     app.view_functions['zones_page'] = zones_page

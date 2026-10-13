@@ -117,3 +117,12 @@ body .clients-table .ico svg.reference-icon{width:16px;height:16px}
 
 /* Use the space left by the removed desktop global search. */
 @media(min-width:851px){body .main>.top{display:none}body .main>.content{padding-top:16px}}
+
+/* Keep customer column titles in one compact row instead of stretching it. */
+@media(min-width:781px){
+ body .clients-panel{padding-top:4px!important;overflow-x:auto}
+ body .clients-panel>.clients-table{margin-top:0!important;height:auto!important}
+ body .clients-table thead{height:auto!important;min-height:0!important}
+ body .clients-table thead tr{height:auto!important;min-height:0!important}
+ body .clients-table thead th{white-space:nowrap!important;overflow-wrap:normal!important;word-break:normal!important;vertical-align:middle!important;height:auto!important;min-height:0!important;padding:4px 7px!important;line-height:1.2!important}
+}

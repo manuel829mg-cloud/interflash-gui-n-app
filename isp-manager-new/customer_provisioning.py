@@ -79,29 +79,25 @@ def profile_state_v2():
 
 
 def _commercial_profiles(c, router):
-    """Only named commercial Plan profiles with a unique active price."""
+    """Link synchronized PPP profiles to a unique commercial plan by real rate."""
+    from commercial_service import _rate
     plans = c.execute('SELECT * FROM plans WHERE active=1').fetchall()
     rows = c.execute("SELECT name,MAX(rate_limit) rate_limit FROM push_ppp_profiles WHERE router_name=? GROUP BY name ORDER BY name", (router,)).fetchall()
     mappings = c.execute('SELECT plan_id,profile_name FROM plan_profile_map WHERE router_name=?', (router,)).fetchall()
-    def normalized(value):
-        return ''.join(ch for ch in unicodedata.normalize('NFKD', str(value or '').replace('_', ' ').casefold()) if not unicodedata.combining(ch))
     result = []
     for row in rows:
         name = row['name'] or ''
-        if not re.match(r'^plan\s+(?:\d+\s+)?(?:basico|familiar|plus|premium|ultra|esencial|economico)\b', normalized(name)):
-            continue
+        rate = _rate(row['rate_limit'])
+        matches = [p for p in plans if rate == (float(p['upload_mbps']) * 1000000, float(p['download_mbps']) * 1000000)]
         mapped = {m['plan_id'] for m in mappings if m['profile_name'] == name}
-        matches = [p for p in plans if p['id'] in mapped]
-        if not matches:
-            text = normalized(name)
-            matches = [p for p in plans if re.search(r'(?<!\w)' + re.escape('esencial' if normalized(p['name']) == 'economico' and 'esencial' in text else normalized(p['name'])) + r'(?!\w)', text)
-                       and re.search(r'(?<!\d)' + str(int(p['download_mbps'])) + r'\s*m\b', text, re.I)]
-        prices = {float(p['price']) for p in matches}
-        if len(prices) != 1:
+        if mapped:
+            matches = [p for p in matches if p['id'] in mapped]
+        if len(matches) != 1:
             continue
-        price = prices.pop()
+        plan = matches[0]
+        price = float(plan['price'])
         result.append({'name': name, 'rate_limit': row['rate_limit'], 'price': price,
-                       'plan_ids': [p['id'] for p in matches], 'label': f'{name} · RD${price:,.0f}'})
+                       'plan_ids': [plan['id']], 'label': f'{name} · RD$ {price:,.0f}'})
     return result
 
 

@@ -27,7 +27,7 @@ def _agent_rsc(root, token):
   :local id ($d->"id");
   :if (([:typeof $id] = "nil") || ($id = 0)) do={ :return 0; }
   :local action ($d->"action");
-  :if (($action != "CREATE_PPPOE") && ($action != "SUSPEND") && ($action != "REACTIVATE") && ($action != "CHANGE_PROFILE") && ($action != "RESTART_PPPOE") && ($action != "DELETE_PPPOE")) do={ :return 0; }
+  :if (($action != "CREATE_PPPOE") && ($action != "SUSPEND") && ($action != "REACTIVATE") && ($action != "CHANGE_PROFILE") && ($action != "RESTART_PPPOE") && ($action != "DELETE_PPPOE") && ($action != "APPLY_PBR") && ($action != "REMOVE_PBR")) do={ :return 0; }
   :local user ($d->"pppoe");
   :if (($action = "SUSPEND") || ($action = "REACTIVATE")) do={
     :local success false;
@@ -51,6 +51,39 @@ def _agent_rsc(root, token):
           } else={ :set result "REACTIVACION_NO_CONFIRMADA"; }
         }
       } on-error={ :set result "ERROR_CAMBIO_SERVICIO"; }
+    }
+    /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=" . $success . "&result=" . $result) output=none check-certificate=yes;
+    :return 0;
+  }
+  :if (($action = "APPLY_PBR") || ($action = "REMOVE_PBR")) do={
+    :local payload ($d->"payload");
+    :local ip ($payload->"ip");
+    :local target ($payload->"address_list");
+    :local success false;
+    :local result "PBR_DATOS_INVALIDOS";
+    :local validTarget false;
+    :foreach l in={"Linea-1-Claro";"Linea-2-Claro";"Linea-3-Altice";"Linea-4-Altice"} do={
+      :if ($target = $l) do={ :set validTarget true; }
+    }
+    :if (([:typeof $ip] = "str") && ([:len $ip] > 0) && (($action = "REMOVE_PBR") || $validTarget)) do={
+      :set result "ERROR_PBR";
+      :do {
+        :foreach l in={"Linea-1-Claro";"Linea-2-Claro";"Linea-3-Altice";"Linea-4-Altice"} do={
+          /ip firewall address-list remove [find where list=$l and address=$ip and comment=("INTERFLASH:" . $user)];
+        }
+        :if ($action = "APPLY_PBR") do={
+          :if ([:len [/ip firewall address-list find where list=$target and address=$ip]] = 0) do={
+            /ip firewall address-list add list=$target address=$ip comment=("INTERFLASH:" . $user);
+          }
+          :if ([:len [/ip firewall address-list find where list=$target and address=$ip]] > 0) do={
+            :set success true;
+            :set result "PBR_CONFIRMADO";
+          } else={ :set result "PBR_NO_CONFIRMADO"; }
+        } else={
+          :set success true;
+          :set result "PBR_RETIRADO";
+        }
+      } on-error={ :set result "ERROR_PBR"; }
     }
     /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=" . $success . "&result=" . $result) output=none check-certificate=yes;
     :return 0;
@@ -127,6 +160,7 @@ def _agent_rsc(root, token):
     /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=false&result=PERFIL_NO_EXISTE") output=none check-certificate=yes;
     :return 0;
   }
+  :local createWithIp false;
   :if (([:typeof $rip] = "str") && ([:len $rip] > 0)) do={
     :if ([:len [/ppp active find where address=$rip]] > 0) do={
       /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=false&result=IP_ACTIVA") output=none check-certificate=yes;
@@ -136,11 +170,25 @@ def _agent_rsc(root, token):
       /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=false&result=IP_RESERVADA") output=none check-certificate=yes;
       :return 0;
     }
-    /ppp secret add name=$user password=$pass profile=$prof remote-address=$rip service=pppoe disabled=no;
-  } else={
-    /ppp secret add name=$user password=$pass profile=$prof service=pppoe disabled=no;
+    :set createWithIp true;
   }
-  /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=true&result=PPPOE_CREADO") output=none check-certificate=yes;
+  :local created false;
+  :local createResult "ERROR_CREACION_PPPOE";
+  :do {
+    :if ([:typeof $createWithIp] = "bool" && $createWithIp) do={
+      /ppp secret add name=$user password=$pass profile=$prof remote-address=$rip service=pppoe disabled=no;
+    } else={
+      /ppp secret add name=$user password=$pass profile=$prof service=pppoe disabled=no;
+    }
+    :local newSecret [/ppp secret find where name=$user];
+    :if ([:len $newSecret] = 1) do={
+      :set created true;
+      :set createResult "PPPOE_CREADO";
+    } else={
+      :set createResult "PPPOE_NO_VERIFICADO";
+    }
+  } on-error={ :set createResult "ERROR_CREACION_PPPOE"; }
+  /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=" . $created . "&result=" . $createResult) output=none check-certificate=yes;
 }
 /system scheduler add name="interflash-agent-scheduler" interval=5s on-event="/system script run interflash-agent" policy=read,write,test,sensitive start-time=startup disabled=yes
 :log info "INTERFLASH-SERVICE-AGENT-V6-STANDARD-INSTALLED"
@@ -285,7 +333,7 @@ def service_next():
           AND newer.status NOT IN ('CANCELADO','ERROR'))""", (router,))
     row = c.execute("""SELECT * FROM router_commands WHERE router_name=?
         AND status='PENDIENTE' AND created_at>=?
-        AND action IN ('CREATE_PPPOE','SUSPEND','REACTIVATE','CHANGE_PROFILE','RESTART_PPPOE','DELETE_PPPOE')
+        AND action IN ('CREATE_PPPOE','SUSPEND','REACTIVATE','CHANGE_PROFILE','RESTART_PPPOE','DELETE_PPPOE','APPLY_PBR','REMOVE_PBR')
         ORDER BY id LIMIT 1""", (router, after)).fetchone()
     if not row:
         c.commit(); c.close()

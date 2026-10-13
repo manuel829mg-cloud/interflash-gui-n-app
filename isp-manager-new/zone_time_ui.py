@@ -175,6 +175,11 @@ def zones_page():
     time_options = _time_options(form_cut_time)
     reminder_checked = 'checked' if edit_zone and edit_zone['whatsapp_reminder_enabled'] else ''
     reminder_days = edit_zone['whatsapp_reminder_days'] if edit_zone else 2
+    reminder_options = ''.join(
+        f'<option value="{days}"{" selected" if days == reminder_days else ""}>'
+        f'{"El mismo día del corte" if days == 0 else "1 día antes del corte" if days == 1 else str(days) + " días antes del corte"}</option>'
+        for days in range(32)
+    )
 
     total_zones = len(rows)
     zones_billing = sum(1 for r in rows if r['invoice_days_before'] is not None)
@@ -302,7 +307,7 @@ def zones_page():
           <div class="field-group"><label for="cut-days">Corte días después *</label><input id="cut-days" class="field" type="number" name="cut_days_after" value="{form_cut_days}" min="0"></div>
           <div class="field-group"><label for="cut-time">Hora de corte *</label><select id="cut-time" class="field" name="cut_time">{time_options}</select></div>
           <div class="field-group" style="grid-column:1/-1"><label><input type="checkbox" name="whatsapp_reminder_enabled" value="1" {reminder_checked}> Recordatorio por WhatsApp</label><p class="muted">Avisa únicamente a clientes con pagos pendientes. Requiere avisos automáticos de WhatsApp activos. Envío desde las 8:00, hora dominicana.</p></div>
-          <input type="hidden" name="whatsapp_reminder_days" value="{reminder_days}">
+          <div class="field-group" style="grid-column:1/-1"><label for="whatsapp-reminder-days">Cuándo enviar el aviso de WhatsApp</label><select id="whatsapp-reminder-days" class="field" name="whatsapp_reminder_days">{reminder_options}</select><p class="muted">Se calcula desde la fecha de corte de cada cliente. Activa «Recordatorio por WhatsApp» y guarda los cambios.</p></div>
           <div style="display:flex;gap:9px"><button class="primary-zone-btn" type="submit">+ {button_text}</button>{cancel_button}</div>
         </form>
       </div>

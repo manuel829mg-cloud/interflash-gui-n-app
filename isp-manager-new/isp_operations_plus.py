@@ -366,6 +366,11 @@ def customers_plus():
       body .clients-panel .clients-table .c-plan small{white-space:normal;overflow-wrap:normal;word-break:normal}
       body .clients-panel .clients-table .c-due,body .clients-panel .clients-table .c-pay{white-space:normal;overflow-wrap:normal}
     }
+    /* Zone text only: wrap at spaces and preserve the approved columns. */
+    body .clients-panel .clients-table td.c-zone{white-space:normal;word-break:normal;overflow-wrap:normal;font-size:11px;line-height:1.45;padding-left:3px;padding-right:3px}
+    @media(min-width:781px) and (max-width:1200px){
+      body .clients-panel .clients-table td.c-zone{font-size:10px;padding-left:2px;padding-right:2px}
+    }
     </style>'''
     body=f'''{css}<div class="head"><div><h1>{'Morosos' if overdue_value == 'vencida' else 'Clientes con factura pendiente' if overdue_filter else ('Clientes suspendidos' if status_filter else 'Clientes')}</h1><p>Estado PPPoE real, facturación, ONU y acciones rápidas</p></div><div class="quick-links"><a class="btn" href="{url_for('onu_overview')}">ONU / ONT</a><a class="btn" href="{url_for('customer_trash')}">Papelera</a><a class="btn green" href="{url_for('customer_new')}">+ Nuevo cliente</a></div></div>
     <div class="panel clients-panel">

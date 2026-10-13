@@ -255,3 +255,6 @@ def _create_pppoe_only_bootstrap():
     })
 app.view_functions['mikrotik_bootstrap_rsc'] = _create_pppoe_only_bootstrap
 
+
+import operation_alerts
+operation_alerts.setup(app)

@@ -311,9 +311,19 @@ def run_billing():
                 overdue_customers += 1
 
         c.commit()
+    except Exception:
+        c.rollback()
+        from operation_alerts import billing_failed
+        try:
+            billing_failed()
+        except Exception:
+            base.app.logger.error('No se pudo registrar el fallo de facturación.')
+        raise
     finally:
         c.close()
 
+    from operation_alerts import billing_succeeded
+    billing_succeeded()
     commands = process_zone_cuts(datetime.now())
 
     c = base.db()

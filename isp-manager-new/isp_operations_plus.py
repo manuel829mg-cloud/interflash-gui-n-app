@@ -329,6 +329,18 @@ def customers_plus():
     .clients-table .icon-actions a.ico.debt-edit,.clients-table .icon-actions a.ico.debt-edit:hover{background-color:#7c3aed!important;color:#fff!important;border:2px solid #a78bfa!important}
     .clients-table .icon-actions a.ico.debt-pay,.clients-table .icon-actions a.ico.debt-pay:hover{background-color:#16a34a!important;color:#fff!important;border:2px solid #86efac!important}
     .clients-table .icon-actions a.ico svg{stroke:#fff!important;opacity:1!important}.ico.debt-promise svg{width:28px;height:28px;stroke:#fff;fill:none}.ico.debt-edit svg,.ico.debt-pay svg{width:22px;height:22px}.ico.service-suspended{background:#4a161b;color:#ff7b86;border-color:#b94350}.ico.service-suspended:hover{background:#65212a;color:#ffacb4}.ico.service-active{background:#063f2a;color:#39e998;border-color:#148854}.ico.service-active:hover{background:#095537;color:#8affc5}.ico.wa{color:#3ee38f}.ico.warnx{color:#ffcb69}.ico.good{color:#6af0ac}.ico.danger{color:#ff8791}.danger-text{color:#ff7b86}.good-text{color:#5ce3a0}.overdue-row{background:#3b15192e;box-shadow:inset 3px 0 #e34855}.toolbar2{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}.toolbar2 .field{flex:1;min-width:250px}.quick-links{display:flex;gap:8px;flex-wrap:wrap}
+    /* Keep customer names and plans readable instead of splitting words. */
+    body .clients-table .c-client,body .clients-table .c-plan{overflow-wrap:normal;word-break:normal;white-space:normal;text-align:left}
+    body .clients-table .c-client .muted,body .clients-table .c-plan small{white-space:nowrap;overflow-wrap:normal;word-break:normal}
+    @media(min-width:781px){
+      body .clients-panel{overflow-x:auto}
+      body .clients-table{table-layout:auto}
+      body .clients-table .c-code{width:90px;min-width:90px}
+      body .clients-table .c-client{width:22%;min-width:180px}
+      body .clients-table .c-plan{width:112px;min-width:112px}
+      body .clients-table .c-pppoe{min-width:170px}
+      body .clients-table .c-due,body .clients-table .c-pay{min-width:90px;white-space:nowrap}
+    }
     @media(max-width:1300px){.c-zone,.c-pay{display:none}.c-client{width:24%}.c-actions{width:20%}}
     @media(max-width:1050px){.c-plan{display:none}.c-client{width:27%}.c-pppoe{width:18%}.c-actions{width:25%}}
     @media(max-width:780px){.clients-table thead{display:none}.clients-table,.clients-table tbody,.clients-table tr,.clients-table td{display:block;width:100%!important}.clients-table tr{background:#0b1725;border:1px solid #22374e;border-radius:12px;margin-bottom:10px;padding:10px}.clients-table td{border:0;padding:5px 0}.c-zone,.c-plan,.c-pay{display:block}.icon-actions{margin-top:6px}}

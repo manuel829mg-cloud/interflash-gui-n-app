@@ -124,7 +124,7 @@ def setup():
         <div class="side-user"><div class="side-avatar">{{initial}}</div><div class="txt"><b>{{user}}</b><small>{{role}}</small></div></div>
         <nav class="nav">{{links|safe}}<div class="nav-divider"></div><a class="nav-single" href="{{url_for('logout')}}">{{logout_icon|safe}}<span class="txt">Salir</span></a></nav>
         <div class="side-footer">© 2026 INTER Flash Management</div></aside>
-        <main class="main"><header class="top"><button type="button" class="btn menu-toggle" aria-label="Abrir menú" aria-controls="main-menu" aria-expanded="false" onclick="toggleMobileMenu()">☰</button><input class="search" placeholder="Buscar clientes, facturas, ONU, IP..." onkeydown="if(event.key==='Enter'){location.href='{{url_for('customers')}}?q='+encodeURIComponent(this.value)}"><div class="user">{{role}} · {{user}}</div></header><section class="content">{{msgs|safe}}{{body|safe}}</section></main>
+        <main class="main"><header class="top"><button type="button" class="btn menu-toggle" aria-label="Abrir menú" aria-controls="main-menu" aria-expanded="false" onclick="toggleMobileMenu()">☰</button><div class="user">{{role}} · {{user}}</div></header><section class="content">{{msgs|safe}}{{body|safe}}</section></main>
         </div>{{script|safe}}</body></html>''',logout_icon=menu_icons.icon("logout"),title=title,css=base.BASE_CSS,extra_css=extra_css,links=links_html,body=body,user=user,role=role_label,initial=(user[:1] or 'M').upper(),msgs=msgs,script=script)
 
     base.shell=grouped_shell

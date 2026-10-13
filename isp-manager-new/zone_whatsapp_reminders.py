@@ -1,5 +1,5 @@
 """Opt-in reminders per zone, with a fresh debt check before dispatch."""
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
 import app as base
 
@@ -7,7 +7,7 @@ RD = ZoneInfo('America/Santo_Domingo')
 
 
 def candidates(c, now):
-    from zone_cut_scheduler import _zone_join, _parse_cut_time, suspension_due_date
+    from zone_cut_scheduler import _zone_join
     rows = c.execute(f'''SELECT cu.id customer_id,cu.name,z.id zone_id,
         z.cut_days_after,z.cut_time,z.whatsapp_reminder_days,z.suspend_invoice_count,
         MIN(i.due_date) oldest_due,
@@ -20,27 +20,19 @@ def candidates(c, now):
         GROUP BY cu.id,z.id''').fetchall()
     for row in rows:
         try:
-            due = suspension_due_date(c, row['customer_id'], max(1, min(12, int(row['suspend_invoice_count'] or 1))))
-            if due is None:
-                continue
-            cut = due + timedelta(days=max(0,int(row['cut_days_after'])))
-            days = int(row['whatsapp_reminder_days'])
-            if not 0 <= days <= 31:
-                continue
-            if now.date() != cut - timedelta(days=days):
-                continue
-            if now >= datetime.combine(cut, _parse_cut_time(row['cut_time'])):
+            due = now.date()
+            if not c.execute("SELECT 1 FROM invoices i WHERE i.customer_id=? AND i.status='PENDIENTE' AND i.due_date=? AND i.amount>COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id=i.id),0)", (row['customer_id'], due.isoformat())).fetchone():
                 continue
             if c.execute("SELECT 1 FROM payment_promises WHERE customer_id=? AND status='PENDIENTE' AND promise_date>=?",(row['customer_id'],now.date().isoformat())).fetchone():
                 continue
-            yield dict(row, cut_date=cut.isoformat(), event_key=f"ZONE_REMINDER:{row['customer_id']}:{row['zone_id']}:{cut.isoformat()}")
+            yield dict(row, due_date=due.isoformat(), event_key=f"ZONE_REMINDER:{row['customer_id']}:{row['zone_id']}:{due.isoformat()}")
         except (ValueError, TypeError):
             continue
 
 
 def message_for(row):
-    when = date.fromisoformat(row['cut_date']).strftime('%d/%m/%Y')
-    return f"Hola {row['name']}, INTER Flash te recuerda que tienes RD${row['balance']:,.2f} pendientes. Tu corte está programado para el {when}. Realiza tu pago antes de esa fecha. Si ya pagaste, envíanos tu comprobante."
+    when = date.fromisoformat(row['due_date']).strftime('%d/%m/%Y')
+    return f"Hola {row['name']}, INTER Flash te recuerda que tienes RD${row['balance']:,.2f} pendientes. Tu factura vence hoy, {when}. Realiza tu pago para mantener tu servicio al día. Si ya pagaste, envíanos tu comprobante."
 
 
 def process(now=None):

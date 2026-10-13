@@ -131,14 +131,7 @@ def zones_page():
             return redirect(url_for('zones_page', edit=zone_id) if zone_id else url_for('zones_page'))
 
         reminder_enabled = int(request.form.get('whatsapp_reminder_enabled') == '1')
-        try:
-            reminder_days = int(request.form.get('whatsapp_reminder_days', '2'))
-            if not 0 <= reminder_days <= 31:
-                raise ValueError()
-        except ValueError:
-            c.close()
-            flash('El recordatorio debe indicar entre 0 y 31 días antes del corte.')
-            return redirect(url_for('zones_page', edit=zone_id) if zone_id else url_for('zones_page'))
+        reminder_days = 0
 
         if zone_id:
             current = c.execute('SELECT * FROM zones WHERE id=?', (zone_id,)).fetchone()
@@ -183,13 +176,6 @@ def zones_page():
     form_cut_time = edit_zone['cut_time'] if edit_zone else '14:00'
     time_options = _time_options(form_cut_time)
     reminder_checked = 'checked' if edit_zone and edit_zone['whatsapp_reminder_enabled'] else ''
-    reminder_days = edit_zone['whatsapp_reminder_days'] if edit_zone else 2
-    reminder_label = lambda days: 'El mismo día del corte' if days == 0 else '1 día antes del corte' if days == 1 else str(days) + ' días antes del corte'
-    reminder_options = ''.join(
-        f'<button type="button" class="reminder-choice" data-days="{days}" aria-pressed="{str(days == reminder_days).lower()}">{reminder_label(days)}</button>'
-        for days in range(32)
-    )
-    reminder_selected_label = reminder_label(int(reminder_days))
 
     suspend_count = edit_zone['suspend_invoice_count'] if edit_zone else 1
     suspend_options = ''.join(f'<option value="{n}"{" selected" if n == suspend_count else ""}>{n} factura{"s" if n > 1 else ""} vencida{"s" if n > 1 else ""}</option>' for n in range(1, 13))
@@ -206,7 +192,7 @@ def zones_page():
         f'<td>{r["invoice_days_before"]} días antes</td>'
         f'<td>{r["cut_days_after"]} días después</td>'
         f'<td><span class="time-pill">{esc(_time12(r["cut_time"]))}</span></td>'
-        f'<td>{str(r["whatsapp_reminder_days"]) + " días antes" if r["whatsapp_reminder_enabled"] else "Desactivado"}</td>'
+        f'<td>{"El día de vencimiento" if r["whatsapp_reminder_enabled"] else "Desactivado"}</td>'
         f'<td><div class="zone-actions">'
         f'<a class="edit-btn" href="{url_for("zones_page", edit=r["id"])}#zone-form">✎&nbsp; Editar</a>'
         f'<form method="post" style="display:inline" onsubmit="return confirm(\'¿Seguro que deseas eliminar esta zona?\')">'
@@ -320,8 +306,7 @@ def zones_page():
           <div class="field-group"><label for="cut-days">Corte días después *</label><input id="cut-days" class="field" type="number" name="cut_days_after" value="{form_cut_days}" min="0"></div>
           <div class="field-group"><label for="cut-time">Hora de corte *</label><select id="cut-time" class="field" name="cut_time">{time_options}</select></div>
           <div class="field-group" style="grid-column:1/-1"><label for="suspend-invoice-count">Suspender servicio</label><select id="suspend-invoice-count" class="field" name="suspend_invoice_count">{suspend_options}</select><p class="muted">Aplica a todos los clientes de esta zona. Cuenta facturas vencidas con saldo pendiente y respeta los días y la hora de corte desde la factura que completa esa cantidad. Las promesas vigentes aplazan el corte.</p></div>
-          <div class="field-group" style="grid-column:1/-1"><label><input type="checkbox" name="whatsapp_reminder_enabled" value="1" {reminder_checked}> Recordatorio por WhatsApp</label><p class="muted">Avisa únicamente a clientes con pagos pendientes. Requiere avisos automáticos de WhatsApp activos. Envío desde las 8:00, hora dominicana.</p></div>
-          <div class="field-group" style="grid-column:1/-1"><label for="whatsapp-reminder-days">Cuándo enviar el aviso de WhatsApp</label><input type="hidden" id="whatsapp-reminder-days" name="whatsapp_reminder_days" value="{reminder_days}"><details id="whatsapp-reminder-picker"><summary class="field" aria-label="Cuándo enviar el aviso de WhatsApp"><span id="whatsapp-reminder-label">{reminder_selected_label}</span><span aria-hidden="true">⌄</span></summary><div class="reminder-choices" role="group" aria-label="Días antes del corte">{reminder_options}</div></details><p class="muted">Se calcula desde la fecha de corte de cada cliente. Activa «Recordatorio por WhatsApp» y guarda los cambios.</p></div>
+          <div class="field-group" style="grid-column:1/-1"><label><input type="checkbox" name="whatsapp_reminder_enabled" value="1" {reminder_checked}> Recordatorio por WhatsApp</label><p class="muted">Avisa únicamente a clientes con pagos pendientes. Requiere avisos automáticos de WhatsApp activos. Se envía siempre el día de vencimiento de la factura, desde las 8:00, hora dominicana.</p></div>
           <div style="display:flex;gap:9px"><button class="primary-zone-btn" type="submit">+ {button_text}</button>{cancel_button}</div>
         </form>
       </div>
@@ -341,23 +326,9 @@ def zones_page():
     </div>
 
     <style>
-      #whatsapp-reminder-picker summary{{display:flex;justify-content:space-between;align-items:center;cursor:pointer;list-style:none}}
-      #whatsapp-reminder-picker summary::-webkit-details-marker{{display:none}}
-      .reminder-choices{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;padding:10px;margin-top:6px;background:#101e31;border:1px solid #30445e;border-radius:10px;height:auto;max-height:none;overflow:visible}}
-      .reminder-choice{{min-width:0;padding:9px 6px;border:1px solid #30445e;border-radius:7px;background:#15283d;color:#ecf2fa;text-align:left;cursor:pointer;font:inherit;font-size:12px}}
-      .reminder-choice:hover,.reminder-choice[aria-pressed="true"]{{background:#174a42;border-color:#39d7bb}}
-      @media(max-width:800px){{.reminder-choices{{grid-template-columns:repeat(2,minmax(0,1fr))}}}}
     </style>
     <script>
       (function(){{
-        const picker=document.getElementById('whatsapp-reminder-picker');
-        if(picker) picker.addEventListener('click',function(event){{
-          const choice=event.target.closest('.reminder-choice');if(!choice)return;
-          document.getElementById('whatsapp-reminder-days').value=choice.dataset.days;
-          document.getElementById('whatsapp-reminder-label').textContent=choice.textContent;
-          picker.querySelectorAll('.reminder-choice').forEach(function(button){{button.setAttribute('aria-pressed',String(button===choice));}});
-          picker.removeAttribute('open');picker.querySelector('summary').focus();
-        }});
         const q=document.getElementById('zoneSearch');
         if(q) q.addEventListener('input',function(){{
           const term=(this.value||'').trim().toLowerCase();

@@ -7,9 +7,9 @@ RD = ZoneInfo('America/Santo_Domingo')
 
 
 def candidates(c, now):
-    from zone_cut_scheduler import _zone_join, _parse_cut_time
+    from zone_cut_scheduler import _zone_join, _parse_cut_time, suspension_due_date
     rows = c.execute(f'''SELECT cu.id customer_id,cu.name,z.id zone_id,
-        z.cut_days_after,z.cut_time,z.whatsapp_reminder_days,
+        z.cut_days_after,z.cut_time,z.whatsapp_reminder_days,z.suspend_invoice_count,
         MIN(i.due_date) oldest_due,
         SUM(i.amount-COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id=i.id),0)) balance
         FROM customers cu JOIN zones z ON {_zone_join()}
@@ -20,7 +20,10 @@ def candidates(c, now):
         GROUP BY cu.id,z.id''').fetchall()
     for row in rows:
         try:
-            cut = date.fromisoformat(row['oldest_due']) + timedelta(days=max(0,int(row['cut_days_after'])))
+            due = suspension_due_date(c, row['customer_id'], max(1, min(3, int(row['suspend_invoice_count'] or 1))))
+            if due is None:
+                continue
+            cut = due + timedelta(days=max(0,int(row['cut_days_after'])))
             days = int(row['whatsapp_reminder_days'])
             if not 0 <= days <= 31:
                 continue

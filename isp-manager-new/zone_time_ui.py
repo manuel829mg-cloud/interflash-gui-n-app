@@ -121,6 +121,15 @@ def zones_page():
         cut_days_after = _int_value(request.form.get('cut_days_after'), 6)
         cut_time = request.form.get('cut_time') or '14:00'
 
+        try:
+            suspend_count = int(request.form.get('suspend_invoice_count', '1'))
+            if suspend_count not in (1, 2, 3):
+                raise ValueError()
+        except (TypeError, ValueError):
+            c.close()
+            flash('Selecciona 1, 2 o 3 facturas vencidas para suspender el servicio.')
+            return redirect(url_for('zones_page', edit=zone_id) if zone_id else url_for('zones_page'))
+
         reminder_enabled = int(request.form.get('whatsapp_reminder_enabled') == '1')
         try:
             reminder_days = int(request.form.get('whatsapp_reminder_days', '2'))
@@ -139,8 +148,8 @@ def zones_page():
                 return redirect(url_for('zones_page'))
 
             c.execute(
-                'UPDATE zones SET name=?, billing_day=?, invoice_days_before=?, cut_days_after=?, cut_time=?, whatsapp_reminder_enabled=?, whatsapp_reminder_days=? WHERE id=?',
-                (name, billing_day, invoice_days_before, cut_days_after, cut_time, reminder_enabled, reminder_days, zone_id),
+                'UPDATE zones SET name=?, billing_day=?, invoice_days_before=?, cut_days_after=?, cut_time=?, whatsapp_reminder_enabled=?, whatsapp_reminder_days=?, suspend_invoice_count=? WHERE id=?',
+                (name, billing_day, invoice_days_before, cut_days_after, cut_time, reminder_enabled, reminder_days, suspend_count, zone_id),
             )
             try:
                 c.execute('UPDATE customers SET zone=? WHERE zone_id=?', (name, zone_id))
@@ -152,8 +161,8 @@ def zones_page():
             return redirect(url_for('zones_page'))
 
         c.execute(
-            'INSERT INTO zones(name,billing_day,invoice_days_before,cut_days_after,cut_time,whatsapp_reminder_enabled,whatsapp_reminder_days) VALUES(?,?,?,?,?,?,?)',
-            (name, billing_day, invoice_days_before, cut_days_after, cut_time, reminder_enabled, reminder_days),
+            'INSERT INTO zones(name,billing_day,invoice_days_before,cut_days_after,cut_time,whatsapp_reminder_enabled,whatsapp_reminder_days,suspend_invoice_count) VALUES(?,?,?,?,?,?,?,?)',
+            (name, billing_day, invoice_days_before, cut_days_after, cut_time, reminder_enabled, reminder_days, suspend_count),
         )
         c.commit()
         c.close()
@@ -180,6 +189,9 @@ def zones_page():
         f'{"El mismo día del corte" if days == 0 else "1 día antes del corte" if days == 1 else str(days) + " días antes del corte"}</option>'
         for days in range(32)
     )
+
+    suspend_count = edit_zone['suspend_invoice_count'] if edit_zone else 1
+    suspend_options = ''.join(f'<option value="{n}"{" selected" if n == suspend_count else ""}>{n} factura{"s" if n > 1 else ""} vencida{"s" if n > 1 else ""}</option>' for n in (1, 2, 3))
 
     total_zones = len(rows)
     zones_billing = sum(1 for r in rows if r['invoice_days_before'] is not None)
@@ -306,6 +318,7 @@ def zones_page():
           <div class="field-group"><label for="invoice-days">Factura días antes *</label><input id="invoice-days" class="field" type="number" name="invoice_days_before" value="{form_invoice}" min="0"></div>
           <div class="field-group"><label for="cut-days">Corte días después *</label><input id="cut-days" class="field" type="number" name="cut_days_after" value="{form_cut_days}" min="0"></div>
           <div class="field-group"><label for="cut-time">Hora de corte *</label><select id="cut-time" class="field" name="cut_time">{time_options}</select></div>
+          <div class="field-group" style="grid-column:1/-1"><label for="suspend-invoice-count">Suspender servicio</label><select id="suspend-invoice-count" class="field" name="suspend_invoice_count">{suspend_options}</select><p class="muted">Aplica a todos los clientes de esta zona. Cuenta facturas vencidas con saldo pendiente y respeta los días y la hora de corte desde la factura que completa esa cantidad. Las promesas vigentes aplazan el corte.</p></div>
           <div class="field-group" style="grid-column:1/-1"><label><input type="checkbox" name="whatsapp_reminder_enabled" value="1" {reminder_checked}> Recordatorio por WhatsApp</label><p class="muted">Avisa únicamente a clientes con pagos pendientes. Requiere avisos automáticos de WhatsApp activos. Envío desde las 8:00, hora dominicana.</p></div>
           <div class="field-group" style="grid-column:1/-1"><label for="whatsapp-reminder-days">Cuándo enviar el aviso de WhatsApp</label><select id="whatsapp-reminder-days" class="field" name="whatsapp_reminder_days">{reminder_options}</select><p class="muted">Se calcula desde la fecha de corte de cada cliente. Activa «Recordatorio por WhatsApp» y guarda los cambios.</p></div>
           <div style="display:flex;gap:9px"><button class="primary-zone-btn" type="submit">+ {button_text}</button>{cancel_button}</div>

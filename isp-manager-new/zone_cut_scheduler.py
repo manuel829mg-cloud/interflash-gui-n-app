@@ -47,6 +47,7 @@ def ensure_zone_schema():
             ('active', 'INTEGER DEFAULT 1'),
             ('whatsapp_reminder_enabled', 'INTEGER NOT NULL DEFAULT 0'),
             ('whatsapp_reminder_days', 'INTEGER NOT NULL DEFAULT 2'),
+            ('suspend_invoice_count', 'INTEGER NOT NULL DEFAULT 1'),
         ]
         for name, ddl in additions:
             if name not in cols:
@@ -113,6 +114,22 @@ def _zone_join():
     )"""
 
 
+def suspension_due_date(c, customer_id, required=1, as_of=None):
+    """Due date of the invoice that reaches the zone's unpaid invoice threshold."""
+    dates = []
+    for row in c.execute("""SELECT i.due_date FROM invoices i
+            WHERE i.customer_id=? AND i.status='PENDIENTE'
+              AND i.amount>COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id=i.id),0)
+            ORDER BY i.due_date,i.id""", (customer_id,)):
+        try:
+            due = date.fromisoformat(str(row['due_date']))
+        except (ValueError, TypeError):
+            continue
+        if as_of is None or due <= as_of:
+            dates.append(due)
+    return dates[required - 1] if len(dates) >= required else None
+
+
 def process_zone_cuts(now=None, dry_run=False):
     """Queue SUSPEND only when the configured zone cut date AND time have arrived."""
     if not dry_run and bs.setting('auto_suspend', '0') != '1':
@@ -136,6 +153,7 @@ def process_zone_cuts(now=None, dry_run=False):
                 z.name zone_name,
                 z.cut_days_after,
                 z.cut_time,
+                {'z.suspend_invoice_count' if 'suspend_invoice_count' in _columns(c, 'zones') else '1'} suspend_invoice_count,
                 MIN(i.due_date) oldest_due
             FROM customers cu
             JOIN zones z ON {_zone_join()}
@@ -151,9 +169,9 @@ def process_zone_cuts(now=None, dry_run=False):
         retry_after = (now - timedelta(minutes=10)).isoformat(timespec='seconds')
 
         for row in rows:
-            try:
-                oldest_due = date.fromisoformat(str(row['oldest_due']))
-            except Exception:
+            required = max(1, min(3, int(row['suspend_invoice_count'] or 1)))
+            oldest_due = suspension_due_date(c, row['customer_id'], required, now.date())
+            if oldest_due is None:
                 continue
 
             try:

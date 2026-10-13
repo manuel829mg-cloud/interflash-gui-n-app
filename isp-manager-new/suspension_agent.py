@@ -127,6 +127,7 @@ def _agent_rsc(root, token):
     /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=false&result=PERFIL_NO_EXISTE") output=none check-certificate=yes;
     :return 0;
   }
+  :local createWithIp false;
   :if (([:typeof $rip] = "str") && ([:len $rip] > 0)) do={
     :if ([:len [/ppp active find where address=$rip]] > 0) do={
       /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=false&result=IP_ACTIVA") output=none check-certificate=yes;
@@ -136,11 +137,25 @@ def _agent_rsc(root, token):
       /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=false&result=IP_RESERVADA") output=none check-certificate=yes;
       :return 0;
     }
-    /ppp secret add name=$user password=$pass profile=$prof remote-address=$rip service=pppoe disabled=no;
-  } else={
-    /ppp secret add name=$user password=$pass profile=$prof service=pppoe disabled=no;
+    :set createWithIp true;
   }
-  /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=true&result=PPPOE_CREADO") output=none check-certificate=yes;
+  :local created false;
+  :local createResult "ERROR_CREACION_PPPOE";
+  :do {
+    :if ([:typeof $createWithIp] = "bool" && $createWithIp) do={
+      /ppp secret add name=$user password=$pass profile=$prof remote-address=$rip service=pppoe disabled=no;
+    } else={
+      /ppp secret add name=$user password=$pass profile=$prof service=pppoe disabled=no;
+    }
+    :local newSecret [/ppp secret find where name=$user];
+    :if ([:len $newSecret] = 1) do={
+      :set created true;
+      :set createResult "PPPOE_CREADO";
+    } else={
+      :set createResult "PPPOE_NO_VERIFICADO";
+    }
+  } on-error={ :set createResult "ERROR_CREACION_PPPOE"; }
+  /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=" . $created . "&result=" . $createResult) output=none check-certificate=yes;
 }
 /system scheduler add name="interflash-agent-scheduler" interval=5s on-event="/system script run interflash-agent" policy=read,write,test,sensitive start-time=startup disabled=yes
 :log info "INTERFLASH-SERVICE-AGENT-V6-STANDARD-INSTALLED"

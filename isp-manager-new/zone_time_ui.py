@@ -169,6 +169,10 @@ def zones_page():
     client_count = sum(zone_counts.values())
     c.close()
 
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    preview_today = datetime.now(ZoneInfo('America/Santo_Domingo')).date().isoformat()
+
     form_name = edit_zone['name'] if edit_zone else ''
     form_billing = edit_zone['billing_day'] if edit_zone else 30
     form_invoice = edit_zone['invoice_days_before'] if edit_zone else 5
@@ -307,6 +311,16 @@ def zones_page():
           <div class="field-group"><label for="cut-time">Hora de corte *</label><select id="cut-time" class="field" name="cut_time">{time_options}</select></div>
           <div class="field-group" style="grid-column:1/-1"><label for="suspend-invoice-count">Suspender servicio</label><select id="suspend-invoice-count" class="field" name="suspend_invoice_count">{suspend_options}</select><p class="muted">Aplica a todos los clientes de esta zona. Cuenta facturas vencidas con saldo pendiente y respeta los días y la hora de corte desde la factura que completa esa cantidad. Las promesas vigentes aplazan el corte.</p></div>
           <div class="field-group" style="grid-column:1/-1"><label><input type="checkbox" name="whatsapp_reminder_enabled" value="1" {reminder_checked}> Recordatorio por WhatsApp</label><p class="muted">Avisa únicamente a clientes con pagos pendientes. Requiere avisos automáticos de WhatsApp activos. Se envía siempre el día de vencimiento de la factura, desde las 10:00, hora dominicana.</p></div>
+          <section id="zone-calendar" style="grid-column:1/-1;padding:16px;border:1px solid #30445e;border-radius:12px;background:#101e31" aria-live="polite">
+            <h4 style="margin:0 0 12px">Calendario del próximo vencimiento</h4>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px">
+              <div><span class="muted">Generación de factura</span><div id="preview-invoice"></div></div>
+              <div><span class="muted">Vencimiento</span><div id="preview-due"></div></div>
+              <div><span class="muted">Aviso de WhatsApp</span><div id="preview-whatsapp"></div></div>
+              <div><span class="muted">Corte previsto</span><div id="preview-cut"></div></div>
+            </div>
+            <p class="muted" id="preview-note" style="margin-bottom:0"></p>
+          </section>
           <div style="display:flex;gap:9px"><button class="primary-zone-btn" type="submit">+ {button_text}</button>{cancel_button}</div>
         </form>
       </div>
@@ -329,6 +343,34 @@ def zones_page():
     </style>
     <script>
       (function(){{
+
+        const todayParts='{preview_today}'.split('-').map(Number);
+        const today=new Date(Date.UTC(todayParts[0],todayParts[1]-1,todayParts[2]));
+        const ids=['billing-day','invoice-days','cut-days','cut-time','suspend-invoice-count'];
+        const reminder=document.querySelector('[name="whatsapp_reminder_enabled"]');
+        const fmt=new Intl.DateTimeFormat('es-DO',{{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'}});
+        function updateCalendar(){{
+          const day=Number(document.getElementById('billing-day').value);
+          const before=Number(document.getElementById('invoice-days').value);
+          const after=Number(document.getElementById('cut-days').value);
+          if(!Number.isInteger(day)||day<1||day>31||!Number.isInteger(before)||before<0||!Number.isInteger(after)||after<0){{
+            ['invoice','due','whatsapp','cut'].forEach(k=>document.getElementById('preview-'+k).textContent='Revisa los valores');return;
+          }}
+          function dueInMonth(year,month){{return new Date(Date.UTC(year,month,Math.min(day,new Date(Date.UTC(year,month+1,0)).getUTCDate())));}}
+          let due=dueInMonth(today.getUTCFullYear(),today.getUTCMonth());
+          if(due<today)due=dueInMonth(today.getUTCFullYear(),today.getUTCMonth()+1);
+          const invoice=new Date(due);invoice.setUTCDate(invoice.getUTCDate()-before);
+          const cut=new Date(due);cut.setUTCDate(cut.getUTCDate()+after);
+          document.getElementById('preview-invoice').textContent=fmt.format(invoice)+(invoice<today?' (fecha programada ya pasada)':'');
+          document.getElementById('preview-due').textContent=fmt.format(due);
+          document.getElementById('preview-whatsapp').textContent=reminder.checked?fmt.format(due)+' · desde las 10:00 a. m.':'Desactivado';
+          const count=Number(document.getElementById('suspend-invoice-count').value);
+          const time=document.getElementById('cut-time').selectedOptions[0].textContent;
+          document.getElementById('preview-cut').textContent=count===1?fmt.format(cut)+' · '+time:'Al acumular '+count+' facturas vencidas con saldo';
+          document.getElementById('preview-note').textContent='Vista previa de la programación, hora dominicana. No confirma facturas generadas ni mensajes enviados. '+(count===1?'El corte aplica si queda saldo pendiente y no hay promesa vigente.':'La fecha de corte depende de la factura que complete esa cantidad; se respetan el plazo y las promesas vigentes.');
+        }}
+        ids.forEach(id=>document.getElementById(id).addEventListener('input',updateCalendar));
+        reminder.addEventListener('change',updateCalendar);updateCalendar();
         const q=document.getElementById('zoneSearch');
         if(q) q.addEventListener('input',function(){{
           const term=(this.value||'').trim().toLowerCase();

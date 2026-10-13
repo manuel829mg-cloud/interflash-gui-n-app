@@ -332,11 +332,34 @@ def customers_plus():
     @media(max-width:1300px){.c-zone,.c-pay{display:none}.c-client{width:24%}.c-actions{width:20%}}
     @media(max-width:1050px){.c-plan{display:none}.c-client{width:27%}.c-pppoe{width:18%}.c-actions{width:25%}}
     @media(max-width:780px){.clients-table thead{display:none}.clients-table,.clients-table tbody,.clients-table tr,.clients-table td{display:block;width:100%!important}.clients-table tr{background:#0b1725;border:1px solid #22374e;border-radius:12px;margin-bottom:10px;padding:10px}.clients-table td{border:0;padding:5px 0}.c-zone,.c-plan,.c-pay{display:block}.icon-actions{margin-top:6px}}
+    .clients-panel>#clients-search-form{margin:0 0 12px;gap:8px}
+    /* Approved customer layout: shared header/cell widths and readable text. */
+    body .clients-panel .clients-table .c-client,body .clients-panel .clients-table .c-plan{word-break:normal;overflow-wrap:break-word;text-align:left}
+    body .clients-panel .clients-table .c-plan small{white-space:nowrap;word-break:normal;overflow-wrap:normal}
+    @media(min-width:781px){
+      body .clients-panel{overflow-x:auto}
+      body .clients-panel .clients-table{table-layout:fixed;width:100%;min-width:960px}
+      body .clients-panel .clients-table th,body .clients-panel .clients-table td{padding:12px 7px;vertical-align:middle}
+      body .clients-panel .clients-table thead th{white-space:normal!important;padding:10px 7px!important;vertical-align:middle!important;line-height:1.3!important}
+      body .clients-panel .clients-table .c-code{width:7%}
+      body .clients-panel .clients-table .c-client{width:15%}
+      body .clients-panel .clients-table .c-plan{width:10%;display:table-cell}
+      body .clients-panel .clients-table .c-zone{width:5%;display:table-cell}
+      body .clients-panel .clients-table .c-pppoe{width:16%}
+      body .clients-panel .clients-table .c-due{width:9%}
+      body .clients-panel .clients-table .c-debt{width:6%}
+      body .clients-panel .clients-table .c-pay{width:9%;display:table-cell}
+      body .clients-panel .clients-table .c-actions{width:23%;min-width:0}
+      body .clients-panel .clients-table .c-code span,body .clients-panel .clients-table .c-due,body .clients-panel .clients-table .c-pay{white-space:nowrap;overflow-wrap:normal}
+      body .clients-panel .clients-table .icon-actions{width:auto;display:flex;flex-flow:row nowrap;gap:4px}
+      body .clients-panel .clients-table .ico{width:26px;height:30px;flex:0 0 26px}
+    }
     </style>'''
     body=f'''{css}<div class="head"><div><h1>{'Morosos' if overdue_value == 'vencida' else 'Clientes con factura pendiente' if overdue_filter else ('Clientes suspendidos' if status_filter else 'Clientes')}</h1><p>Estado PPPoE real, facturación, ONU y acciones rápidas</p></div><div class="quick-links"><a class="btn" href="{url_for('onu_overview')}">ONU / ONT</a><a class="btn" href="{url_for('customer_trash')}">Papelera</a><a class="btn green" href="{url_for('customer_new')}">+ Nuevo cliente</a></div></div>
     <div class="panel clients-panel">
     
-    <table class="clients-table"><thead><tr><th>Código</th><th>Cliente</th><th>Plan</th><th>Zona</th><th>PPPoE / estado / IP</th><th>Vence</th><th>Deuda</th><th>Último pago</th><th>Acciones</th></tr></thead><tbody><tr class="clients-search-row"><td colspan="9"><form id="clients-search-form" class="toolbar2" method="get">{'<input type="hidden" name="status" value="SUSPENDIDO">' if status_filter else ''}{('<input type="hidden" name="overdue" value="'+overdue_value+'">') if overdue_filter else ''}<input id="clients-search" class="field" name="q" aria-label="Buscar clientes" autocomplete="off" value="{esc(q)}" placeholder="Buscar cliente, teléfono, cédula, PPPoE, IP, ONU"><button class="btn blue">Buscar</button><a id="clients-search-clear" class="btn" href="{url_for('customers', **dict(([('status',status_filter)] if status_filter else []) + ([('overdue',overdue_value)] if overdue_filter else [])))}">Limpiar</a></form></td></tr>{''.join(trs)}<tr id="clients-search-empty"{' hidden' if visible_count else ''}><td colspan="9" class="muted" role="status">No hay clientes que coincidan con la búsqueda.</td></tr></tbody></table></div>'''
+    <form id="clients-search-form" class="toolbar2" method="get">{'<input type="hidden" name="status" value="SUSPENDIDO">' if status_filter else ''}{('<input type="hidden" name="overdue" value="'+overdue_value+'">') if overdue_filter else ''}<input id="clients-search" class="field" name="q" aria-label="Buscar clientes" autocomplete="off" value="{esc(q)}" placeholder="Buscar cliente, teléfono, cédula, PPPoE, IP, ONU"><button class="btn blue">Buscar</button><a id="clients-search-clear" class="btn" href="{url_for('customers', **dict(([('status',status_filter)] if status_filter else []) + ([('overdue',overdue_value)] if overdue_filter else [])))}">Limpiar</a></form>
+    <table class="clients-table"><thead><tr><th class="c-code">Código</th><th class="c-client">Cliente</th><th class="c-plan">Plan</th><th class="c-zone">Zona</th><th class="c-pppoe">PPPoE / estado / IP</th><th class="c-due">Vence</th><th class="c-debt">Deuda</th><th class="c-pay">Último pago</th><th class="c-actions">Acciones</th></tr></thead><tbody>{''.join(trs)}<tr id="clients-search-empty"{' hidden' if visible_count else ''}><td colspan="9" class="muted" role="status">No hay clientes que coincidan con la búsqueda.</td></tr></tbody></table></div>'''
     body += r'''    <script>
     (() => {
       const form = document.getElementById('clients-search-form');

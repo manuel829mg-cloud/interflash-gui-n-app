@@ -307,50 +307,37 @@ def _wrap_notice(draw, text, font, max_width):
 
 
 def _render_notice_image(body):
-    """Render a per-message 3:4 Inter Flash notice image with no link preview."""
+    """Render a compact Inter Flash card, sized to its message."""
     from io import BytesIO
     from pathlib import Path
     from PIL import Image, ImageDraw
 
-    width, height = 900, 1200
-    image = Image.new('RGB', (width, height), (13, 20, 23))
+    width = 1200
+    margin = 64
+    font = _notice_font(48)
+    title_font = _notice_font(60, bold=True)
+    measure = ImageDraw.Draw(Image.new('RGB', (width, 1)))
+    lines = _wrap_notice(measure, body, font, width - margin * 2)
+    line_height = 68
+    text_top = 264
+    height = text_top + max(1, len(lines)) * line_height + margin
+    image = Image.new('RGB', (width, height), (0, 82, 61))
     draw = ImageDraw.Draw(image)
-    for y in range(0, height, 92):
-        for x in range(0, width, 100):
-            draw.arc((x + 16, y + 17, x + 50, y + 51), 35, 310,
-                     fill=(27, 36, 39), width=2)
-    draw.rounded_rectangle((52, 48, 848, 1152), radius=36, fill=(0, 82, 61))
-    draw.rounded_rectangle((70, 66, 830, 1134), radius=30,
-                           outline=(10, 102, 76), width=2)
+    draw.rounded_rectangle((2, 2, width - 3, height - 3), radius=48,
+                           outline=(10, 102, 76), width=3)
 
     logo_path = Path(__file__).resolve().parent / 'static' / 'interflash-symbol.png'
     with Image.open(logo_path) as source:
-        logo = source.convert('RGBA').resize((144, 144), Image.Resampling.LANCZOS)
-    mask = Image.new('L', (144, 144), 0)
-    ImageDraw.Draw(mask).ellipse((1, 1, 143, 143), fill=255)
+        logo = source.convert('RGBA').resize((160, 160), Image.Resampling.LANCZOS)
+    mask = Image.new('L', (160, 160), 0)
+    ImageDraw.Draw(mask).ellipse((1, 1, 159, 159), fill=255)
     logo.putalpha(mask)
-    image.paste(logo, (100, 96), logo)
+    image.paste(logo, (margin, 48), logo)
+    draw.text((264, 92), 'Inter Flash', font=title_font, fill=(246, 249, 247))
 
-    title_font = _notice_font(38, bold=True)
-    draw.text((280, 145), 'Inter Flash', font=title_font, fill=(246, 249, 247))
-
-    max_width = 690
-    top, bottom = 300, 1080
-    chosen = None
-    for size in range(42, 17, -2):
-        font = _notice_font(size)
-        lines = _wrap_notice(draw, body, font, max_width)
-        line_height = int(size * 1.4)
-        if len(lines) * line_height <= bottom - top:
-            chosen = (font, lines, line_height)
-            break
-    if chosen is None:
-        raise ValueError('El aviso es demasiado largo para la imagen 3:4.')
-    font, lines, line_height = chosen
-    for line in lines:
-        draw.text((100, top), line, font=font, fill=(246, 249, 247))
-        top += line_height
-
+    for index, line in enumerate(lines):
+        draw.text((margin, text_top + index * line_height), line,
+                  font=font, fill=(246, 249, 247))
     output = BytesIO()
     image.save(output, format='PNG', optimize=True)
     return output.getvalue()
@@ -370,10 +357,10 @@ def _send_business_notice(phone, body):
                 'chatId': _wa_phone(phone) + '@c.us',
                 'file': {
                     'mimetype': 'image/png',
-                    'filename': 'interflash-aviso-3x4.png',
+                    'filename': 'interflash-aviso.png',
                     'data': base64.b64encode(image).decode('ascii'),
                 },
-                'caption': body,
+                'caption': '',
             }
             result = waha.api('/api/sendImage', payload, cfg)
             mid = result.get('id')

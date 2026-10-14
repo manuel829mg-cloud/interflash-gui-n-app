@@ -55,17 +55,14 @@ def resolve(c, plan_id, router, line, address, customer=None):
     expected = (float(plan['upload_mbps']) * 1000000, float(plan['download_mbps']) * 1000000)
     candidates = [p for p in profiles if _rate(p['rate_limit']) == expected]
     current = next((p for p in profiles if p['name'] == old_profile), None)
-    # A selected commercial plan must match the real profile speed, even if
-    # the database plan was already saved during an unsuccessful attempt.
-    if (customer is not None and str(plan_id or '') == old_plan and router == old_router
-            and current is not None and _rate(current['rate_limit']) == expected):
-        return old_profile
-
-    if current and router == old_router and current['remote_address'] and current['local_address']:
-        candidates = [p for p in candidates if (p['remote_address'], p['local_address']) == (current['remote_address'], current['local_address'])]
-    elif address and pbr_client._table_exists(c, 'mikrotik_ip_pools'):
+    # The explicitly assigned IP determines installation connectivity. A saved
+    # profile can be stale after an earlier failed edit and must not lock the
+    # customer to a different pool.
+    if address and pbr_client._table_exists(c, 'mikrotik_ip_pools'):
         pools = {p['name'] for p in c.execute('SELECT name,ranges FROM mikrotik_ip_pools WHERE router_name=?', (router,)) if _contains(p['ranges'], address)}
         candidates = [p for p in candidates if p['remote_address'] in pools or p['remote_address'] == address]
+    elif current and router == old_router and current['remote_address'] and current['local_address']:
+        candidates = [p for p in candidates if (p['remote_address'], p['local_address']) == (current['remote_address'], current['local_address'])]
     else:
         candidates = []
     if not candidates:

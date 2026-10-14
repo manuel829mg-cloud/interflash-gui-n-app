@@ -27,8 +27,64 @@ def _agent_rsc(root, token):
   :local id ($d->"id");
   :if (([:typeof $id] = "nil") || ($id = 0)) do={ :return 0; }
   :local action ($d->"action");
-  :if (($action != "CREATE_PPPOE") && ($action != "SUSPEND") && ($action != "REACTIVATE") && ($action != "CHANGE_PROFILE") && ($action != "RESTART_PPPOE") && ($action != "DELETE_PPPOE")) do={ :return 0; }
+  :if (($action != "CREATE_PPPOE") && ($action != "SUSPEND") && ($action != "REACTIVATE") && ($action != "CHANGE_PROFILE") && ($action != "RESTART_PPPOE") && ($action != "DELETE_PPPOE") && ($action != "CHANGE_PASSWORD") && ($action != "CHANGE_REMOTE_IP") && ($action != "APPLY_PBR") && ($action != "REMOVE_PBR")) do={ :return 0; }
   :local user ($d->"pppoe");
+  :if (($action = "CHANGE_PASSWORD") || ($action = "CHANGE_REMOTE_IP") || ($action = "APPLY_PBR") || ($action = "REMOVE_PBR")) do={
+    :local success false;
+    :local result "USUARIO_NO_EXISTE";
+    :local secret [/ppp secret find where name=$user];
+    :if (([:len $user] > 0) && ([:len $secret] = 1)) do={
+      :do {
+        :local p ($d->"payload");
+        :if ($action = "CHANGE_PASSWORD") do={
+          :local pass ($p->"password");
+          :if (([:typeof $pass] != "str") || ([:len $pass] = 0)) do={ :error "PASSWORD_VACIO"; }
+          /ppp secret set $secret password=$pass;
+          :if ([/ppp secret get $secret password] != $pass) do={ :error "PASSWORD_NO_CONFIRMADO"; }
+          :set result "PASSWORD_CONFIRMADO";
+        }
+        :if ($action = "CHANGE_REMOTE_IP") do={
+          :local rip ($p->"remote_address");
+          :if (([:typeof $rip] != "str") || ([:len $rip] = 0)) do={ :error "IP_VACIA"; }
+          :foreach other in=[/ppp secret find where remote-address=$rip] do={
+            :if ($other != $secret) do={ :error "IP_RESERVADA"; }
+          }
+          :foreach active in=[/ppp active find where address=$rip] do={
+            :if ([/ppp active get $active name] != $user) do={ :error "IP_ACTIVA"; }
+          }
+          /ppp secret set $secret remote-address=$rip;
+          :if ([/ppp secret get $secret remote-address] != $rip) do={ :error "IP_NO_CONFIRMADA"; }
+          :set result "IP_CONFIRMADA_REQUIERE_RECONEXION";
+        }
+        :if (($action = "APPLY_PBR") || ($action = "REMOVE_PBR")) do={
+          :local ip ($p->"ip");
+          :local target ($p->"address_list");
+          :if (([:typeof $ip] != "str") || ([:len $ip] = 0)) do={ :error "IP_VACIA"; }
+          :if ($action = "APPLY_PBR") do={
+            :if (($target != "Linea-1-Claro") && ($target != "Linea-2-Claro") && ($target != "Linea-3-Altice") && ($target != "Linea-4-Altice")) do={ :error "LINEA_INVALIDA"; }
+            :if ([/ppp secret get $secret remote-address] != $ip) do={ :error "IP_NO_PERTENECE_AL_CLIENTE"; }
+          }
+          :foreach other in=[/ppp secret find where remote-address=$ip] do={
+            :if ($other != $secret) do={ :error "IP_RESERVADA"; }
+          }
+          :foreach active in=[/ppp active find where address=$ip] do={
+            :if ([/ppp active get $active name] != $user) do={ :error "IP_ACTIVA"; }
+          }
+          :foreach l in={"Linea-1-Claro";"Linea-2-Claro";"Linea-3-Altice";"Linea-4-Altice"} do={
+            /ip firewall address-list remove [find where list=$l and address=$ip];
+          }
+          :if ($action = "APPLY_PBR") do={
+            /ip firewall address-list add list=$target address=$ip comment=("INTERFLASH:" . $user);
+            :if ([:len [/ip firewall address-list find where list=$target and address=$ip]] = 0) do={ :error "PBR_NO_CONFIRMADO"; }
+          }
+          :set result "PBR_CONFIRMADO";
+        }
+        :set success true;
+      } on-error={ :set result "ERROR_ACTUALIZACION_CLIENTE"; }
+    }
+    /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=" . $success . "&result=" . $result) output=none check-certificate=yes;
+    :return 0;
+  }
   :if (($action = "SUSPEND") || ($action = "REACTIVATE")) do={
     :local success false;
     :local result "USUARIO_NO_EXISTE";
@@ -143,7 +199,7 @@ def _agent_rsc(root, token):
   /tool fetch url=($base . "/api/mikrotik/agent/result") http-method=post http-header-field=("Content-Type:application/x-www-form-urlencoded," . $hdr) http-data=("id=" . $id . "&ok=true&result=PPPOE_CREADO") output=none check-certificate=yes;
 }
 /system scheduler add name="interflash-agent-scheduler" interval=5s on-event="/system script run interflash-agent" policy=read,write,test,sensitive start-time=startup disabled=yes
-:log info "INTERFLASH-SERVICE-AGENT-V6-STANDARD-INSTALLED"
+:log info "INTERFLASH-SERVICE-AGENT-V7-EDIT-INSTALLED"
 '''
     return template.replace('__ROOT__', root).replace('__TOKEN__', token).replace('__AFTER__', datetime.now().isoformat(timespec='microseconds'))
 
@@ -198,7 +254,7 @@ def control_result_compat():
             status,
             datetime.now().isoformat(timespec='seconds'),
             result,
-            '{}' if cmd['action'] == 'CREATE_PPPOE' else cmd['payload'],
+            '{}' if cmd['action'] in ('CREATE_PPPOE','CHANGE_PASSWORD') else cmd['payload'],
             cid,
         ),
     )
@@ -248,7 +304,7 @@ def control_script_fast():
     <div class="panel">
       <div class="notice" style="background:#063f2a;color:#b8f6d6;margin-bottom:12px"><b>Instalación:</b> copia estas 3 líneas en el CCR2116. El agente se instalará DESACTIVADO para revisar primero la cola de órdenes; no cambia rutas, mangle ni failover.</div>
       <textarea class="field" style="width:100%;height:150px;font-family:Consolas,monospace">{pbr_client.esc(installer)}</textarea>
-      <div class="notice" style="background:#4e3707;color:#fff;margin:14px 0 10px">Agente v4: crea PPPoE, suspende, reactiva, cambia el perfil y elimina el usuario PPPoE del cliente enviado a la papelera. La eliminación desconecta su sesión y se confirma en la cola. Después de confirmar el perfil, renueva la sesión del cliente activo para aplicar la velocidad. Suspender deshabilita el usuario y desconecta su sesión activa. Solo ejecuta órdenes nuevas posteriores a esta instalación; las órdenes antiguas no se ejecutan. Queda desactivado al instalar.</div>
+      <div class="notice" style="background:#4e3707;color:#fff;margin:14px 0 10px">Agente v7: actualiza contraseña, IP y listas de línea del cliente; crea PPPoE, suspende, reactiva, cambia el perfil y elimina el usuario PPPoE del cliente enviado a la papelera. La eliminación desconecta su sesión y se confirma en la cola. Después de confirmar el perfil, renueva la sesión del cliente activo para aplicar la velocidad. Suspender deshabilita el usuario y desconecta su sesión activa. Solo ejecuta órdenes nuevas posteriores a esta instalación; las órdenes antiguas no se ejecutan. Queda desactivado al instalar.</div>
       <div class="muted" style="margin-bottom:6px">Verificación opcional:</div>
       <textarea class="field" style="width:100%;height:90px;font-family:Consolas,monospace">{pbr_client.esc(verify)}</textarea>
     </div>'''
@@ -285,7 +341,7 @@ def service_next():
           AND newer.status NOT IN ('CANCELADO','ERROR'))""", (router,))
     row = c.execute("""SELECT * FROM router_commands WHERE router_name=?
         AND status='PENDIENTE' AND created_at>=?
-        AND action IN ('CREATE_PPPOE','SUSPEND','REACTIVATE','CHANGE_PROFILE','RESTART_PPPOE','DELETE_PPPOE')
+        AND action IN ('CREATE_PPPOE','SUSPEND','REACTIVATE','CHANGE_PROFILE','RESTART_PPPOE','DELETE_PPPOE','CHANGE_PASSWORD','CHANGE_REMOTE_IP','APPLY_PBR','REMOVE_PBR')
         ORDER BY id LIMIT 1""", (router, after)).fetchone()
     if not row:
         c.commit(); c.close()

@@ -70,8 +70,7 @@ def resolve(c, plan_id, router, line, address, customer=None):
     # keeping the old local address and pool; never migrate a new IP this way.
     if (not candidates and customer is not None and address
             and address == _value(customer, 'ip_address')
-            and router == old_router and current is not None
-            and current['remote_address'] and current['local_address']):
+            and router == old_router and current is not None):
         candidates = [p for p in profiles if _rate(p['rate_limit']) == expected
                       and (p['remote_address'], p['local_address'])
                       == (current['remote_address'], current['local_address'])]
@@ -98,6 +97,9 @@ def resolve(c, plan_id, router, line, address, customer=None):
         raise ValueError('Hay varios pools compatibles. Selecciona una IP del pool de instalación.')
     # Explicit PBR remains independent; never infer speed or pools from names.
     line_number = str(line).split('-')[1] if line in pbr_client.PBR_LISTS else ''
+    if not line_number and current is not None:
+        prefix = re.match(r'^([1-4])-', old_profile)
+        line_number = prefix[1] if prefix else ''
     candidates.sort(key=lambda p: (0 if line_number and (f'Linea-{line_number}-' in p['name'] or p['name'].startswith(line_number + '-')) else 1, p['name']))
     return candidates[0]['name']
 

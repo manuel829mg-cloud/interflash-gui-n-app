@@ -89,15 +89,15 @@ def send_invoice(c, phone, invoice_id, caption=None):
     import waha_suite as waha
     try:
         inv,company,banks = invoice_data(c,int(invoice_id))
-        if inv['status']!='PENDIENTE' or inv['customer_status']=='ELIMINADO':
+        if inv['status']!='PAGADA' or inv['customer_status']=='ELIMINADO':
             raise ValueError('Factura anulada o cliente eliminado; no se envió el documento.')
         if wa._wa_phone(inv['phone']) != wa._wa_phone(phone):
             raise ValueError('El teléfono del cliente cambió; revisa el destinatario antes de reenviar.')
         if not waha.enabled(): raise ValueError('El envío de factura PDF requiere el proveedor WAHA conectado.')
         if not re.fullmatch(r'[1-9][0-9]{7,14}',wa._wa_phone(phone)):
             raise ValueError('Número de teléfono inválido.')
-        if inv['due_date'] != date.today().isoformat() or float(inv['amount']) <= float(inv['paid_total']):
-            raise ValueError('La factura no vence hoy o ya fue pagada; no se envió el aviso.')
+        if float(inv['paid_total']) < float(inv['amount']):
+            raise ValueError('La factura todavía tiene balance pendiente; no se envió como pagada.')
         cfg = waha.config()
         filename = 'Factura-IF-%06d.pdf' % inv['id']
         pdf = render_pdf(inv,company,banks)
@@ -119,7 +119,7 @@ def setup(app):
     c=base.db()
     try:
         c.execute('DROP TRIGGER IF EXISTS whatsapp_new_invoice_pdf')
-        c.execute("""UPDATE whatsapp_outbox SET status='CANCELADO',error='Aviso de emisión desactivado; se notificará al vencimiento'
-            WHERE status='PENDIENTE' AND (template_code='INVOICE' OR template_code LIKE 'INVOICE_PDF:%')""")
+        c.execute("""UPDATE whatsapp_outbox SET status='CANCELADO',error='Aviso previo al pago desactivado; la factura se envía al pagar'
+            WHERE status='PENDIENTE' AND (template_code='INVOICE' OR template_code='ZONE_REMINDER' OR template_code LIKE 'INVOICE_PDF:%' OR template_code LIKE 'INVOICE_PDF_DUE:%')""")
         c.commit()
     finally: c.close()

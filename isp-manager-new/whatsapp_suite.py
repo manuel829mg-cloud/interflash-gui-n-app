@@ -387,7 +387,7 @@ def _process_queue_item(c, row):
     c.commit()
     if row['kind'] == 'invoice_pdf':
         from invoice_pdf import send_invoice
-        ok, provider_id, err = send_invoice(c, row['phone'], row['template_name'])
+        ok, provider_id, err = send_invoice(c, row['phone'], row['template_name'], row['body'])
         visible_body = '[PDF] ' + (row['body'] or '')
     elif row['kind'] == 'template' and row['template_name']:
         ok, provider_id, err = _send_template(row['phone'], row['template_name'], row['language_code'] or 'es')

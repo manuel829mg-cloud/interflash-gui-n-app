@@ -119,9 +119,21 @@ def settings():
             c.commit();c.close();flash('WAHA conectado. GREEN-API desactivado. Comprueba un envío desde Inter Flash.')
         except ValueError as exc:flash(str(exc))
         return redirect(url_for('waha_settings'))
+    live_state = 'SIN COMPROBAR'
+    engine = 'DESCONOCIDO'
+    if cfg['active']:
+        try:
+            state = api('/api/sessions/' + cfg['session_name'], cfg=cfg)
+            candidate = state.get('status') if isinstance(state, dict) else None
+            live_state = candidate if candidate in ('WORKING','STARTING','SCAN_QR_CODE','FAILED','STOPPED') else 'RESPUESTA INESPERADA'
+            raw_engine = state.get('engine', {}) if isinstance(state, dict) else {}
+            candidate = raw_engine.get('engine') if isinstance(raw_engine, dict) else raw_engine
+            engine = candidate if candidate in ('WEBJS','WPP','GOWS','NOWEB','VENOM') else 'DESCONOCIDO'
+        except APIError as exc:
+            live_state = str(exc)
     csrf=session.setdefault('waha_csrf',secrets.token_urlsafe(32))
     body=f'''<div class="head"><div><h1>Conectar WAHA</h1><p>Usa el WhatsApp que vinculaste en tu computadora.</p></div><a class="btn" href="/whatsapp">Volver a WhatsApp</a></div>
-    <div class="panel"><p>Estado: {'CONECTADO' if cfg['active'] else 'PENDIENTE'}.</p><p>La dirección local http://localhost:3000 funciona en tu PC. Para conectarla con esta plataforma necesitas su dirección pública HTTPS mediante un túnel.</p>
+    <div class="panel"><p>Configuración: {'ACTIVA' if cfg['active'] else 'PENDIENTE'}.</p><p>Estado comprobado: {wa.esc(live_state)}.</p><p>Motor WAHA: {wa.esc(engine)}.</p><p>La dirección local http://localhost:3000 funciona en tu PC. Para conectarla con esta plataforma necesitas su dirección pública HTTPS mediante un túnel.</p>
     <form method="post"><input type="hidden" name="csrf" value="{wa.esc(csrf)}">
     <label>Dirección HTTPS de WAHA<input name="api_url" type="url" value="{wa.esc(cfg['api_url'])}" placeholder="https://tu-tunel.trycloudflare.com" required></label>
     <label>Sesión<input name="session_name" value="{wa.esc(cfg['session_name'])}" required></label>

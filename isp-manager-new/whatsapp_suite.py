@@ -260,6 +260,26 @@ def _record_outgoing(c, thread_id, body, provider_id, status, error=''):
     c.execute('UPDATE whatsapp_threads SET last_message=?,last_at=? WHERE id=?', (body[:500],_now(),thread_id))
 
 
+def _send_business_notice(phone, body):
+    """Send a single branded notice; never retry an ambiguous media response."""
+    if waha.enabled() or not greenapi.enabled() or len(body) > 1024:
+        return _send_text(phone, body)
+    cfg = greenapi.config()
+    try:
+        result = greenapi.api('sendFileByUrl', {
+            'chatId': _wa_phone(phone) + '@c.us',
+            'urlFile': 'https://interflash-isp-manager.up.railway.app/static/interflash-symbol.png',
+            'fileName': 'interflash-logo.png',
+            'caption': body,
+        }, cfg)
+        mid = result.get('idMessage')
+        if not isinstance(mid, str) or not mid:
+            raise greenapi.APIError('GREEN-API no confirmó el aviso con logo. Revisa su panel antes de reenviar.')
+        return True, 'greenapi:' + cfg['channel'] + ':' + mid, ''
+    except greenapi.APIError as exc:
+        return False, '', str(exc)
+
+
 def _process_queue_item(c, row):
     c.execute("UPDATE whatsapp_queue SET status='EN_PROCESO',attempts=attempts+1,last_error=NULL WHERE id=?", (row['id'],))
     c.commit()
@@ -267,7 +287,10 @@ def _process_queue_item(c, row):
         ok, provider_id, err = _send_template(row['phone'], row['template_name'], row['language_code'] or 'es')
         visible_body = '[Plantilla] ' + row['template_name']
     else:
-        ok, provider_id, err = _send_text(row['phone'], row['body'] or '')
+        linked_notice = c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='whatsapp_outbox_links'").fetchone()
+        branded = bool(linked_notice and c.execute('SELECT 1 FROM whatsapp_outbox_links WHERE queue_id=?', (row['id'],)).fetchone())
+        sender = _send_business_notice if branded else _send_text
+        ok, provider_id, err = sender(row['phone'], row['body'] or '')
         visible_body = row['body'] or ''
     if ok:
         status=waha.confirmed_status(c,provider_id,'ACEPTADO') if provider_id.startswith('waha:') else greenapi.confirmed_status(c,provider_id,'ACEPTADO') if provider_id.startswith('greenapi:') else whapi.confirmed_status(c,provider_id,'ACEPTADO') if provider_id.startswith('whapi:') else ultra.confirmed_status(c,provider_id,'ACEPTADO') if provider_id.startswith('ultra:') else 'ACEPTADO'

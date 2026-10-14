@@ -141,7 +141,7 @@ def send_outbox(limit=25):
             row = c.execute("SELECT o.* FROM whatsapp_outbox o LEFT JOIN whatsapp_outbox_links l ON l.outbox_id=o.id WHERE o.id>? AND o.status='PENDIENTE' AND l.outbox_id IS NULL ORDER BY o.id LIMIT 1", (floor,)).fetchone()
             if not row:
                 c.rollback(); break
-            if row['template_code'] == 'ZONE_REMINDER':
+            if row['template_code'] == 'ZONE_REMINDER' or str(row['template_code'] or '').startswith('INVOICE_PDF_DUE:'):
                 from zone_whatsapp_reminders import valid
                 if not valid(c, row['id']):
                     c.execute("UPDATE whatsapp_outbox SET status='CANCELADO',error='Recordatorio resuelto, desactivado o fuera de fecha' WHERE id=?", (row['id'],))
@@ -156,11 +156,11 @@ def send_outbox(limit=25):
                     c.execute("UPDATE whatsapp_outbox SET status='CANCELADO',error='Promesa resuelta o recordatorio vencido' WHERE id=?", (row['id'],))
                     c.commit()
                     continue
-            if row['template_code'] == 'ZONE_REMINDER':
+            if row['template_code'] == 'ZONE_REMINDER' or str(row['template_code'] or '').startswith('INVOICE_PDF_DUE:'):
                 row = c.execute('SELECT * FROM whatsapp_outbox WHERE id=?', (row['id'],)).fetchone()
             phone = wa._wa_phone(row['phone'])
             thread = wa._thread_for_phone(c, phone, customer_id=row['customer_id'])
-            invoice_id = str(row['template_code'] or '').removeprefix('INVOICE_PDF:') if str(row['template_code'] or '').startswith('INVOICE_PDF:') else ''
+            invoice_id = str(row['template_code']).split(':',1)[1] if str(row['template_code'] or '').startswith('INVOICE_PDF_DUE:') else ''
             kind = 'invoice_pdf' if invoice_id else 'text'
             qid = c.execute("INSERT INTO whatsapp_queue(thread_id,customer_id,phone,kind,body,template_name,status,created_at) VALUES(?,?,?,?,?,?,'EN_PROCESO',?)", (thread['id'], row['customer_id'], phone, kind, row['message'], invoice_id or None, wa._now())).lastrowid
             c.execute('INSERT INTO whatsapp_outbox_links VALUES(?,?)', (row['id'], qid))

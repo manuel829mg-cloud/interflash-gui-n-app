@@ -313,7 +313,7 @@ def _process_queue_item(c, row):
     else:
         linked_notice = c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='whatsapp_outbox_links'").fetchone()
         branded = bool(linked_notice and c.execute('SELECT 1 FROM whatsapp_outbox_links WHERE queue_id=?', (row['id'],)).fetchone())
-        sender = _send_business_notice if branded or row['kind'] == 'logo' else _send_text
+        sender = _send_business_notice if row['kind'] == 'logo' else _send_text
         ok, provider_id, err = sender(row['phone'], row['body'] or '')
         visible_body = row['body'] or ''
     if ok:

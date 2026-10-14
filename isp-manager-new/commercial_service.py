@@ -111,6 +111,14 @@ def profile_api():
         profile = resolve(c, request.args.get('plan_id'), request.args.get('router') or _value(customer, 'router_name', 'CCR2116'), request.args.get('pbr_line') or _value(customer, 'pbr_line'), request.args.get('ip') or _value(customer, 'ip_address'), customer)
         return jsonify(ok=True, profile=profile)
     except ValueError as error:
+        if request.args.get('debug') == '1':
+            router = request.args.get('router') or 'CCR2116'
+            plan = c.execute('SELECT * FROM plans WHERE id=?', (request.args.get('plan_id'),)).fetchone()
+            expected = (float(plan['upload_mbps']) * 1000000, float(plan['download_mbps']) * 1000000) if plan else ()
+            current_name = _value(customer, 'mikrotik_profile')
+            rows = c.execute('SELECT name,rate_limit,remote_address,local_address FROM push_ppp_profiles WHERE router_name=?', (router,)).fetchall()
+            detail = [dict(p) for p in rows if p['name'] == current_name or _rate(p['rate_limit']) == expected]
+            return jsonify(ok=False, error=str(error), current_profile=current_name, profiles=detail), 400
         return jsonify(ok=False, error=str(error)), 400
     finally:
         c.close()

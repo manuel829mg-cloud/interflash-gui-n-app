@@ -61,12 +61,13 @@ def record_payment(customer_id=None, invoice_id=None, amount=None, method='EFECT
                              VALUES(?,?,?,'REACTIVATE','{}','PENDIENTE',?,'PAGO')''',
                           (cu['router_name'] or 'CCR2116',customer_id,cu['pppoe'],now))
         if settings.get('whatsapp_enabled') == '1' and cu['phone']:
-            template = c.execute("SELECT body FROM whatsapp_templates WHERE code='PAYMENT' AND active=1").fetchone()
-            if template:
-                try:
-                    message = template['body'].format(name=cu['name'], amount=f'RD${amount:,.2f}', due_date=inv['due_date'] if inv else '')
-                except (KeyError, ValueError):
-                    message = f"Hola {cu['name']}, recibimos tu pago de RD${amount:,.2f}. Gracias."
+            if inv and amount == balance:
+                from whatsapp_events import enqueue
+                enqueue(c, f"INVOICE_PAID:{invoice_id}", customer_id,
+                        'INVOICE_PDF_PAID:'+str(invoice_id),
+                        f"Hola {cu['name']}, recibimos tu pago de RD${amount:,.2f}. Adjuntamos tu factura IF-{int(invoice_id):06d} marcada PAGADA. Gracias por preferir INTER Flash.")
+            else:
+                message = f"Hola {cu['name']}, recibimos tu pago de RD${amount:,.2f}. Gracias."
                 c.execute("INSERT INTO whatsapp_outbox(customer_id,phone,template_code,message,status,created_at) VALUES(?,?,'PAYMENT',?,'PENDIENTE',?)", (customer_id,cu['phone'],message,now))
         c.commit()
         return pid

@@ -97,8 +97,7 @@ def ensure_schema():
       FOREIGN KEY(thread_id) REFERENCES whatsapp_threads(id)
     );
     CREATE INDEX IF NOT EXISTS idx_wa_messages_thread ON whatsapp_messages(thread_id,id);
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_wa_messages_provider ON whatsapp_messages(provider_id) WHERE provider_id IS NOT NULL AND provider_id<>'';
-    CREATE TABLE IF NOT EXISTS whatsapp_queue(
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_wa_messages_provider ON whatsapp_messages(provider_id) WHERE provider_id IS NOT NULL AND provider_id<>'';    CREATE TABLE IF NOT EXISTS whatsapp_queue(
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       thread_id INTEGER,
       customer_id INTEGER,
@@ -197,8 +196,7 @@ def _meta_post(payload):
 
 def _send_text(phone, body):
     if waha.enabled():
-        return waha.send_text(_wa_phone(phone), body)
-    if greenapi.enabled():
+        return waha.send_text(_wa_phone(phone), body)    if greenapi.enabled():
         return greenapi.send_text(_wa_phone(phone), body)
     if whapi.enabled():
         return whapi.send_text(_wa_phone(phone), body)
@@ -297,8 +295,7 @@ def _wrap_notice(draw, text, font, max_width):
             for char in word:
                 if draw.textlength(chunk + char, font=font) > max_width and chunk:
                     lines.append(chunk)
-                    chunk = char
-                else:
+                    chunk = char                else:
                     chunk += char
             current = chunk
         if current:
@@ -373,6 +370,7 @@ def _send_business_notice(phone, body):
                     'filename': 'interflash-aviso-3x4.png',
                     'data': base64.b64encode(image).decode('ascii'),
                 },
+                'caption': body,
             }
             result = waha.api('/api/sendImage', payload, cfg)
             mid = result.get('id')
@@ -397,8 +395,7 @@ def _send_business_notice(phone, body):
         if not isinstance(mid, str) or not mid:
             raise greenapi.APIError('GREEN-API no confirmó el aviso con logo. Revisa su panel antes de reenviar.')
         return True, 'greenapi:' + cfg['channel'] + ':' + mid, ''
-    except greenapi.APIError as exc:
-        return False, '', str(exc)
+    except greenapi.APIError as exc:        return False, '', str(exc)
 
 
 
@@ -497,8 +494,7 @@ def _customer_card(c, thread):
     return f'<div class="wa-customer"><h3>Ficha del cliente</h3>{details}<div class="wa-actions">{"".join(actions)}</div><small class="muted">Los botones preparan un borrador. Revísalo antes de enviar.</small></div>'
 
 
-def _tabs(active):
-    items = [('chat','whatsapp_inbox','Chat'), ('bot','whatsapp_chatbot','Chatbot'),
+def _tabs(active):    items = [('chat','whatsapp_inbox','Chat'), ('bot','whatsapp_chatbot','Chatbot'),
              ('auto','whatsapp_automatics','Automáticos'), ('queue','whatsapp_queue','Cola de mensajes'),
              ('general','whatsapp_settings','General')]
     links=''.join(f'<a class="wa-tab {"selected" if key==active else ""}" href="{url_for(ep)}" {"aria-current=page" if key==active else ""}>{label}</a>' for key,ep,label in items)
@@ -597,8 +593,7 @@ def inbox():
         configured='UltraMsg configurado. La entrega se confirma por mensaje.'
     webhook_state='Token de verificación listo.' if VERIFY_TOKEN else 'Falta WHATSAPP_VERIFY_TOKEN para activar el webhook.'
     if ultra.enabled():
-        webhook_state='Recepción de UltraMsg configurada.'
-    if whapi.enabled():
+        webhook_state='Recepción de UltraMsg configurada.'    if whapi.enabled():
         configured='Whapi.Cloud configurado. La entrega se confirma por mensaje.'
         webhook_state='Recepción de Whapi.Cloud configurada.'
     if greenapi.enabled():
@@ -697,8 +692,7 @@ def send():
         if len(body) > 1024:
             flash('La prueba con logo admite hasta 1024 caracteres.')
             return redirect(url_for('whatsapp_settings'))
-    c=base.db(); t=None
-    if thread_id and str(thread_id).isdigit(): t=c.execute('SELECT * FROM whatsapp_threads WHERE id=?',(int(thread_id),)).fetchone()
+    c=base.db(); t=None    if thread_id and str(thread_id).isdigit(): t=c.execute('SELECT * FROM whatsapp_threads WHERE id=?',(int(thread_id),)).fetchone()
     if not t:
         cu=_customer_by_phone(c,phone); t=_thread_for_phone(c,phone,cu['name'] if cu else '',cu['id'] if cu else None)
     cur=c.execute('''INSERT INTO whatsapp_queue(thread_id,customer_id,phone,kind,body,status,created_at)
@@ -797,8 +791,7 @@ def _receive_webhook():
                 for st in value.get('statuses') or []:
                     pid=str(st.get('id') or ''); status=str(st.get('status') or '').upper()
                     mapped={'SENT':'ENVIADO','DELIVERED':'ENTREGADO','READ':'LEÍDO','FAILED':'ERROR'}.get(status)
-                    if pid and mapped:
-                        errors=st.get('errors') or []
+                    if pid and mapped:                        errors=st.get('errors') or []
                         detail='; '.join(str(e.get('code','')) + ': ' + str(e.get('title','')) for e in errors)[:500] or None
                         old=c.execute('SELECT status FROM whatsapp_messages WHERE provider_id=?',(pid,)).fetchone()
                         rank={'ENVIADO':1,'ENTREGADO':2,'LEÍDO':3}

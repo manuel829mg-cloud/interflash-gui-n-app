@@ -35,6 +35,7 @@ class WahaTests(unittest.TestCase):
   self.assertEqual(path,'/api/sendImage')
   self.assertEqual(payload['chatId'],'18095550123@c.us')
   self.assertEqual(payload['file']['data'],base64.b64encode(b'png-bytes').decode('ascii'))
+  self.assertEqual(payload['caption'],'Hola Prueba')
   self.assertNotIn('url',payload['file'])
   self.assertNotIn('linkPreview',payload)
  def test_notice_image_is_three_by_four_png(self):

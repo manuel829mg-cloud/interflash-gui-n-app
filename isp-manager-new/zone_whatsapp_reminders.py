@@ -1,68 +1,53 @@
-"""Opt-in reminders per zone, with a fresh debt check before dispatch."""
+"""One unpaid invoice reminder on its due date, using Dominican local time."""
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 import app as base
 
 RD = ZoneInfo('America/Santo_Domingo')
 
-
 def candidates(c, now):
-    from zone_cut_scheduler import _zone_join
-    rows = c.execute(f'''SELECT cu.id customer_id,cu.name,z.id zone_id,
-        z.cut_days_after,z.cut_time,z.whatsapp_reminder_days,z.suspend_invoice_count,
-        MIN(i.due_date) oldest_due,
-        SUM(i.amount-COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id=i.id),0)) balance
-        FROM customers cu JOIN zones z ON {_zone_join()}
-        JOIN invoices i ON i.customer_id=cu.id AND i.status='PENDIENTE'
-        WHERE COALESCE(z.active,1)=1 AND z.whatsapp_reminder_enabled=1
-        AND COALESCE(cu.status,'ACTIVO') NOT IN ('ELIMINADO','SUSPENDIDO')
+    rows = c.execute("""SELECT cu.id customer_id,cu.name,i.id invoice_id,i.due_date,
+        i.amount-COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id=i.id),0) balance
+        FROM invoices i JOIN customers cu ON cu.id=i.customer_id
+        WHERE i.status='PENDIENTE' AND i.due_date=?
+        AND COALESCE(cu.status,'ACTIVO')<>'ELIMINADO'
+        AND COALESCE(cu.phone,'')<>''
         AND i.amount>COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id=i.id),0)
-        GROUP BY cu.id,z.id''').fetchall()
+        AND NOT EXISTS(SELECT 1 FROM payment_promises p WHERE p.customer_id=cu.id
+            AND p.status='PENDIENTE' AND (p.promise_date>? OR
+            (p.promise_date=? AND COALESCE(p.promise_time,'23:59')>?)))""",
+        (now.date().isoformat(),now.date().isoformat(),now.date().isoformat(),now.strftime('%H:%M'))).fetchall()
     for row in rows:
-        try:
-            due = now.date()
-            if not c.execute("SELECT 1 FROM invoices i WHERE i.customer_id=? AND i.status='PENDIENTE' AND i.due_date=? AND i.amount>COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id=i.id),0)", (row['customer_id'], due.isoformat())).fetchone():
-                continue
-            if c.execute("SELECT 1 FROM payment_promises WHERE customer_id=? AND status='PENDIENTE' AND promise_date>=?",(row['customer_id'],now.date().isoformat())).fetchone():
-                continue
-            yield dict(row, due_date=due.isoformat(), event_key=f"ZONE_REMINDER:{row['customer_id']}:{row['zone_id']}:{due.isoformat()}")
-        except (ValueError, TypeError):
-            continue
-
+        yield dict(row,event_key=f"INVOICE_DUE:{row['invoice_id']}")
 
 def message_for(row):
-    when = date.fromisoformat(row['due_date']).strftime('%d/%m/%Y')
-    return f"Hola {row['name']}, INTER Flash te recuerda que tienes RD${row['balance']:,.2f} pendientes. Tu factura vence hoy, {when}. Realiza tu pago para mantener tu servicio al día. Si ya pagaste, envíanos tu comprobante."
-
+    when=date.fromisoformat(row['due_date']).strftime('%d/%m/%Y')
+    return f"Hola {row['name']}, tu factura IF-{row['invoice_id']:06d} de INTER Flash vence hoy, {when}. Balance pendiente: RD${row['balance']:,.2f}. Adjuntamos tu factura. Si ya pagaste, envíanos tu comprobante."
 
 def process(now=None):
     from whatsapp_events import enqueue
-    now = now or datetime.now(RD).replace(tzinfo=None)
-    if now.tzinfo is not None:
-        now = now.astimezone(RD).replace(tzinfo=None)
-    if not 10 <= now.hour < 20:
-        return 0
-    c = base.db()
+    now=now or datetime.now(RD)
+    if now.tzinfo is not None: now=now.astimezone(RD).replace(tzinfo=None)
+    if not 10<=now.hour<20: return 0
+    c=base.db()
     try:
         c.execute('BEGIN IMMEDIATE')
-        count = 0
-        for row in candidates(c, now):
-            message = message_for(row)
-            count += int(enqueue(c,row['event_key'],row['customer_id'],'ZONE_REMINDER',message))
+        count=0
+        for row in candidates(c,now):
+            count+=int(enqueue(c,row['event_key'],row['customer_id'],
+                'INVOICE_PDF_DUE:'+str(row['invoice_id']),message_for(row)))
         c.commit()
         return count
-    finally:
-        c.close()
+    finally: c.close()
 
-
-def valid(c, outbox_id, now=None):
-    now = now or datetime.now(RD).replace(tzinfo=None)
-    if not 10 <= now.hour < 20:
-        return False
-    event = c.execute('SELECT event_key FROM whatsapp_event_keys WHERE outbox_id=?',(outbox_id,)).fetchone()
+def valid(c,outbox_id,now=None):
+    now=now or datetime.now(RD)
+    if now.tzinfo is not None: now=now.astimezone(RD).replace(tzinfo=None)
+    if not 10<=now.hour<20: return False
+    event=c.execute('SELECT event_key FROM whatsapp_event_keys WHERE outbox_id=?',(outbox_id,)).fetchone()
     if event:
         for row in candidates(c,now):
-            if row['event_key'] == event[0]:
+            if row['event_key']==event[0]:
                 c.execute('UPDATE whatsapp_outbox SET message=? WHERE id=?',(message_for(row),outbox_id))
                 return True
     return False

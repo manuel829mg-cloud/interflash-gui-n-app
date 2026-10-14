@@ -269,9 +269,9 @@ def _send_business_notice(phone, body):
         try:
             result = waha.api('/api/sendImage', {
                 'session': cfg['session_name'], 'chatId': _wa_phone(phone) + '@c.us',
-                'file': {'mimetype': 'image/png',
-                         'url': 'https://interflash-isp-manager.up.railway.app/static/interflash-symbol.png',
-                         'filename': 'interflash-logo.png'},
+                'file': {'mimetype': 'image/jpeg',
+                         'url': 'https://interflash-isp-manager.up.railway.app/static/interflash-whatsapp-banner.jpg',
+                         'filename': 'interflash-whatsapp-banner.jpg'},
                 'caption': body,
             }, cfg)
             mid = result.get('id')
@@ -288,8 +288,8 @@ def _send_business_notice(phone, body):
     try:
         result = greenapi.api('sendFileByUrl', {
             'chatId': _wa_phone(phone) + '@c.us',
-            'urlFile': 'https://interflash-isp-manager.up.railway.app/static/interflash-symbol.png',
-            'fileName': 'interflash-logo.png',
+            'urlFile': 'https://interflash-isp-manager.up.railway.app/static/interflash-whatsapp-banner.jpg',
+            'fileName': 'interflash-whatsapp-banner.jpg',
             'caption': body,
         }, cfg)
         mid = result.get('idMessage')

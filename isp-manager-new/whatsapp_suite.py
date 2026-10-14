@@ -267,16 +267,12 @@ def _send_business_notice(phone, body):
     if waha.enabled():
         cfg = waha.config()
         try:
-            result = waha.api('/api/send/link-custom-preview', {
+            preview_url = 'https://interflash-isp-manager.up.railway.app/static/interflash-avisos.html'
+            result = waha.api('/api/sendText', {
                 'session': cfg['session_name'], 'chatId': _wa_phone(phone) + '@c.us',
-                'text': body,
+                'text': body + '\n\n' + preview_url,
+                'linkPreview': True,
                 'linkPreviewHighQuality': False,
-                'preview': {
-                    'url': 'https://interflash-isp-manager.up.railway.app/',
-                    'title': 'Inter Flash',
-                    'description': 'Servicio de internet',
-                    'image': {'url': 'https://interflash-isp-manager.up.railway.app/static/interflash-symbol.png'},
-                },
             }, cfg)
             mid = result.get('id')
             if isinstance(mid, dict):

@@ -344,49 +344,8 @@ def _render_notice_image(body):
 
 
 def _send_business_notice(phone, body):
-    """Send one branded notice without link previews; never retry an ambiguous result."""
-    if len(body) > 1024:
-        return _send_text(phone, body)
-    if waha.enabled():
-        cfg = waha.config()
-        try:
-            image = _render_notice_image(body)
-            import base64
-            payload = {
-                'session': cfg['session_name'],
-                'chatId': _wa_phone(phone) + '@c.us',
-                'file': {
-                    'mimetype': 'image/png',
-                    'filename': 'interflash-aviso.png',
-                    'data': base64.b64encode(image).decode('ascii'),
-                },
-                'caption': '',
-            }
-            result = waha.api('/api/sendImage', payload, cfg)
-            mid = result.get('id')
-            if isinstance(mid, dict):
-                mid = mid.get('_serialized')
-            if not isinstance(mid, str) or not mid:
-                raise waha.APIError('WAHA no confirmó el aviso con imagen. Comprueba el chat antes de reenviar.')
-            return True, 'waha:' + cfg['session_name'] + ':' + mid, ''
-        except (waha.APIError, OSError, ValueError) as exc:
-            return False, '', str(exc)
-    if not greenapi.enabled():
-        return _send_text(phone, body)
-    cfg = greenapi.config()
-    try:
-        result = greenapi.api('sendFileByUrl', {
-            'chatId': _wa_phone(phone) + '@c.us',
-            'urlFile': 'https://interflash-isp-manager.up.railway.app/static/interflash-whatsapp-banner.jpg',
-            'fileName': 'interflash-whatsapp-banner.jpg',
-            'caption': body,
-        }, cfg)
-        mid = result.get('idMessage')
-        if not isinstance(mid, str) or not mid:
-            raise greenapi.APIError('GREEN-API no confirmó el aviso con logo. Revisa su panel antes de reenviar.')
-        return True, 'greenapi:' + cfg['channel'] + ':' + mid, ''
-    except greenapi.APIError as exc:
-        return False, '', str(exc)
+    """Send business notices as ordinary WhatsApp text."""
+    return _send_text(phone, body)
 
 
 

@@ -103,7 +103,7 @@ def customer_form(row=None):
     router_opts = ''.join(f'<option value="{esc(name)}" {"selected" if current_router == name else ""}>{esc(label)}</option>' for name, label in router_names)
 
     new_checked = 'checked' if row is None else ''
-    return f'''<form method="post" class="panel formgrid">
+    return f'''<form method="post" class="panel formgrid" data-if-existing="{1 if row is not None else 0}">
       <div><label>Nombre completo<input name="name" value="{esc(v('name'))}" required></label></div>
       <div><label>Teléfono<input name="phone" value="{esc(v('phone'))}"></label></div>
       <div><label>Cédula / documento<input name="document" value="{esc(v('document'))}"></label></div>
@@ -122,7 +122,7 @@ def customer_form(row=None):
       <div><label>Zona<input name="zone" value="{esc(v('zone'))}"></label></div>
       <div><label>Plan<select name="plan_id"><option value="">Sin plan</option>{plan_opts}</select></label></div>
       <div><label>Usuario PPPoE<input name="pppoe" value="{esc(v('pppoe'))}"></label></div>
-      <div><label>Contraseña PPPoE<input type="password" name="pppoe_password" autocomplete="new-password" placeholder="{'Requerida para crear PPPoE' if row is None else 'Solo si vas a crear/recrear PPPoE'}"></label></div>
+      <div><label>Contraseña PPPoE<input type="password" name="pppoe_password" autocomplete="new-password" placeholder="{'Requerida para crear PPPoE' if row is None else 'Déjala vacía para conservar la contraseña'}"></label></div>
       <div><label>Perfil MikroTik<select name="mikrotik_profile"><option value="">Sin perfil</option>{profile_opts}</select></label></div>
       <div><label>IP asignada<input name="ip_address" value="{esc(v('ip_address'))}" placeholder="Necesaria para aplicar PBR por lista"></label></div>
       <div><label>Línea / PBR<select name="pbr_line">{pbr_opts}</select></label></div>
@@ -247,26 +247,37 @@ def customer_edit_pbr(id):
         except ValueError as error:
             c.close()
             return base.shell('Editar cliente', f'<div class="notice" role="alert">{esc(error)}</div>' + customer_form(request.form), 'customers'), 400
+        if x['pppoe'] != (row['pppoe'] or '') or x['router'] != (row['router_name'] or 'CCR2116'):
+            c.close()
+            flash('No se guardó: cambiar el usuario PPPoE o moverlo de router requiere una migración del servicio.')
+            return redirect(url_for('customer_edit',id=id))
         old_pbr = row['pbr_line'] or ''; old_ip = row['ip_address'] or ''; old_profile = row['mikrotik_profile'] or ''
         c.execute('''UPDATE customers SET name=?,phone=?,document=?,email=?,address=?,zone=?,pppoe=?,ip_address=?,onu_serial=?,plan_id=?,status=?,due_day=?,mikrotik_profile=?,pbr_line=?,router_name=?,service_status=? WHERE id=?''',
                   (x['name'],x['phone'],x['document'],x['email'],x['address'],x['zone'],x['pppoe'],x['ip'],x['onu'],x['plan_id'],x['status'],x['due_day'],x['profile'],x['pbr'],x['router'],x['status'],id))
         if 'latitude' in request.form or 'longitude' in request.form:
             c.execute('UPDATE customers SET latitude=?,longitude=? WHERE id=?', (x['latitude'],x['longitude'],id))
         notes=[]
-        if x['create_in_router'] and x['pppoe'] and x['password'] and x['profile']:
-            _queue(c,id,x['pppoe'],x['router'],'CREATE_PPPOE',{'password':x['password'],'profile':x['profile'],'remote_address':x['ip']}); notes.append('PPPoE enviado a la cola')
-        elif x['pppoe'] and x['profile'] and (x['profile'] != old_profile or c.execute("SELECT 1 FROM router_commands WHERE customer_id=? AND action='CHANGE_PROFILE' AND status IN ('PENDIENTE','ERROR','CANCELADO') AND id=(SELECT MAX(id) FROM router_commands WHERE customer_id=? AND action='CHANGE_PROFILE')", (id,id)).fetchone()):
+        # Existing subscribers must never be sent through CREATE_PPPOE.
+        if x['password'] and x['pppoe']:
+            _queue(c,id,x['pppoe'],x['router'],'CHANGE_PASSWORD',{'password':x['password']})
+            notes.append('Cambio de contraseña enviado a la cola')
+        retry = c.execute("SELECT 1 FROM router_commands WHERE customer_id=? AND action IN ('CHANGE_PROFILE','CREATE_PPPOE') AND status IN ('PENDIENTE','ERROR','CANCELADO') AND id=(SELECT MAX(id) FROM router_commands WHERE customer_id=? AND action IN ('CHANGE_PROFILE','CREATE_PPPOE'))", (id,id)).fetchone()
+        if x['pppoe'] and x['profile'] and (x['profile'] != old_profile or x['create_in_router'] or retry):
             _queue(c,id,x['pppoe'],x['router'],'CHANGE_PROFILE',{'profile':x['profile']}); notes.append('cambio de perfil enviado a la cola')
-        if x['ip'] != old_ip and x['ip'] and x['pppoe'] and not (x['create_in_router'] and x['password'] and x['profile']):
+        if x['ip'] != old_ip and x['ip'] and x['pppoe'] :
             _queue(c,id,x['pppoe'],x['router'],'CHANGE_REMOTE_IP',{'remote_address':x['ip']})
             notes.append('Cambio de IP PPPoE enviado al MikroTik; se aplicará al reconectar')
-        if x['pbr'] != old_pbr or x['ip'] != old_ip:
+        if x['pbr'] != old_pbr or x['ip'] != old_ip or x['create_in_router']:
             if old_ip and (not x['pbr'] or old_ip != x['ip']):
                 _queue(c,id,x['pppoe'],x['router'],'REMOVE_PBR',{'ip':old_ip})
             if x['pbr'] and x['ip']:
                 _queue(c,id,x['pppoe'],x['router'],'APPLY_PBR',{'ip':x['ip'],'address_list':x['pbr']}); notes.append('PBR enviado a la cola')
             elif x['pbr'] and not x['ip']:
                 notes.append('PBR guardado, pero falta IP para aplicarlo')
+        if x['status'] != (row['status'] or 'ACTIVO') and x['pppoe']:
+            action = 'SUSPEND' if x['status'] == 'SUSPENDIDO' else 'REACTIVATE'
+            _queue(c,id,x['pppoe'],x['router'],action,{})
+            notes.append('Cambio de estado enviado a la cola')
         c.commit(); c.close()
         try: base.audit('CUSTOMER_UPDATE',f'#{id} · PBR {x["pbr"] or "sin asignar"}')
         except Exception: pass

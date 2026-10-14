@@ -65,6 +65,16 @@ def resolve(c, plan_id, router, line, address, customer=None):
         candidates = [p for p in candidates if (p['remote_address'], p['local_address']) == (current['remote_address'], current['local_address'])]
     else:
         candidates = []
+    # Existing static PPP remote addresses override the profile's pool.
+    # Only fall back for the customer's unchanged address on the same router,
+    # keeping the old local address and pool; never migrate a new IP this way.
+    if (not candidates and customer is not None and address
+            and address == _value(customer, 'ip_address')
+            and router == old_router and current is not None
+            and current['remote_address'] and current['local_address']):
+        candidates = [p for p in profiles if _rate(p['rate_limit']) == expected
+                      and (p['remote_address'], p['local_address'])
+                      == (current['remote_address'], current['local_address'])]
     if not candidates:
         raise ValueError(f'Falta un perfil compatible de {plan["download_mbps"]}/{plan["upload_mbps"]} Mbps para este cliente. Sincroniza los perfiles o configura esa velocidad en su pool.')
     # Use the same commercial catalog as the form's server validation.

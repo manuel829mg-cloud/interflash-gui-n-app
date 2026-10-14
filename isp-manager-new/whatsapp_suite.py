@@ -385,7 +385,11 @@ def _send_business_notice(phone, body):
 def _process_queue_item(c, row):
     c.execute("UPDATE whatsapp_queue SET status='EN_PROCESO',attempts=attempts+1,last_error=NULL WHERE id=?", (row['id'],))
     c.commit()
-    if row['kind'] == 'template' and row['template_name']:
+    if row['kind'] == 'invoice_pdf':
+        from invoice_pdf import send_invoice
+        ok, provider_id, err = send_invoice(c, row['phone'], row['template_name'])
+        visible_body = '[PDF] ' + (row['body'] or '')
+    elif row['kind'] == 'template' and row['template_name']:
         ok, provider_id, err = _send_template(row['phone'], row['template_name'], row['language_code'] or 'es')
         visible_body = '[Plantilla] ' + row['template_name']
     else:

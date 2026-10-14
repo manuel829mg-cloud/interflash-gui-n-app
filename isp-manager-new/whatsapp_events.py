@@ -21,6 +21,8 @@ def schema():
     c.execute("INSERT OR IGNORE INTO app_settings(key,value) VALUES('whatsapp_event_floor',?)",
               (str(c.execute('SELECT COALESCE(MAX(id),0) FROM whatsapp_outbox').fetchone()[0]),))
     c.commit(); c.close()
+    from invoice_pdf import setup as setup_invoice_pdf
+    setup_invoice_pdf(base.app)
 
 
 def enqueue(c, key, customer_id, code, message):
@@ -158,7 +160,9 @@ def send_outbox(limit=25):
                 row = c.execute('SELECT * FROM whatsapp_outbox WHERE id=?', (row['id'],)).fetchone()
             phone = wa._wa_phone(row['phone'])
             thread = wa._thread_for_phone(c, phone, customer_id=row['customer_id'])
-            qid = c.execute("INSERT INTO whatsapp_queue(thread_id,customer_id,phone,kind,body,status,created_at) VALUES(?,?,?,'logo',?,'EN_PROCESO',?)", (thread['id'], row['customer_id'], phone, row['message'], wa._now())).lastrowid
+            invoice_id = str(row['template_code'] or '').removeprefix('INVOICE_PDF:') if str(row['template_code'] or '').startswith('INVOICE_PDF:') else ''
+            kind = 'invoice_pdf' if invoice_id else 'text'
+            qid = c.execute("INSERT INTO whatsapp_queue(thread_id,customer_id,phone,kind,body,template_name,status,created_at) VALUES(?,?,?,?,?,?,'EN_PROCESO',?)", (thread['id'], row['customer_id'], phone, kind, row['message'], invoice_id or None, wa._now())).lastrowid
             c.execute('INSERT INTO whatsapp_outbox_links VALUES(?,?)', (row['id'], qid))
             c.execute("UPDATE whatsapp_outbox SET status='EN_PROCESO' WHERE id=?", (row['id'],))
             c.commit()

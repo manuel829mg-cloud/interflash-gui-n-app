@@ -21,7 +21,7 @@ def _agent_rsc(root, token):
   :local base "__ROOT__";
   :local token "__TOKEN__";
   :local hdr ("X-InterFlash-Agent: " . $token);
-  :local r [/tool fetch url=($base . "/api/mikrotik/service-next?router=CCR2116&after=__AFTER__") http-method=get http-header-field=$hdr output=user check-certificate=yes as-value];
+  :local r [/tool fetch url=($base . "/api/mikrotik/service-next?router=CCR2116&agent=7&after=__AFTER__") http-method=get http-header-field=$hdr output=user check-certificate=yes as-value];
   :local d [:deserialize from=json value=($r->"data")];
   :if (($d->"ok") != true) do={ :return 0; }
   :local id ($d->"id");
@@ -339,10 +339,15 @@ def service_next():
           WHERE newer.router_name=old.router_name AND newer.pppoe=old.pppoe
           AND newer.id>old.id AND newer.action IN ('CHANGE_PROFILE','DELETE_PPPOE')
           AND newer.status NOT IN ('CANCELADO','ERROR'))""", (router,))
-    row = c.execute("""SELECT * FROM router_commands WHERE router_name=?
+    supported = ['CREATE_PPPOE','SUSPEND','REACTIVATE','CHANGE_PROFILE','RESTART_PPPOE','DELETE_PPPOE']
+    # Older installed agents must never claim actions they cannot execute.
+    if request.args.get('agent') == '7':
+        supported += ['CHANGE_PASSWORD','CHANGE_REMOTE_IP','APPLY_PBR','REMOVE_PBR']
+    slots = ','.join('?' for _ in supported)
+    row = c.execute(f"""SELECT * FROM router_commands WHERE router_name=?
         AND status='PENDIENTE' AND created_at>=?
-        AND action IN ('CREATE_PPPOE','SUSPEND','REACTIVATE','CHANGE_PROFILE','RESTART_PPPOE','DELETE_PPPOE','CHANGE_PASSWORD','CHANGE_REMOTE_IP','APPLY_PBR','REMOVE_PBR')
-        ORDER BY id LIMIT 1""", (router, after)).fetchone()
+        AND action IN ({slots})
+        ORDER BY id LIMIT 1""", (router, after, *supported)).fetchone()
     if not row:
         c.commit(); c.close()
         return jsonify(ok=True, id=0)

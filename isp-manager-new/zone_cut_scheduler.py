@@ -290,20 +290,6 @@ def run_billing():
                     ))
                     created += 1
 
-                    if bs.setting('whatsapp_enabled', '0') == '1' and cu['phone']:
-                        t = c.execute("SELECT body FROM whatsapp_templates WHERE code='INVOICE' AND active=1").fetchone()
-                        if t:
-                            msg = t['body'].format(
-                                name=cu['name'],
-                                amount='RD${:,.2f}'.format(float(cu['plan_price'] or 0)),
-                                due_date=due.isoformat(),
-                            )
-                            c.execute('''INSERT INTO whatsapp_outbox(
-                                           customer_id,phone,template_code,message,status,created_at
-                                         ) VALUES(?,?,?,?,?,?)''', (
-                                cu['id'], cu['phone'], 'INVOICE', msg, 'PENDIENTE',
-                                datetime.now().isoformat(timespec='seconds')
-                            ))
 
             if c.execute("""SELECT 1 FROM invoices
                             WHERE customer_id=? AND status='PENDIENTE' AND due_date<?

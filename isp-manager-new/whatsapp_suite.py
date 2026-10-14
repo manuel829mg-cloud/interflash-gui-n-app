@@ -195,7 +195,40 @@ def _meta_post(payload):
         return False, {}, str(e)[:500]
 
 
+def _message_time_rd(body):
+    """Format ISO timestamps and labeled clock times for Dominican readers."""
+    import re
+    zone = ZoneInfo('America/Santo_Domingo')
+
+    def clock(dt):
+        period = 'a. m.' if dt.hour < 12 else 'p. m.'
+        return f'{dt.hour % 12 or 12}:{dt.minute:02d} {period}'
+
+    def timestamp(match):
+        try:
+            dt = datetime.fromisoformat(match.group(0).replace('Z', '+00:00'))
+            dt = dt.replace(tzinfo=zone) if dt.tzinfo is None else dt.astimezone(zone)
+            return dt.strftime('%d/%m/%Y') + ' a las ' + clock(dt)
+        except ValueError:
+            return match.group(0)
+
+    def labeled(match):
+        hour, minute = int(match.group(2)), int(match.group(3))
+        if hour > 23 or minute > 59:
+            return match.group(0)
+        return match.group(1) + clock(datetime(2000, 1, 1, hour, minute))
+
+    # Process labeled times first so newly formatted timestamps are untouched.
+    body = re.sub(
+        r'((?:a las|hora:|hora de corte:)\s*)(\d{1,2}):(\d{2})(?::\d{2})?(?![\d:]|\s*(?:[ap]\.?\s*m\.?))',
+        labeled, str(body or ''), flags=re.IGNORECASE)
+    return re.sub(
+        r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?',
+        timestamp, body)
+
+
 def _send_text(phone, body):
+    body = _message_time_rd(body)
     if waha.enabled():
         return waha.send_text(_wa_phone(phone), body)
     if greenapi.enabled():

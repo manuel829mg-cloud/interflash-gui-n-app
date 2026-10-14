@@ -339,7 +339,7 @@ window.IFPROFILE=(function(){
       const pass=document.querySelector('[name="pppoe_password"]');
       if(line&&line.value&&ip&&!ip.value.trim()){e.preventDefault();alert('Selecciona una IP remota libre antes de aplicar PBR.');if(window.IFIP)IFIP.open();return;}
       if(create&&create.checked){
-        if(!user||!user.value.trim()||!pass||!pass.value||!s||!s.value){e.preventDefault();alert('Completa el usuario y la contraseña. El plan debe tener un perfil asociado a la línea elegida.');return;}
+        if(!user||!user.value.trim()||((form.dataset.ifExisting!=='1')&&(!pass||!pass.value))||!s||!s.value){e.preventDefault();alert('Completa el usuario y la contraseña. El plan debe tener un perfil asociado a la línea elegida.');return;}
       }
     });}
   });
@@ -460,10 +460,7 @@ def _patch_unified_plan_values():
                 if len(ids) != 1:
                     raise ValueError('Este perfil tiene más de un plan asociado. Revisa el catálogo.')
                 data['plan_id'] = str(ids[0])
-                # The profile already encodes the provider line; keep PBR consistent.
-                lines = [line for line in pbr_client.PBR_LISTS if line.casefold() in selected.casefold()]
-                if len(lines) == 1:
-                    data['pbr'] = lines[0]
+                # Apply the line explicitly selected by the administrator.
                 profile = selected
             elif selected == current and unchanged:
                 profile = current

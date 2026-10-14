@@ -84,25 +84,27 @@ def invoice_data(c, invoice_id):
     return dict(row),company,banks
 
 
-def send_invoice(c, phone, invoice_id):
+def send_invoice(c, phone, invoice_id, caption=None):
     import whatsapp_suite as wa
     import waha_suite as waha
     try:
         inv,company,banks = invoice_data(c,int(invoice_id))
-        if inv['status']=='ANULADA' or inv['customer_status']=='ELIMINADO':
+        if inv['status']!='PENDIENTE' or inv['customer_status']=='ELIMINADO':
             raise ValueError('Factura anulada o cliente eliminado; no se envió el documento.')
         if wa._wa_phone(inv['phone']) != wa._wa_phone(phone):
             raise ValueError('El teléfono del cliente cambió; revisa el destinatario antes de reenviar.')
         if not waha.enabled(): raise ValueError('El envío de factura PDF requiere el proveedor WAHA conectado.')
         if not re.fullmatch(r'[1-9][0-9]{7,14}',wa._wa_phone(phone)):
             raise ValueError('Número de teléfono inválido.')
+        if inv['due_date'] != date.today().isoformat() or float(inv['amount']) <= float(inv['paid_total']):
+            raise ValueError('La factura no vence hoy o ya fue pagada; no se envió el aviso.')
         cfg = waha.config()
         filename = 'Factura-IF-%06d.pdf' % inv['id']
         pdf = render_pdf(inv,company,banks)
         result = waha.api('/api/sendFile',{
             'session':cfg['session_name'],'chatId':wa._wa_phone(phone)+'@c.us',
             'file':{'mimetype':'application/pdf','filename':filename,'data':base64.b64encode(pdf).decode('ascii')},
-            'caption':'Hola '+inv['customer']+', adjuntamos tu factura '+('IF-%06d' % inv['id'])+' de INTER Flash.'},cfg)
+            'caption':caption or 'Hola '+inv['customer']+', adjuntamos tu factura '+('IF-%06d' % inv['id'])+' de INTER Flash.'},cfg)
         mid = result.get('id')
         if isinstance(mid,dict): mid=mid.get('_serialized')
         if not isinstance(mid,str) or not mid:
@@ -116,16 +118,8 @@ def setup(app):
     import app as base
     c=base.db()
     try:
-        c.executescript('''CREATE TRIGGER IF NOT EXISTS whatsapp_new_invoice_pdf
-        AFTER INSERT ON invoices
-        WHEN NEW.status <> 'ANULADA'
-        AND (SELECT value FROM app_settings WHERE key='whatsapp_enabled')='1'
-        BEGIN
-          INSERT INTO whatsapp_outbox(customer_id,phone,template_code,message,status,created_at)
-          SELECT NEW.customer_id,cu.phone,'INVOICE_PDF:' || NEW.id,
-            'Factura IF-' || printf('%06d',NEW.id) || ' - ' || cu.name || ' - RD$' || printf('%.2f',NEW.amount),
-            'PENDIENTE',datetime('now','-4 hours')
-          FROM customers cu WHERE cu.id=NEW.customer_id AND COALESCE(cu.phone,'')<>'' AND cu.status<>'ELIMINADO';
-        END;''')
+        c.execute('DROP TRIGGER IF EXISTS whatsapp_new_invoice_pdf')
+        c.execute("""UPDATE whatsapp_outbox SET status='CANCELADO',error='Aviso de emisión desactivado; se notificará al vencimiento'
+            WHERE status='PENDIENTE' AND (template_code='INVOICE' OR template_code LIKE 'INVOICE_PDF:%')""")
         c.commit()
     finally: c.close()

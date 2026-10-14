@@ -264,7 +264,7 @@ def customer_edit_pbr(id):
         retry = c.execute("SELECT 1 FROM router_commands WHERE customer_id=? AND action IN ('CHANGE_PROFILE','CREATE_PPPOE') AND status IN ('PENDIENTE','ERROR','CANCELADO') AND id=(SELECT MAX(id) FROM router_commands WHERE customer_id=? AND action IN ('CHANGE_PROFILE','CREATE_PPPOE'))", (id,id)).fetchone()
         if x['pppoe'] and x['profile'] and (x['profile'] != old_profile or x['create_in_router'] or retry):
             _queue(c,id,x['pppoe'],x['router'],'CHANGE_PROFILE',{'profile':x['profile']}); notes.append('cambio de perfil enviado a la cola')
-        if x['ip'] != old_ip and x['ip'] and x['pppoe'] :
+        if (x['ip'] != old_ip or x['create_in_router']) and x['ip'] and x['pppoe']:
             _queue(c,id,x['pppoe'],x['router'],'CHANGE_REMOTE_IP',{'remote_address':x['ip']})
             notes.append('Cambio de IP PPPoE enviado al MikroTik; se aplicará al reconectar')
         if x['pbr'] != old_pbr or x['ip'] != old_ip or x['create_in_router']:

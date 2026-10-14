@@ -5,7 +5,7 @@ import urllib.error
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from html import escape
-from flask import session, request, redirect, url_for, flash, jsonify, current_app
+from flask import session, request, redirect, url_for, flash, jsonify, current_app, abort
 import app as base
 import ultramsg_suite as ultra
 import whapi_suite as whapi
@@ -262,7 +262,27 @@ def _record_outgoing(c, thread_id, body, provider_id, status, error=''):
 
 def _send_business_notice(phone, body):
     """Send a single branded notice; never retry an ambiguous media response."""
-    if waha.enabled() or not greenapi.enabled() or len(body) > 1024:
+    if len(body) > 1024:
+        return _send_text(phone, body)
+    if waha.enabled():
+        cfg = waha.config()
+        try:
+            result = waha.api('/api/sendImage', {
+                'session': cfg['session_name'], 'chatId': _wa_phone(phone) + '@c.us',
+                'file': {'mimetype': 'image/png',
+                         'url': 'https://interflash-isp-manager.up.railway.app/static/interflash-symbol.png',
+                         'filename': 'interflash-logo.png'},
+                'caption': body,
+            }, cfg)
+            mid = result.get('id')
+            if isinstance(mid, dict):
+                mid = mid.get('_serialized')
+            if not isinstance(mid, str) or not mid:
+                raise waha.APIError('WAHA no confirmó el aviso con logo. Comprueba el chat antes de reenviar.')
+            return True, 'waha:' + cfg['session_name'] + ':' + mid, ''
+        except waha.APIError as exc:
+            return False, '', str(exc)
+    if not greenapi.enabled():
         return _send_text(phone, body)
     cfg = greenapi.config()
     try:
@@ -289,7 +309,7 @@ def _process_queue_item(c, row):
     else:
         linked_notice = c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='whatsapp_outbox_links'").fetchone()
         branded = bool(linked_notice and c.execute('SELECT 1 FROM whatsapp_outbox_links WHERE queue_id=?', (row['id'],)).fetchone())
-        sender = _send_business_notice if branded else _send_text
+        sender = _send_business_notice if branded or row['kind'] == 'logo' else _send_text
         ok, provider_id, err = sender(row['phone'], row['body'] or '')
         visible_body = row['body'] or ''
     if ok:
@@ -567,12 +587,20 @@ def send():
     phone=_wa_phone(request.form.get('phone')); body=(request.form.get('body') or '').strip(); thread_id=request.form.get('thread_id')
     if not phone or not body:
         flash('Falta número o mensaje.'); return redirect(url_for('whatsapp_inbox'))
+    kind = 'logo' if request.form.get('kind') == 'logo' else 'text'
+    if kind == 'logo':
+        import hmac
+        if not session.get('wa_logo_csrf') or not hmac.compare_digest(session['wa_logo_csrf'], request.form.get('csrf', '')):
+            abort(403)
+        if len(body) > 1024:
+            flash('La prueba con logo admite hasta 1024 caracteres.')
+            return redirect(url_for('whatsapp_settings'))
     c=base.db(); t=None
     if thread_id and str(thread_id).isdigit(): t=c.execute('SELECT * FROM whatsapp_threads WHERE id=?',(int(thread_id),)).fetchone()
     if not t:
         cu=_customer_by_phone(c,phone); t=_thread_for_phone(c,phone,cu['name'] if cu else '',cu['id'] if cu else None)
     cur=c.execute('''INSERT INTO whatsapp_queue(thread_id,customer_id,phone,kind,body,status,created_at)
-                     VALUES(?,?,?,?,?,'PENDIENTE',?)''',(t['id'],t['customer_id'],phone,'text',body,_now()))
+                     VALUES(?,?,?,?,?,'PENDIENTE',?)''',(t['id'],t['customer_id'],phone,kind,body,_now()))
     qrow=c.execute('SELECT * FROM whatsapp_queue WHERE id=?',(cur.lastrowid,)).fetchone(); c.commit()
     ok,err=_process_queue_item(c,qrow); c.close()
     if ok: flash('El proveedor aceptó el mensaje. Esperando confirmación de entrega.')
@@ -618,8 +646,10 @@ def settings_page():
     reception = _reception_summary(c)
     c.close()
     webhook_url = url_for('waha_webhook' if waha.enabled() else 'greenapi_webhook', _external=True, _scheme='https')
+    import secrets
+    logo_csrf = session.setdefault('wa_logo_csrf', secrets.token_urlsafe(32))
     body += f'''<div class="panel"><h3>Estado de recepción</h3><p>{esc(reception)}</p><p class="muted">Webhook: {esc(webhook_url)}</p></div>
-    <div class="panel"><h3>Prueba de envío</h3><form method="post" action="{url_for('whatsapp_send')}" class="toolbar"><input class="field" name="phone" placeholder="Número de otro teléfono, ej. 18095551234" required><input class="field" name="body" value="Hola, esta es una prueba de INTER Flash." required><button class="btn green">Enviar prueba</button></form><p class="muted">Comprueba la llegada en el teléfono destinatario. Se aplican los límites de tu plan.</p></div>'''
+    <div class="panel"><h3>Prueba de envío con logo</h3><form method="post" action="{url_for('whatsapp_send')}" class="toolbar"><input type="hidden" name="kind" value="logo"><input type="hidden" name="csrf" value="{esc(logo_csrf)}"><input class="field" name="phone" placeholder="Número de otro teléfono, ej. 18095551234" required><input class="field" name="body" value="Hola, esta es una prueba de INTER Flash." required><button class="btn green">Enviar prueba</button></form><p class="muted">Comprueba la llegada en el teléfono destinatario. Se aplican los límites de tu plan.</p></div>'''
     return base.shell('Configuración WhatsApp',_tabs('general')+body,'whatsapp_inbox')
 
 

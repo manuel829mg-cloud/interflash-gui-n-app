@@ -260,27 +260,128 @@ def _record_outgoing(c, thread_id, body, provider_id, status, error=''):
     c.execute('UPDATE whatsapp_threads SET last_message=?,last_at=? WHERE id=?', (body[:500],_now(),thread_id))
 
 
+def _notice_font(size, bold=False):
+    from PIL import ImageFont
+    candidates = (
+        ['/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+         '/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf']
+        if bold else
+        ['/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+         '/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf']
+    )
+    for path in candidates:
+        try:
+            return ImageFont.truetype(path, size)
+        except OSError:
+            continue
+    return ImageFont.load_default(size=size)
+
+
+def _wrap_notice(draw, text, font, max_width):
+    lines = []
+    for paragraph in str(text or '').splitlines() or ['']:
+        words = paragraph.split()
+        if not words:
+            lines.append('')
+            continue
+        current = ''
+        for word in words:
+            candidate = (current + ' ' + word).strip()
+            if draw.textlength(candidate, font=font) <= max_width:
+                current = candidate
+                continue
+            if current:
+                lines.append(current)
+            current = ''
+            chunk = ''
+            for char in word:
+                if draw.textlength(chunk + char, font=font) > max_width and chunk:
+                    lines.append(chunk)
+                    chunk = char
+                else:
+                    chunk += char
+            current = chunk
+        if current:
+            lines.append(current)
+    return lines
+
+
+def _render_notice_image(body):
+    """Render a per-message 3:4 Inter Flash notice image with no link preview."""
+    from io import BytesIO
+    from pathlib import Path
+    from PIL import Image, ImageDraw
+
+    width, height = 900, 1200
+    image = Image.new('RGB', (width, height), (13, 20, 23))
+    draw = ImageDraw.Draw(image)
+    for y in range(0, height, 92):
+        for x in range(0, width, 100):
+            draw.arc((x + 16, y + 17, x + 50, y + 51), 35, 310,
+                     fill=(27, 36, 39), width=2)
+    draw.rounded_rectangle((52, 48, 848, 1152), radius=36, fill=(0, 82, 61))
+    draw.rounded_rectangle((70, 66, 830, 1134), radius=30,
+                           outline=(10, 102, 76), width=2)
+
+    logo_path = Path(__file__).resolve().parent / 'static' / 'interflash-symbol.png'
+    with Image.open(logo_path) as source:
+        logo = source.convert('RGBA').resize((144, 144), Image.Resampling.LANCZOS)
+    mask = Image.new('L', (144, 144), 0)
+    ImageDraw.Draw(mask).ellipse((1, 1, 143, 143), fill=255)
+    logo.putalpha(mask)
+    image.paste(logo, (100, 96), logo)
+
+    title_font = _notice_font(38, bold=True)
+    draw.text((280, 145), 'Inter Flash', font=title_font, fill=(246, 249, 247))
+
+    max_width = 690
+    top, bottom = 300, 1080
+    chosen = None
+    for size in range(42, 17, -2):
+        font = _notice_font(size)
+        lines = _wrap_notice(draw, body, font, max_width)
+        line_height = int(size * 1.4)
+        if len(lines) * line_height <= bottom - top:
+            chosen = (font, lines, line_height)
+            break
+    if chosen is None:
+        raise ValueError('El aviso es demasiado largo para la imagen 3:4.')
+    font, lines, line_height = chosen
+    for line in lines:
+        draw.text((100, top), line, font=font, fill=(246, 249, 247))
+        top += line_height
+
+    output = BytesIO()
+    image.save(output, format='PNG', optimize=True)
+    return output.getvalue()
+
+
 def _send_business_notice(phone, body):
-    """Send a single branded notice; never retry an ambiguous media response."""
+    """Send one branded notice without link previews; never retry an ambiguous result."""
     if len(body) > 1024:
         return _send_text(phone, body)
     if waha.enabled():
         cfg = waha.config()
         try:
-            preview_url = 'https://interflash-isp-manager.up.railway.app/static/interflash-avisos.html'
-            result = waha.api('/api/sendText', {
-                'session': cfg['session_name'], 'chatId': _wa_phone(phone) + '@c.us',
-                'text': body + '\n\n' + preview_url,
-                'linkPreview': True,
-                'linkPreviewHighQuality': False,
-            }, cfg)
+            image = _render_notice_image(body)
+            import base64
+            payload = {
+                'session': cfg['session_name'],
+                'chatId': _wa_phone(phone) + '@c.us',
+                'file': {
+                    'mimetype': 'image/png',
+                    'filename': 'interflash-aviso-3x4.png',
+                    'data': base64.b64encode(image).decode('ascii'),
+                },
+            }
+            result = waha.api('/api/sendImage', payload, cfg)
             mid = result.get('id')
             if isinstance(mid, dict):
                 mid = mid.get('_serialized')
             if not isinstance(mid, str) or not mid:
-                raise waha.APIError('WAHA no confirmó el aviso con logo. Comprueba el chat antes de reenviar.')
+                raise waha.APIError('WAHA no confirmó el aviso con imagen. Comprueba el chat antes de reenviar.')
             return True, 'waha:' + cfg['session_name'] + ':' + mid, ''
-        except waha.APIError as exc:
+        except (waha.APIError, OSError, ValueError) as exc:
             return False, '', str(exc)
     if not greenapi.enabled():
         return _send_text(phone, body)
@@ -298,6 +399,7 @@ def _send_business_notice(phone, body):
         return True, 'greenapi:' + cfg['channel'] + ':' + mid, ''
     except greenapi.APIError as exc:
         return False, '', str(exc)
+
 
 
 def _process_queue_item(c, row):

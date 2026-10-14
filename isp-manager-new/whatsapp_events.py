@@ -158,7 +158,7 @@ def send_outbox(limit=25):
                 row = c.execute('SELECT * FROM whatsapp_outbox WHERE id=?', (row['id'],)).fetchone()
             phone = wa._wa_phone(row['phone'])
             thread = wa._thread_for_phone(c, phone, customer_id=row['customer_id'])
-            qid = c.execute("INSERT INTO whatsapp_queue(thread_id,customer_id,phone,kind,body,status,created_at) VALUES(?,?,?,'text',?,'EN_PROCESO',?)", (thread['id'], row['customer_id'], phone, row['message'], wa._now())).lastrowid
+            qid = c.execute("INSERT INTO whatsapp_queue(thread_id,customer_id,phone,kind,body,status,created_at) VALUES(?,?,?,'logo',?,'EN_PROCESO',?)", (thread['id'], row['customer_id'], phone, row['message'], wa._now())).lastrowid
             c.execute('INSERT INTO whatsapp_outbox_links VALUES(?,?)', (row['id'], qid))
             c.execute("UPDATE whatsapp_outbox SET status='EN_PROCESO' WHERE id=?", (row['id'],))
             c.commit()

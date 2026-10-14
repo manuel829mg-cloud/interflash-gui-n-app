@@ -27,21 +27,22 @@ class EventTests(unittest.TestCase):
         c=base.db(); rows=c.execute(sql).fetchall(); c.close(); return rows
     def test_payment_routes_through_configured_provider_once(self):
         payment_flow.record_payment(1,1,'1000')
-        with patch.object(events.wa,'_meta_ready',return_value=True), patch.object(events.wa,'_send_text',return_value=(True,'test-provider-id','')) as send:
+        with patch.object(events.wa,'_meta_ready',return_value=True), patch.object(events.wa,'_send_business_notice',return_value=(True,'test-provider-id','')) as send:
             self.assertEqual(events.send_outbox()[0],1)
             self.assertEqual(events.send_outbox()[0],0)
             send.assert_called_once()
         self.assertEqual(self.rows('SELECT status FROM whatsapp_queue')[0][0],'ACEPTADO')
+        self.assertEqual(self.rows('SELECT kind FROM whatsapp_queue')[0][0],'logo')
         self.assertEqual(self.rows('SELECT status FROM whatsapp_outbox')[0][0],'ACEPTADO')
     def test_provider_error_is_visible_not_retried(self):
         payment_flow.record_payment(1,1,'100')
-        with patch.object(events.wa,'_meta_ready',return_value=True), patch.object(events.wa,'_send_text',return_value=(False,'','Proveedor no confirmado')) as send:
+        with patch.object(events.wa,'_meta_ready',return_value=True), patch.object(events.wa,'_send_business_notice',return_value=(False,'','Proveedor no confirmado')) as send:
             events.send_outbox();events.send_outbox();send.assert_called_once()
         self.assertEqual(self.rows('SELECT status FROM whatsapp_queue')[0][0],'ERROR')
     def test_historical_notices_excluded(self):
         payment_flow.record_payment(1,1,'100')
         c=base.db();c.execute("UPDATE app_settings SET value=(SELECT MAX(id) FROM whatsapp_outbox) WHERE key='whatsapp_event_floor'");c.commit();c.close()
-        with patch.object(events.wa,'_meta_ready',return_value=True), patch.object(events.wa,'_send_text') as send:
+        with patch.object(events.wa,'_meta_ready',return_value=True), patch.object(events.wa,'_send_business_notice') as send:
             events.send_outbox();send.assert_not_called()
     def test_promise_confirmation_reminder_and_payment(self):
         events.create_promise(1,1,date.today().isoformat(),'500','')

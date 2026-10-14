@@ -1,4 +1,5 @@
-import os,tempfile,unittest
+import os,tempfile,unittest,base64
+from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
 _tmp=tempfile.TemporaryDirectory()
@@ -26,6 +27,23 @@ class WahaTests(unittest.TestCase):
   with base.app.app_context(),patch.object(w,'api',return_value={'id':'mid'}) as api:
    self.assertEqual(wa._send_text('8095550123','Hola'),(True,'waha:default:mid',''))
    self.assertEqual(api.call_args.args[1]['chatId'],'18095550123@c.us')
+
+ def test_business_notice_sends_image_data_without_link_preview(self):
+  with patch.object(w,'enabled',return_value=True), patch.object(w,'config',return_value={'session_name':'default'}), patch.object(wa,'_render_notice_image',return_value=b'png-bytes'), patch.object(w,'api',return_value={'id':'media-mid'}) as api:
+   self.assertEqual(wa._send_business_notice('8095550123','Hola Prueba'),(True,'waha:default:media-mid',''))
+  path,payload,cfg=api.call_args.args
+  self.assertEqual(path,'/api/sendImage')
+  self.assertEqual(payload['chatId'],'18095550123@c.us')
+  self.assertEqual(payload['file']['data'],base64.b64encode(b'png-bytes').decode('ascii'))
+  self.assertNotIn('url',payload['file'])
+  self.assertNotIn('linkPreview',payload)
+ def test_notice_image_is_three_by_four_png(self):
+  png=wa._render_notice_image('Hola, Prueba. Tu aviso de INTER Flash está listo.')
+  from PIL import Image
+  image=Image.open(BytesIO(png))
+  self.assertEqual(image.size,(900,1200))
+  self.assertEqual(image.format,'PNG')
+
  def test_failed_verification_keeps_old_provider(self):
   with patch.object(w,'validate'),patch.object(w,'api',return_value={'status':'FAILED'}):
    self.client.post('/whatsapp/waha',data={'csrf':'csrf','api_url':'https://waha.example','session_name':'default','token':'test-api-key-12345678'})

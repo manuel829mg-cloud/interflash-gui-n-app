@@ -144,6 +144,25 @@ def settings():
     response=current_app.make_response(base.shell('WAHA',body,'whatsapp_inbox'))
     response.headers['Cache-Control']='no-store';return response
 
+
+def incoming_phone(data,cfg):
+    """Resolve only a verified direct sender; never treat a LID as a phone."""
+    chat=str(data.get('from') or '')
+    match=re.fullmatch(r'([1-9][0-9]{7,14})@(c\.us|s\.whatsapp\.net)',chat)
+    if match:
+        return match.group(1)
+    if not re.fullmatch(r'[0-9]{1,32}@lid',chat):
+        return None
+    result=api('/api/'+urllib.parse.quote(cfg['session_name'],safe='')+
+               '/lids/'+urllib.parse.quote(chat,safe=''),cfg=cfg)
+    if not isinstance(result,dict) or result.get('lid') not in (chat,chat.split('@')[0]):
+        raise APIError('LID_NO_VERIFICADO')
+    pn=str(result.get('pn') or '')
+    match=re.fullmatch(r'([1-9][0-9]{7,14})@(c\.us|s\.whatsapp\.net)',pn)
+    if not match:
+        raise APIError('LID_SIN_TELEFONO')
+    return match.group(1)
+
 def webhook():
     import whatsapp_suite as wa
     cfg=config()
@@ -156,13 +175,27 @@ def webhook():
     mid=data.get('id')
     if not isinstance(mid,str) or not mid:return jsonify(ok=True)
     pid='waha:'+cfg['session_name']+':'+mid
+    phone=None
+    is_incoming=event.get('event') in ('message','message.any') and data.get('fromMe') is False
+    if is_incoming:
+        chat=str(data.get('from') or '')
+        suffix=chat.rsplit('@',1)[-1]
+        kind=suffix if suffix in ('c.us','s.whatsapp.net','lid','g.us','broadcast','newsletter') else 'otro'
+        current_app.logger.warning('WAHA_RX kind=%s',kind)
+        try:
+            # Resolve before taking a database write lock.
+            phone=incoming_phone(data,cfg)
+        except APIError:
+            current_app.logger.warning('WAHA_RX_UNRESOLVED kind=%s',kind)
+            return jsonify(error='No se pudo verificar el remitente'),503
+        if not phone:
+            current_app.logger.warning('WAHA_RX_IGNORED kind=%s',kind)
     c=base.db()
     try:
         c.execute('BEGIN IMMEDIATE')
-        if event.get('event')=='message' and not data.get('fromMe'):
-            chat=str(data.get('from') or '')
-            if re.fullmatch(r'[1-9][0-9]{7,14}@c\.us',chat) and not c.execute('SELECT 1 FROM whatsapp_messages WHERE provider_id=?',(pid,)).fetchone():
-                phone=chat.split('@')[0];customer=wa._customer_by_phone(c,phone)
+        if is_incoming:
+            if phone and not c.execute('SELECT 1 FROM whatsapp_messages WHERE provider_id=?',(pid,)).fetchone():
+                customer=wa._customer_by_phone(c,phone)
                 t=wa._thread_for_phone(c,phone,customer['name'] if customer else phone,customer['id'] if customer else None)
                 body=str(data.get('body') or '[Archivo o mensaje sin texto]')[:16000]
                 c.execute("INSERT INTO whatsapp_messages(thread_id,direction,message_type,body,provider_id,status,created_at) VALUES(?,'IN','text',?,?,'RECIBIDO',?)",(t['id'],body,pid,wa._now()))
@@ -176,7 +209,8 @@ def webhook():
                 c.execute('UPDATE whatsapp_messages SET status=? WHERE provider_id=?',(mapped,pid))
                 c.execute('UPDATE whatsapp_queue SET status=? WHERE provider_id=?',(mapped,pid))
         c.commit()
-    except Exception:
+    except Exception as exc:
+        current_app.logger.error('WAHA_RX_SAVE_ERROR type=%s',type(exc).__name__)
         c.rollback();return jsonify(error='No se pudo guardar el evento'),500
     finally:c.close()
     return jsonify(ok=True)

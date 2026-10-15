@@ -6,7 +6,7 @@ import threading
 import time
 import unicodedata
 import urllib.request
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from flask import abort, request, session, redirect, url_for
 import app as base
 import whatsapp_suite as wa
@@ -23,6 +23,11 @@ No ejecutes acciones ni respondas la pregunta."""
 MENU = ('Soy el asistente virtual de INTER Flash. Puedes preguntarme por tu saldo, '
         'vencimiento, cuentas bancarias o plan, y reportar problemas de internet. '
         'Escribe ASESOR para atención personal.')
+
+def in_service_hours(now=None):
+    """Daily customer replies: 21:00 inclusive to 08:00 exclusive, Dominican time."""
+    local = (now or datetime.now(timezone.utc)).astimezone(timezone(timedelta(hours=-4)))
+    return local.hour >= 21 or local.hour < 8
 
 def schema():
     c = base.db()
@@ -114,6 +119,10 @@ def process_one():
         cfg=c.execute('SELECT * FROM whatsapp_customer_ai_config WHERE id=1').fetchone()
         if not cfg['enabled'] or not c.execute('SELECT active FROM waha_config WHERE id=1').fetchone()[0]:
             c.rollback(); return
+        if not in_service_hours():
+            # Keep daytime messages in the inbox without answering them at night.
+            c.execute('UPDATE whatsapp_customer_ai_config SET floor=(SELECT COALESCE(MAX(id),0) FROM whatsapp_messages) WHERE id=1')
+            c.commit(); return
         row=c.execute("""SELECT m.*,t.phone FROM whatsapp_messages m
             JOIN whatsapp_threads t ON t.id=m.thread_id
             WHERE m.id>? AND m.direction='IN' AND m.provider_id LIKE 'waha:%'
@@ -153,7 +162,7 @@ def process_one():
             enabled=c.execute('SELECT enabled FROM whatsapp_customer_ai_config WHERE id=1').fetchone()[0]
             remote=c.execute('SELECT active,session_name FROM waha_config WHERE id=1').fetchone()
             human=c.execute("SELECT 1 FROM whatsapp_messages WHERE thread_id=? AND id>? AND direction='OUT'",(row['thread_id'],mid)).fetchone()
-            if not enabled or not remote['active'] or not row['provider_id'].startswith('waha:'+remote['session_name']+':') or human:
+            if not in_service_hours() or not enabled or not remote['active'] or not row['provider_id'].startswith('waha:'+remote['session_name']+':') or human:
                 c.execute("UPDATE whatsapp_customer_ai_jobs SET state='OMITIDO' WHERE message_id=?",(mid,)); c.commit(); return
             if intent in ('asesor','pago','soporte'):
                 c.execute('INSERT OR REPLACE INTO whatsapp_customer_ai_pause VALUES(?,?)',(phone,time.time()+86400))
@@ -194,6 +203,7 @@ def settings():
     finally:
         c.close()
     body='<div class="panel"><h1>IA de WhatsApp</h1><p>Estado: '+('ACTIVA' if cfg[0] else 'PAUSADA')+'</p>'
+    body+='<p>Horario diario: 9:00 p. m. a 8:00 a. m. (República Dominicana). Fuera de ese horario no responde automáticamente.</p>'
     body+='<p>Interpreta consultas y responde con los datos de la cuenta vinculada al número remitente. No modifica clientes, pagos, planes ni MikroTik. Comprobantes y soporte requieren atención personal.</p>'
     body+='<p>Hasta 300 consultas al día y 10 por número. Los mensajes anteriores no se responden automáticamente. La API de OpenAI tiene consumo facturable.</p>'
     body+='<p>Hoy: '+wa.esc(', '.join(str(r['state'])+': '+str(r['n']) for r in counts) or 'Sin consultas')+'</p>'

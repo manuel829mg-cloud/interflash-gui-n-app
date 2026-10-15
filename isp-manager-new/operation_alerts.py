@@ -1,5 +1,5 @@
 """Visible operational failures without retrying or changing customer services."""
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from flask import redirect, url_for
 import app as base
@@ -44,8 +44,9 @@ def read_alerts():
     c=base.db()
     try:
         billing=c.execute('SELECT * FROM operation_alerts WHERE resolved_at IS NULL ORDER BY last_seen DESC').fetchall()
-        whatsapp=c.execute("SELECT o.id,o.status,o.created_at,cu.name FROM whatsapp_outbox o LEFT JOIN customers cu ON cu.id=o.customer_id WHERE o.status IN ('ERROR','FALLIDO') ORDER BY o.id DESC LIMIT 50").fetchall()
-        count=c.execute("SELECT COUNT(*) FROM whatsapp_outbox WHERE status IN ('ERROR','FALLIDO')").fetchone()[0]
+        cutoff=(datetime.now(ZoneInfo('America/Santo_Domingo'))-timedelta(minutes=30)).replace(tzinfo=None).isoformat(timespec='seconds')
+        whatsapp=c.execute("SELECT o.id,o.status,o.created_at,cu.name FROM whatsapp_outbox o LEFT JOIN customers cu ON cu.id=o.customer_id WHERE o.status IN ('ERROR','FALLIDO') AND datetime(o.created_at)>=datetime(?) ORDER BY o.id DESC LIMIT 50",(cutoff,)).fetchall()
+        count=c.execute("SELECT COUNT(*) FROM whatsapp_outbox WHERE status IN ('ERROR','FALLIDO') AND datetime(created_at)>=datetime(?)",(cutoff,)).fetchone()[0]
         return billing,whatsapp,count
     finally:
         c.close()
@@ -57,7 +58,7 @@ def page():
     billing,whatsapp,count=read_alerts()
     rows=''.join(f'<tr><td>{esc(a["kind"])}</td><td>{esc(a["message"])}</td><td>{esc(a["last_seen"])}</td><td>{a["occurrences"]}</td></tr>' for a in billing)
     messages=''.join(f'<tr><td>#{a["id"]}</td><td>{esc(a["name"] or "Cliente no disponible")}</td><td>{esc(a["status"])}</td><td>{esc(a["created_at"])}</td></tr>' for a in whatsapp)
-    return base.shell('Alertas operativas',f'''<div class="panel"><h1>Alertas operativas</h1><p>Fallos registrados de facturación y WhatsApp. No se reenvían mensajes desde esta pantalla.</p><h2>Facturación</h2><div style="overflow:auto"><table class="table"><tr><th>Tipo</th><th>Detalle</th><th>Último fallo</th><th>Intentos fallidos</th></tr>{rows or '<tr><td colspan="4">Sin fallos de facturación registrados pendientes.</td></tr>'}</table></div><h2>WhatsApp: {count} avisos con error</h2><p>Se muestran los últimos 50. <a href="/whatsapp/queue">Abrir cola para revisar el detalle</a>.</p><div style="overflow:auto"><table class="table"><tr><th>Aviso</th><th>Cliente</th><th>Estado</th><th>Creado</th></tr>{messages or '<tr><td colspan="4">Sin avisos con error.</td></tr>'}</table></div></div>''','dashboard')
+    return base.shell('Alertas operativas',f'''<div class="panel"><h1>Alertas operativas</h1><p>Fallos registrados de facturación y WhatsApp. No se reenvían mensajes desde esta pantalla.</p><h2>Facturación</h2><div style="overflow:auto"><table class="table"><tr><th>Tipo</th><th>Detalle</th><th>Último fallo</th><th>Intentos fallidos</th></tr>{rows or '<tr><td colspan="4">Sin fallos de facturación registrados pendientes.</td></tr>'}</table></div><h2>WhatsApp: {count} avisos con error</h2><p>Se muestran hasta 50 errores de los últimos 30 minutos. Los anteriores se conservan en el historial. <a href="/whatsapp/queue">Abrir cola para revisar el detalle</a>.</p><div style="overflow:auto"><table class="table"><tr><th>Aviso</th><th>Cliente</th><th>Estado</th><th>Creado</th></tr>{messages or '<tr><td colspan="4">Sin avisos con error.</td></tr>'}</table></div></div>''','dashboard')
 
 
 def setup(app):

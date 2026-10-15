@@ -70,7 +70,7 @@ def setup(app):
                 billing,_,count=read_alerts()
                 total=len(billing)+count
                 if total:
-                    body=f'<div role="alert" style="padding:14px;margin-bottom:16px;border:1px solid #e8ac45;border-radius:10px;background:#382b18;color:#ffe2a6"><b>Atención: {total} alerta(s) operativa(s).</b> <a href="/operations/alerts" style="color:#fff">Revisar fallos de facturación y WhatsApp</a></div>'+body
+                    body=body+f'<div role="alert" style="padding:14px;margin-bottom:16px;border:1px solid #e8ac45;border-radius:10px;background:#382b18;color:#ffe2a6"><b>Atención: {total} alerta(s) operativa(s).</b> <a href="/operations/alerts" style="color:#fff">Revisar fallos de facturación y WhatsApp</a></div>'
             except Exception:
                 app.logger.warning('No se pudo consultar el panel de alertas operativas.')
         return original(title,body,active)

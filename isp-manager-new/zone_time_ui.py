@@ -347,6 +347,27 @@ def zones_page():
     </div>
 
     <style>
+
+      /* Fit all columns to the available screen; wrap at word boundaries. */
+      .zones-wrap{{max-width:none;width:100%;min-width:0;box-sizing:border-box}}
+      .zone-card,.zone-table-wrap{{min-width:0;max-width:100%;box-sizing:border-box}}
+      .zone-table-wrap{{overflow:visible}}
+      .zones-table{{width:100%;min-width:0!important;table-layout:fixed}}
+      .zones-table th,.zones-table td{{width:auto!important;min-width:0!important;padding:12px 6px;white-space:normal!important;overflow-wrap:normal;word-break:normal;vertical-align:middle}}
+      .zones-table th:nth-child(1){{width:17%!important}}
+      .zones-table th:nth-child(2){{width:17%!important}}
+      .zones-table th:nth-child(3){{width:6%!important}}
+      .zones-table th:nth-child(4){{width:10%!important}}
+      .zones-table th:nth-child(5){{width:10%!important}}
+      .zones-table th:nth-child(6){{width:9%!important}}
+      .zones-table th:nth-child(7){{width:12%!important}}
+      .zones-table th:nth-child(8){{width:19%!important}}
+      .zone-name{{min-width:0;gap:10px;flex-wrap:wrap}}
+      .zone-name b{{min-width:0;max-width:100%;white-space:normal!important;word-break:normal!important;overflow-wrap:normal!important}}
+      .zones-table .zone-actions{{min-width:0;display:flex;flex-wrap:wrap;white-space:normal;gap:6px}}
+      .zones-table .edit-btn,.zones-table .delete-btn{{max-width:100%;height:auto;min-height:34px;white-space:normal;box-sizing:border-box;text-align:center}}
+      .zones-table .client-pill,.zones-table .time-pill{{max-width:100%;box-sizing:border-box;white-space:normal}}
+      @media(max-width:750px){{.zones-table th,.zones-table td{{font-size:11px;padding:8px 3px}}.zone-pin{{width:26px;height:26px}}.zones-table .edit-btn,.zones-table .delete-btn{{font-size:10px;padding:5px 3px}}}}
     </style>
     <script>
       (function(){{

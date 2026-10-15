@@ -40,6 +40,7 @@ def ensure_zone_schema():
         )''')
         cols = _columns(c, 'zones')
         additions = [
+            ('automatic_billing_enabled', 'INTEGER NOT NULL DEFAULT 1'),
             ('billing_day', 'INTEGER DEFAULT 30'),
             ('invoice_days_before', 'INTEGER DEFAULT 5'),
             ('cut_days_after', 'INTEGER DEFAULT 6'),
@@ -80,6 +81,14 @@ def ensure_zone_schema():
                     (default,),
                 )
 
+        # One dedicated zone for customers exempt from automatic invoices.
+        # Keep it active so it remains available in customer zone selectors.
+        c.execute("""INSERT INTO zones(name,automatic_billing_enabled,active,whatsapp_reminder_enabled)
+                     SELECT 'Sin facturación',0,1,0
+                     WHERE NOT EXISTS (SELECT 1 FROM zones WHERE LOWER(TRIM(name))=LOWER(?))""",
+                  ('Sin facturación',))
+        c.execute("UPDATE zones SET automatic_billing_enabled=0 WHERE LOWER(TRIM(name))=LOWER(?)",
+                  ('Sin facturación',))
         c.commit()
         print('INTERFLASH_ZONE_SCHEMA_READY=' + ','.join(sorted(_columns(c, 'zones'))), flush=True)
     finally:
@@ -249,7 +258,8 @@ def run_billing():
             LEFT JOIN zones z ON {_zone_join()}
             WHERE cu.plan_id IS NOT NULL
               AND COALESCE(cu.status,'ACTIVO') <> 'ELIMINADO'
-              AND (z.id IS NULL OR COALESCE(z.active,1)=1) ''').fetchall()
+              AND (z.id IS NULL OR COALESCE(z.active,1)=1)
+              AND COALESCE(z.automatic_billing_enabled,1)=1 ''').fetchall()
 
         last_day = calendar.monthrange(today.year, today.month)[1]
 

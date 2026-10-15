@@ -290,7 +290,7 @@ def customers_plus():
             # Acciones compactas de cobranza, según la referencia visual.
             actions_html = f'''<a class="ico debt-promise" title="Promesa de pago" aria-label="Promesa de pago para {esc(r['name'])}" href="{url_for('promise_new',customer_id=r['id'])}"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="m2 12 4-4 4 2 3-2 5 1 4 4-5 5-3-1-2 2-3-2-2 1-5-6Z"/><path d="m10 10 3 3 4 2M7 13l3 3M12 8l-2 3"/></svg></a>
             <a class="ico debt-edit" title="Editar cliente" aria-label="Editar {esc(r['name'])}" href="{url_for('customer_edit',id=r['id'])}">{icon_edit}</a>
-            <a class="ico debt-pay" title="Registrar pago" aria-label="Registrar pago para {esc(r['name'])}" href="{url_for('invoices',customer_id=r['id'])}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M17 6c-2-2-9-2-9 2 0 5 9 2 9 7 0 4-7 5-10 2"/></svg></a>'''
+            <a class="ico debt-pay" title="Cobrar" aria-label="Cobrar a {esc(r['name'])}" href="{url_for('customer_collect',id=r['id'])}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M17 6c-2-2-9-2-9 2 0 5 9 2 9 7 0 4-7 5-10 2"/></svg></a>'''
         else:
             actions_html = f'''<a class="ico invoice-create" title="Generar factura" aria-label="Generar factura para {esc(r['name'])}" href="{url_for('invoices',customer_id=r['id'])}#nueva-factura"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 15h8M12 11v8"/></svg></a>
 
@@ -792,7 +792,29 @@ def _backfill_pppoe_phones():
         c.close()
 
 
+def customer_collect(id):
+    """Open the oldest outstanding invoice directly at its payment form."""
+    if not base.logged_in():
+        return redirect(url_for('login'))
+    c = base.db()
+    try:
+        invoice = c.execute("""SELECT i.id FROM invoices i
+            JOIN customers cu ON cu.id=i.customer_id
+            WHERE i.customer_id=? AND COALESCE(cu.status,'ACTIVO')<>'ELIMINADO'
+              AND UPPER(COALESCE(i.status,'PENDIENTE')) NOT IN ('PAGADA','ANULADA','CANCELADA')
+              AND COALESCE(i.amount,0)+COALESCE(i.late_fee,0)>
+                  COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id=i.id),0)
+            ORDER BY i.due_date,i.id LIMIT 1""", (id,)).fetchone()
+    finally:
+        c.close()
+    if invoice:
+        return redirect(url_for('invoice_detail',id=invoice['id'],_anchor='registrar-pago'))
+    flash('Este cliente no tiene facturas pendientes de cobro.')
+    return redirect(url_for('customers',overdue=1))
+
+
 def setup(app):
+    app.add_url_rule('/customers/<int:id>/collect', endpoint='customer_collect', view_func=customer_collect, methods=['GET'])
     _backfill_pppoe_phones()
     ensure_schema()
     app.add_url_rule('/customers/<int:id>/location', endpoint='customer_location', view_func=customer_location, methods=['GET','POST'])

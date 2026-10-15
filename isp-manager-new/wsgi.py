@@ -258,3 +258,7 @@ app.view_functions['mikrotik_bootstrap_rsc'] = _create_pppoe_only_bootstrap
 
 import operation_alerts
 operation_alerts.setup(app)
+
+# Customer WhatsApp AI is isolated from billing and router command workers.
+import whatsapp_customer_ai
+whatsapp_customer_ai.setup(app)

@@ -22,6 +22,9 @@ def schema():
       id INTEGER PRIMARY KEY AUTOINCREMENT,router_name TEXT,interface_name TEXT,
       state TEXT,message TEXT,created_at TEXT,outbox_id INTEGER);
     ''')
+    c.execute('''CREATE TABLE IF NOT EXISTS wan_whatsapp_incidents(
+      router_name TEXT, interface_name TEXT, opened_at TEXT,
+      PRIMARY KEY(router_name,interface_name))''')
     c.commit(); c.close()
 
 def _event(c, router, iface, state, loss, stamp):
@@ -32,9 +35,19 @@ def _event(c, router, iface, state, loss, stamp):
                     (router,iface,state,message,stamp)).lastrowid
     settings = dict(c.execute('SELECT key,value FROM app_settings'))
     phone = settings.get('wan_alert_phone','')
+    # Filter only administrator WhatsApp notices; retain every panel event.
+    incident = c.execute('SELECT 1 FROM wan_whatsapp_incidents WHERE router_name=? AND interface_name=?',(router,iface)).fetchone()
+    important = state == 'NO_REPLY' or (state == 'LOSS' and loss is not None and loss >= 50)
+    recovery = state == 'ONLINE' and incident is not None
+    if not ((important and not incident) or recovery):
+        return
     if settings.get('wan_alert_whatsapp') == '1' and settings.get('whatsapp_enabled') == '1' and phone:
         oid = c.execute("INSERT INTO whatsapp_outbox(customer_id,phone,template_code,message,status,created_at) VALUES(NULL,?,'WAN_ALERT',?,'PENDIENTE',?)", (phone,message,stamp)).lastrowid
         c.execute('UPDATE wan_alert_events SET outbox_id=? WHERE id=?',(oid,eid))
+        if recovery:
+            c.execute('DELETE FROM wan_whatsapp_incidents WHERE router_name=? AND interface_name=?',(router,iface))
+        else:
+            c.execute('INSERT OR IGNORE INTO wan_whatsapp_incidents VALUES(?,?,?)',(router,iface,stamp))
 
 
 def observe(c, router, iface, loss, sample_at, now=None):
@@ -103,7 +116,7 @@ def page():
         events = c.execute('''SELECT e.*,o.status delivery FROM wan_alert_events e LEFT JOIN whatsapp_outbox o ON o.id=e.outbox_id ORDER BY e.id DESC LIMIT 100''').fetchall()
         esc = lambda v: escape(str(v or ''))
         rows = ''.join(f'<tr><td>{esc(r["created_at"])}</td><td>{esc(r["router_name"])} / {esc(r["interface_name"])}</td><td>{esc(LABELS[r["state"]])}</td><td>{esc(r["delivery"] or "Solo panel")}</td></tr>' for r in events)
-        body = f'''<div class="head"><h1>Alertas de líneas</h1></div><div class="panel"><p>Monitoreo del panel activo. Se confirma un cambio tras tres muestras consecutivas; no se repite el aviso mientras el estado siga igual. Si pasan 45 segundos sin medición, se avisa de falta de datos.</p><p>Las alertas describen pruebas ICMP. No garantizan que el proveedor esté caído ni comprueban el failover. No ejecutan reparaciones ni consultas de IA.</p><p>{esc(error)}</p><form method="post"><input type="hidden" name="csrf" value="{esc(token)}"><label>Tu WhatsApp para alertas<input name="phone" value="{esc(settings.get('wan_alert_phone'))}" placeholder="Código de país y número"></label><label><input type="checkbox" name="enabled" value="1" {'checked' if settings.get('wan_alert_whatsapp')=='1' else ''}> Enviarme alertas por WhatsApp</label><p>Requiere avisos generales de WhatsApp activos y proveedor conectado. Solo se envían eventos nuevos; el historial no se manda en lote.</p><button class="btn green">Guardar</button></form></div><div class="panel"><table class="table"><tr><th>Hora</th><th>Línea</th><th>Evento</th><th>WhatsApp</th></tr>{rows or '<tr><td colspan="4">Sin eventos registrados.</td></tr>'}</table></div>'''
+        body = f'''<div class="head"><h1>Alertas de líneas</h1></div><div class="panel"><p>Monitoreo del panel activo. Se confirma un cambio tras tres muestras consecutivas; no se repite el aviso mientras el estado siga igual. Si pasan 45 segundos sin medición, se registra en el panel. WhatsApp solo avisa al confirmar pérdida de al menos 50% o falta de respuesta, una vez por incidente, y al recuperarse.</p><p>Las alertas describen pruebas ICMP. No garantizan que el proveedor esté caído ni comprueban el failover. No ejecutan reparaciones ni consultas de IA.</p><p>{esc(error)}</p><form method="post"><input type="hidden" name="csrf" value="{esc(token)}"><label>Tu WhatsApp para alertas<input name="phone" value="{esc(settings.get('wan_alert_phone'))}" placeholder="Código de país y número"></label><label><input type="checkbox" name="enabled" value="1" {'checked' if settings.get('wan_alert_whatsapp')=='1' else ''}> Enviarme alertas por WhatsApp</label><p>Requiere avisos generales de WhatsApp activos y proveedor conectado. Solo se envían eventos nuevos; el historial no se manda en lote.</p><button class="btn green">Guardar</button></form></div><div class="panel"><table class="table"><tr><th>Hora</th><th>Línea</th><th>Evento</th><th>WhatsApp</th></tr>{rows or '<tr><td colspan="4">Sin eventos registrados.</td></tr>'}</table></div>'''
         return base.shell('Alertas WAN',body,'wan_alerts')
     finally:
         c.close()

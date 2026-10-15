@@ -81,14 +81,14 @@ def ensure_zone_schema():
                     (default,),
                 )
 
-        # One dedicated zone for customers exempt from automatic invoices.
-        # Keep it active so it remains available in customer zone selectors.
-        c.execute("""INSERT INTO zones(name,automatic_billing_enabled,active,whatsapp_reminder_enabled)
-                     SELECT 'Sin facturación',0,1,0
-                     WHERE NOT EXISTS (SELECT 1 FROM zones WHERE LOWER(TRIM(name))=LOWER(?))""",
-                  ('Sin facturación',))
-        c.execute("UPDATE zones SET automatic_billing_enabled=0 WHERE LOWER(TRIM(name))=LOWER(?)",
-                  ('Sin facturación',))
+        # Retire the newly requested zone only while unassigned.
+        c.execute("""DELETE FROM zones WHERE name='Sin facturación'
+                     AND automatic_billing_enabled=0
+                     AND NOT EXISTS (
+                         SELECT 1 FROM customers cu
+                         WHERE cu.zone_id=zones.id
+                            OR (cu.zone_id IS NULL AND LOWER(TRIM(cu.zone))=LOWER(TRIM(zones.name)))
+                     )""")
         c.commit()
         print('INTERFLASH_ZONE_SCHEMA_READY=' + ','.join(sorted(_columns(c, 'zones'))), flush=True)
     finally:

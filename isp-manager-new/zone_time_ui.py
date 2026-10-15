@@ -261,13 +261,14 @@ def zones_page():
       .zone-search{{width:230px;height:44px;border-radius:12px;border:1px solid rgba(130,166,219,.26);background:rgba(6,17,32,.75);color:#fff;padding:0 13px}}
       .zone-search::placeholder{{color:#7890ad}}
       .zone-table-wrap{{overflow:auto;border-radius:15px;border:1px solid rgba(113,147,196,.18)}}
-      .zones-table{{width:100%;border-collapse:collapse;min-width:0}}
+      .zones-table{{width:100%;border-collapse:collapse;min-width:1100px;table-layout:auto}}
       .zones-table th{{padding:10px 8px;text-align:left;font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:#a9bdd8;background:rgba(18,39,69,.72);border-bottom:1px solid rgba(121,151,194,.20)}}
       .zones-table td{{padding:10px 8px;font-size:13px;line-height:1.35;border-bottom:1px solid rgba(115,145,184,.12);color:#e7eef8}}
       .zones-table tr:last-child td{{border-bottom:0}}
       .zones-table tbody tr:hover{{background:rgba(19,91,168,.08)}}
       .zone-name{{display:flex;align-items:center;gap:6px}}
-      .zone-name b{{overflow-wrap:anywhere}}
+      .zones-table th:first-child,.zones-table td:first-child{{min-width:180px}}
+      .zone-name b{{overflow-wrap:normal;word-break:normal;white-space:normal;min-width:140px}}
       .zones-table th:not(:first-child),.zones-table td:not(:first-child){{width:1%}}
       .zones-table td:nth-child(4),.zones-table td:nth-child(5){{white-space:nowrap}}
       .zones-table .client-pill,.zones-table .time-pill{{white-space:nowrap;padding:4px 7px}}

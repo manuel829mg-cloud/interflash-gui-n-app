@@ -187,7 +187,7 @@ def zones_page():
     suspend_options = ''.join(f'<option value="{n}"{" selected" if n == suspend_count else ""}>{n} factura{"s" if n > 1 else ""} vencida{"s" if n > 1 else ""}</option>' for n in range(1, 13))
 
     total_zones = len(rows)
-    zones_billing = sum(1 for r in rows if r['invoice_days_before'] is not None)
+    zones_billing = sum(1 for r in rows if r['invoice_days_before'] is not None and r['automatic_billing_enabled'])
     zones_cut = sum(1 for r in rows if r['cut_days_after'] is not None)
 
     trs = ''.join(
@@ -197,7 +197,7 @@ def zones_page():
         f'<div class="muted">Deuda: RD${summaries.get(r["id"], {}).get("balance", 0):,.2f}</div>'
         f'<a href="/zones/{r["id"]}/summary?filter=suspended">Suspendidos: {summaries.get(r["id"], {}).get("suspended", 0)}</a></td>'
         f'<td>{r["billing_day"]}</td>'
-        f'<td>{r["invoice_days_before"]} días antes</td>'
+        f'<td>{str(r["invoice_days_before"]) + " días antes" if r["automatic_billing_enabled"] else "Sin facturación automática"}</td>'
         f'<td>{r["cut_days_after"]} días después</td>'
         f'<td><span class="time-pill">{esc(_time12(r["cut_time"]))}</span></td>'
         f'<td>{"El día de vencimiento" if r["whatsapp_reminder_enabled"] else "Desactivado"}</td>'

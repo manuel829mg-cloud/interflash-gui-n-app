@@ -128,7 +128,7 @@ def customer_form(row=None):
       <div><label>Línea / PBR<select name="pbr_line">{pbr_opts}</select></label></div>
       <div><label>Router<select name="router_name">{router_opts or '<option value="CCR2116">CCR2116</option>'}</select></label></div>
       <div><label>Serial ONU<input name="onu_serial" value="{esc(v('onu_serial'))}"></label></div>
-      <div><label>Día de vencimiento<input type="number" min="1" max="31" name="due_day" value="{esc(v('due_day',30))}"></label></div>
+      <input type="hidden" name="due_day" value="{esc(v('due_day',30))}">
       <div><label>Estado<select name="status"><option {"selected" if v('status','ACTIVO')=='ACTIVO' else ''}>ACTIVO</option><option {"selected" if v('status')=='SUSPENDIDO' else ''}>SUSPENDIDO</option></select></label></div>
       <div class="full" style="padding:12px;border:1px solid #29425b;border-radius:10px;background:#0b1725">
         <label style="display:flex;align-items:center;gap:9px"><input style="width:auto;margin:0" type="checkbox" name="create_in_router" value="1" {new_checked}> Crear/actualizar el PPPoE en MikroTik usando la cola segura</label>

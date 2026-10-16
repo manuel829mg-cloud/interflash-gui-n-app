@@ -258,6 +258,14 @@ def control_result_compat():
             cid,
         ),
     )
+    customer_before = c.execute(
+        'SELECT status,service_status FROM customers WHERE id=?',
+        (cmd['customer_id'],),
+    ).fetchone() if cmd['customer_id'] else None
+    was_suspended = bool(customer_before and (
+        customer_before['status'] == 'SUSPENDIDO'
+        or customer_before['service_status'] == 'SUSPENDIDO'
+    ))
     if ok and cmd['customer_id']:
         if cmd['action'] == 'SUSPEND':
             c.execute("UPDATE customers SET status='SUSPENDIDO',service_status='SUSPENDIDO' WHERE id=?", (cmd['customer_id'],))
@@ -277,7 +285,9 @@ def control_result_compat():
                 c, cmd['customer_id'], cmd['pppoe'], cmd['router_name'],
                 'RESTART_PPPOE', {'after_profile_command': cid},
             )
-    if ok and cmd['customer_id']:
+    # Payment reconciliation also enables already-active accounts. Only a real
+    # transition from suspension warrants a separate reactivation notice.
+    if ok and cmd['customer_id'] and (cmd['action'] != 'REACTIVATE' or was_suspended):
         from whatsapp_events import command_notice
         command_notice(c, cmd)
     c.commit()

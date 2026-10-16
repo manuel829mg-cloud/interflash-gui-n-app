@@ -65,6 +65,23 @@ class EventTests(unittest.TestCase):
             client.post('/api/mikrotik/agent/result',json={'id':1,'ok':True})
             client.post('/api/mikrotik/agent/result',json={'id':1,'ok':True})
         self.assertEqual(len(self.rows('SELECT * FROM whatsapp_outbox')),1)
+    def test_reactivation_notice_requires_previous_suspension(self):
+        client=wsgi.app.test_client()
+        for index, state in enumerate(('ACTIVO','SUSPENDIDO'), 10):
+            with self.subTest(state=state):
+                c=base.db()
+                c.execute('DELETE FROM whatsapp_outbox')
+                c.execute('DELETE FROM whatsapp_event_keys')
+                c.execute('UPDATE customers SET status=?,service_status=? WHERE id=1', (state,state))
+                c.execute("INSERT INTO router_commands(id,customer_id,action,status) VALUES(?,1,'REACTIVATE','EN_PROCESO')", (index,))
+                c.commit(); c.close()
+                with patch('pbr_client._auth',return_value=True):
+                    response=client.post('/api/mikrotik/agent/result',json={'id':index,'ok':True})
+                    client.post('/api/mikrotik/agent/result',json={'id':index,'ok':True})
+                self.assertEqual(response.status_code,200)
+                self.assertEqual(len(self.rows('SELECT * FROM whatsapp_outbox')), int(state=='SUSPENDIDO'))
+                self.assertEqual(self.rows('SELECT status FROM customers WHERE id=1')[0][0],'ACTIVO')
+
     def test_enable_requires_verified_connection_and_csrf(self):
         client=wsgi.app.test_client()
         with client.session_transaction() as s:s['auth']=True;s['role']='ADMIN';s['wa_events_csrf']='test'

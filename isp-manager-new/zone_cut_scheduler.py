@@ -1,3 +1,4 @@
+import telecable
 import calendar
 import threading
 import time as time_module
@@ -291,13 +292,14 @@ def run_billing():
                                  ) VALUES(?,?,?,?,?,?,?,?)''', (
                         cu['id'],
                         'Servicio de Internet ' + period,
-                        float(cu['plan_price'] or 0),
+                        (float(cu['plan_price'] or 0) + telecable.charge(cu)),
                         today.isoformat(),
                         due.isoformat(),
                         'PENDIENTE',
                         period,
                         'AUTOMATICO',
                     ))
+                    telecable.snapshot(c, c.execute('SELECT last_insert_rowid()').fetchone()[0], cu)
                     created += 1
 
 

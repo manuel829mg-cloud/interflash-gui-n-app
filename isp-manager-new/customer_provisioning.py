@@ -387,7 +387,14 @@ def _patch_customer_form():
         return
     original = pbr_client.customer_form
     def form(row=None):
-        return _inject_profile_tools(original(row))
+        html = _inject_profile_tools(original(row))
+        enabled = row is not None and 'telecable_enabled' in row.keys() and str(row['telecable_enabled']) == '1'
+        checkbox = ('<label style="display:block;margin-top:12px"><input type="hidden" name="telecable_present" value="1">'
+                    '<input type="checkbox" name="telecable_enabled" value="1" style="width:auto" '
+                    + ('checked' if enabled else '') + '> Telecable adicional — RD$500</label>'
+                    '<small class="muted">Se suma cada mes a la misma factura del internet.</small>')
+        return html.replace('Perfiles comerciales nuevos con precio del catálogo de planes.</small>',
+                            'Perfiles comerciales nuevos con precio del catálogo de planes.</small>' + checkbox, 1)
     form._interflash_profiles_patched = True
     pbr_client.customer_form = form
 

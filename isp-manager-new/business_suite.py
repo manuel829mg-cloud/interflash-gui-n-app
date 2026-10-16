@@ -1,3 +1,4 @@
+import telecable
 import os, secrets, sqlite3, tempfile, urllib.request, json
 from datetime import date, datetime, timedelta
 from html import escape
@@ -72,7 +73,7 @@ def run_billing():
     for cu in rows:
         due_day=max(1,min(int(cu['due_day'] or 30),28 if today.month==2 else 30)); due=date(today.year,today.month,due_day); issue=due-timedelta(days=int(cu['invoice_days_before'] if cu['invoice_days_before'] is not None else 5))
         if today>=issue and not c.execute('SELECT id FROM invoices WHERE customer_id=? AND period=?',(cu['id'],period)).fetchone():
-            c.execute('INSERT INTO invoices(customer_id,concept,amount,issue_date,due_date,status,period,generated_by,plan_name,plan_speed) VALUES(?,?,?,?,?,?,?,?,?,?)',(cu['id'],'Servicio de Internet '+period,float(cu['plan_price'] or 0),today.isoformat(),due.isoformat(),'PENDIENTE',period,'AUTOMATICO',cu['plan_name'] or '',(str(cu['download_mbps'] or 0)+'/'+str(cu['upload_mbps'] or 0)+' Mbps'))); created+=1
+            c.execute('INSERT INTO invoices(customer_id,concept,amount,issue_date,due_date,status,period,generated_by,plan_name,plan_speed) VALUES(?,?,?,?,?,?,?,?,?,?)',(cu['id'],'Servicio de Internet '+period,(float(cu['plan_price'] or 0) + telecable.charge(cu)),today.isoformat(),due.isoformat(),'PENDIENTE',period,'AUTOMATICO',cu['plan_name'] or '',(str(cu['download_mbps'] or 0)+'/'+str(cu['upload_mbps'] or 0)+' Mbps'))); telecable.snapshot(c, c.execute('SELECT last_insert_rowid()').fetchone()[0], cu); created+=1
         invs=c.execute("SELECT * FROM invoices WHERE customer_id=? AND status='PENDIENTE' AND due_date<?",(cu['id'],today.isoformat())).fetchall()
         if invs:
             overdue+=1; oldest=min(date.fromisoformat(i['due_date']) for i in invs); cut=int(cu['cut_days_after'] if cu['cut_days_after'] is not None else 6)

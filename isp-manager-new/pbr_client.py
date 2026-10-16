@@ -218,6 +218,7 @@ def customer_new_pbr():
                            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                         (None,x['name'],x['phone'],x['document'],x['email'],x['address'],x['zone'],x['pppoe'],x['ip'],x['onu'],x['plan_id'],x['status'],x['due_day'],date.today().isoformat(),x['profile'],x['pbr'],x['router'],x['status'],x['latitude'],x['longitude']))
         cid = cur.lastrowid; c.execute('UPDATE customers SET phone_secondary=? WHERE id=?', (x['phone_secondary'],cid)); c.execute('UPDATE customers SET code=? WHERE id=?',(f'IF-{cid:05d}',cid))
+        c.execute('UPDATE customers SET telecable_enabled=? WHERE id=?', (int(request.form.get('telecable_enabled') == '1'), cid))
         notes = []
         if x['create_in_router']:
             if x['pppoe'] and x['password'] and x['profile']:
@@ -260,6 +261,8 @@ def customer_edit_pbr(id):
             c.execute('UPDATE customers SET phone_secondary=? WHERE id=?', (x['phone_secondary'],id))
         if 'latitude' in request.form or 'longitude' in request.form:
             c.execute('UPDATE customers SET latitude=?,longitude=? WHERE id=?', (x['latitude'],x['longitude'],id))
+        if request.form.get('telecable_present') == '1':
+            c.execute('UPDATE customers SET telecable_enabled=? WHERE id=?', (int(request.form.get('telecable_enabled') == '1'), id))
         notes=[]
         # Existing subscribers must never be sent through CREATE_PPPOE.
         if x['password'] and x['pppoe']:

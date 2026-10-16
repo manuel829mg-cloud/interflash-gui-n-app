@@ -59,7 +59,11 @@ def render_pdf(inv, company, banks=(), logo_path=None):
     amount = float(inv.get('amount') or 0)
     paid = float(inv.get('paid_total') or 0)
     balance = max(0,amount-paid) if status != 'ANULADA' else 0
-    table = Table([[p('CONCEPTO'),p('IMPORTE')],[p(description),p('RD$%s' % format(amount,',.2f'))]], colWidths=[232,140])
+    cable = float(inv.get('telecable_amount') or 0)
+    lines = [[p('CONCEPTO'),p('IMPORTE')], [p(description),p('RD$%s' % format(amount-cable, ',.2f'))]]
+    if cable:
+        lines.append([p('Telecable adicional'), p('RD$%s' % format(cable, ',.2f'))])
+    table = Table(lines, colWidths=[232,140])
     table.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#e8f1fc')),('LINEBELOW',(0,0),(-1,0),1,colors.HexColor('#1968c7')),('VALIGN',(0,0),(-1,-1),'TOP'),('TOPPADDING',(0,0),(-1,-1),12),('BOTTOMPADDING',(0,0),(-1,-1),12)]))
     story += [table,Spacer(1,12)]
     totals = Table([[p('Total facturado'),p('RD$'+format(amount,',.2f'))],[p('Pagos registrados'),p('RD$'+format(paid,',.2f'))],[p('BALANCE PENDIENTE','Heading3'),p('RD$'+format(balance,',.2f'),'Heading3')]],colWidths=[232,140])

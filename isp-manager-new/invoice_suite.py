@@ -1,3 +1,4 @@
+import telecable
 import secrets
 from datetime import date, datetime
 from html import escape
@@ -16,7 +17,9 @@ def invoices_plus():
                         FROM customers cu LEFT JOIN plans p ON p.id=cu.plan_id WHERE cu.id=?""",(cid,)).fetchone()
         if not cu:
             c.close(); flash('Cliente no encontrado.'); return redirect(url_for('invoices'))
-        amount=float(request.form.get('amount') or cu['plan_price'] or 0)
+        amount=float(request.form.get('amount') or (float(cu['plan_price'] or 0) + telecable.charge(cu)))
+        if amount < telecable.charge(cu):
+            c.close(); flash('El monto debe incluir los RD$500 de Telecable.'); return redirect(url_for('invoices'))
         period=(request.form.get('period') or date.today().strftime('%Y-%m')).strip()
         concept=(request.form.get('concept') or ('Servicio de Internet '+period)).strip()
         speed=(str(cu['download_mbps'] or 0)+'/'+str(cu['upload_mbps'] or 0)+' Mbps') if cu['plan_name'] else ''
@@ -25,11 +28,12 @@ def invoices_plus():
                   (cid,concept,amount,request.form['issue_date'],request.form['due_date'],period,
                    session.get('user') or base.ADMIN_USER,cu['plan_name'] or '',speed))
         iid=c.execute('SELECT last_insert_rowid() id').fetchone()['id']
+        telecable.snapshot(c, iid, cu)
         c.commit(); c.close()
         try: base.audit('INVOICE_CREATE',f'#{iid} cliente {cid}')
         except Exception: pass
         flash('Factura creada.'); return redirect(url_for('invoice_detail',id=iid))
-    customers=c.execute("""SELECT cu.id,cu.name,cu.code,cu.phone,cu.pppoe,p.name plan_name,p.price FROM customers cu LEFT JOIN plans p ON p.id=cu.plan_id
+    customers=c.execute("""SELECT cu.id,cu.name,cu.code,cu.phone,cu.pppoe,cu.telecable_enabled,p.name plan_name,(COALESCE(p.price,0) + CASE WHEN cu.telecable_enabled=1 THEN 500 ELSE 0 END) price FROM customers cu LEFT JOIN plans p ON p.id=cu.plan_id
                            WHERE COALESCE(cu.status,'ACTIVO')<>'ELIMINADO' ORDER BY cu.name""").fetchall()
     rows=c.execute("""SELECT i.*,cu.name customer FROM invoices i JOIN customers cu ON cu.id=i.customer_id ORDER BY i.id DESC LIMIT 500""").fetchall()
     c.close()
@@ -119,7 +123,7 @@ def invoice_detail(id):
     <div class="right"><h1 style="margin:0">FACTURA</h1><div><b>{{number}}</b></div><div style="margin-top:10px"><span class="status">{{status}}</span></div></div></div>
     <div class="grid"><div class="box"><h3>Facturado a</h3><div class="line"><b>{{inv.customer}}</b></div><div class="line">{{inv.customer_code or ''}}</div>{% if inv.document %}<div class="line">Cédula/RNC: {{inv.document}}</div>{% endif %}<div class="line">{{inv.phone or ''}}</div><div class="line">{{inv.email or ''}}</div><div class="line">{{inv.address or ''}}</div></div>
     <div class="box"><h3>Datos de factura</h3><div class="line"><b>Emisión:</b> {{inv.issue_date}}</div><div class="line"><b>Vencimiento:</b> {{inv.due_date}}</div><div class="line"><b>Período:</b> {{inv.period or '-'}}</div><div class="line"><b>Generada por:</b> {{inv.generated_by or '-'}}</div></div></div>
-    <table class="table"><tr><th>Descripción</th><th>Plan</th><th>Velocidad</th><th style="text-align:right">Monto</th></tr><tr><td>{{inv.concept}}</td><td>{{plan}}</td><td>{{speed}}</td><td style="text-align:right">RD&#36;{{amount}}</td></tr></table>
+    <table class="table"><tr><th>Descripción</th><th>Plan</th><th>Velocidad</th><th style="text-align:right">Monto</th></tr><tr><td>{{inv.concept}}</td><td>{{plan}}</td><td>{{speed}}</td><td style="text-align:right">RD&#36;{{internet_amount}}</td></tr>{% if inv.telecable_amount %}<tr><td>Telecable adicional</td><td>—</td><td>—</td><td style="text-align:right">RD&#36;{{cable_amount}}</td></tr>{% endif %}</table>
     <div class="totals"><div><span>Total</span><b>RD&#36;{{amount}}</b></div><div><span>Pagado</span><span>RD&#36;{{paid_total}}</span></div><div class="grand"><span>Balance</span><span>RD&#36;{{balance}}</span></div></div>
     {% if status in ('PENDIENTE','VENCIDA') %}<div class="box no-print" id="registrar-pago" style="margin-top:24px"><h3>Registrar pago</h3>
     <form method="post" action="{{pay_url}}" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
@@ -132,7 +136,7 @@ def invoice_detail(id):
     {% if bank_html %}<div class="box banks" style="margin-top:20px"><h3>Cuentas para pago</h3>{{bank_html|safe}}</div>{% endif %}<div class="footer">{{company.footer}}</div></main></body></html>'''
     bg='#dff7e9' if status=='PAGADA' else '#ffe5e7' if status=='VENCIDA' else '#fff2cc'; fg='#147a4b' if status=='PAGADA' else '#b4232f' if status=='VENCIDA' else '#8a5a00'
     return render_template_string(html,inv=inv,cancellation=cancellation,can_cancel=can_cancel,void_csrf=void_csrf,cancel_url=url_for('invoice_cancel',id=id),company=company,number=f'IF-{id:06d}',status=status,status_bg=bg,status_fg=fg,
-      amount=f'{float(inv["amount"] or 0):,.2f}',paid_total=f'{paid_total:,.2f}',balance=f'{balance:,.2f}',balance_raw=f'{balance:.2f}',plan=plan,speed=speed,pay_rows=pay_rows,bank_html=bank_html,back=url_for('invoices'),pay_url=url_for('invoice_payment',id=id))
+      internet_amount=f'{float(inv["amount"] or 0)-float(inv["telecable_amount"] or 0):,.2f}',cable_amount=f'{float(inv["telecable_amount"] or 0):,.2f}',amount=f'{float(inv["amount"] or 0):,.2f}',paid_total=f'{paid_total:,.2f}',balance=f'{balance:,.2f}',balance_raw=f'{balance:.2f}',plan=plan,speed=speed,pay_rows=pay_rows,bank_html=bank_html,back=url_for('invoices'),pay_url=url_for('invoice_payment',id=id))
 
 
 def invoice_payment(id):

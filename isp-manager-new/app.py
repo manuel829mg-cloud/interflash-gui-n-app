@@ -91,6 +91,13 @@ def init_db():
       created_at TEXT NOT NULL
     );
     ''')
+    # Additive migration: existing customers and invoices retain zero cable charges.
+    for table, column, definition in (
+        ('customers', 'telecable_enabled', 'INTEGER NOT NULL DEFAULT 0'),
+        ('invoices', 'telecable_amount', 'REAL NOT NULL DEFAULT 0'),
+    ):
+        if column not in {row['name'] for row in c.execute('PRAGMA table_info(' + table + ')')}:
+            c.execute('ALTER TABLE ' + table + ' ADD COLUMN ' + column + ' ' + definition)
     if c.execute('SELECT COUNT(*) c FROM plans').fetchone()['c'] == 0:
         c.executemany(
             'INSERT INTO plans(name,download_mbps,upload_mbps,price) VALUES(?,?,?,?)',

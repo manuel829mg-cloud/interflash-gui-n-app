@@ -126,3 +126,20 @@ body .clients-table .ico svg.reference-icon{width:16px;height:16px}
  body .clients-table thead tr{height:auto!important;min-height:0!important}
  body .clients-table thead th{white-space:nowrap!important;overflow-wrap:normal!important;word-break:normal!important;vertical-align:middle!important;height:auto!important;min-height:0!important;padding:4px 7px!important;line-height:1.2!important}
 }
+
+/* Compact navigation, preserving labels and the mobile drawer. */
+@media(min-width:851px){body .app{grid-template-columns:232px minmax(0,1fr)}}
+body .side{padding:16px 12px}
+body .side .brand{gap:10px;margin-bottom:12px}
+body .side .brand b{font-size:18px}
+body .side .brandmark.brandmark-logo,body .side .brandmark.brandmark-logo img{width:48px!important;height:48px!important;flex-basis:48px!important}
+body .side-user{padding:9px;margin-bottom:14px;gap:10px}
+body .side-avatar{width:34px;height:34px;flex-basis:34px}
+body .side .nav{gap:3px}
+body .side .nav a{padding:8px 10px;gap:9px;min-height:44px}
+body .side .nav .menu-picture{width:30px;min-width:30px;height:30px;flex-basis:30px;border-radius:9px}
+body .side .nav .menu-picture svg{width:21px;height:21px}
+body .side .nav .nav-subitem{padding:6px 8px;min-height:36px}
+body .side .nav .nav-subitem .menu-picture{width:24px;min-width:24px;height:24px;flex-basis:24px}
+body .side .nav .nav-subitem .menu-picture svg{width:17px;height:17px}
+body .side-footer{padding-top:12px}

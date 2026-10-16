@@ -60,7 +60,8 @@ def record_payment(customer_id=None, invoice_id=None, amount=None, method='EFECT
                 c.execute('''INSERT INTO router_commands(router_name,customer_id,pppoe,action,payload,status,created_at,requested_by)
                              VALUES(?,?,?,'REACTIVATE','{}','PENDIENTE',?,'PAGO')''',
                           (cu['router_name'] or 'CCR2116',customer_id,cu['pppoe'],now))
-        if settings.get('whatsapp_enabled') == '1' and cu['phone']:
+        from customer_phones import recipients
+        if settings.get('whatsapp_enabled') == '1' and recipients(cu):
             if inv and amount == balance:
                 from whatsapp_events import enqueue
                 enqueue(c, f"INVOICE_PAID:{invoice_id}", customer_id,
@@ -68,7 +69,8 @@ def record_payment(customer_id=None, invoice_id=None, amount=None, method='EFECT
                         f"Hola {cu['name']}, recibimos tu pago de RD${amount:,.2f}. Adjuntamos tu factura IF-{int(invoice_id):06d} marcada PAGADA. Gracias por preferir INTER Flash.")
             else:
                 message = f"Hola {cu['name']}, recibimos tu pago de RD${amount:,.2f}. Gracias."
-                c.execute("INSERT INTO whatsapp_outbox(customer_id,phone,template_code,message,status,created_at) VALUES(?,?,'PAYMENT',?,'PENDIENTE',?)", (customer_id,cu['phone'],message,now))
+                from whatsapp_events import enqueue
+                enqueue(c, f'PAYMENT:{pid}', customer_id, 'PAYMENT', message)
         c.commit()
         return pid
     except Exception:

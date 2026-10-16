@@ -29,7 +29,7 @@ def ensure_schema():
     CREATE TABLE IF NOT EXISTS app_settings(key TEXT PRIMARY KEY,value TEXT);
     CREATE TABLE IF NOT EXISTS router_commands(id INTEGER PRIMARY KEY AUTOINCREMENT,router_name TEXT DEFAULT 'CCR2116',customer_id INTEGER,pppoe TEXT,action TEXT,payload TEXT,status TEXT DEFAULT 'PENDIENTE',created_at TEXT,executed_at TEXT,result TEXT,requested_by TEXT);
     ''')
-    for n,ddl in [('latitude','TEXT'),('longitude','TEXT'),('notes','TEXT'),('zone_id','INTEGER'),('router_name','TEXT DEFAULT "CCR2116"'),('install_date','TEXT'),('service_status','TEXT DEFAULT "ACTIVO"')]: _col(c,'customers',n,ddl)
+    for n,ddl in [('phone_secondary',"TEXT DEFAULT ''"),('latitude','TEXT'),('longitude','TEXT'),('notes','TEXT'),('zone_id','INTEGER'),('router_name','TEXT DEFAULT "CCR2116"'),('install_date','TEXT'),('service_status','TEXT DEFAULT "ACTIVO"')]: _col(c,'customers',n,ddl)
     for n,ddl in [('period','TEXT'),('late_fee','REAL DEFAULT 0'),('generated_by','TEXT'),('plan_name','TEXT'),('plan_speed','TEXT')]: _col(c,'invoices',n,ddl)
     _col(c,'payment_promises','promise_time',"TEXT DEFAULT '23:59'")
     for n,ddl in [('received_by','TEXT'),('proof','TEXT')]: _col(c,'payments',n,ddl)
@@ -46,11 +46,15 @@ def set_setting(key,value):
 
 def queue_whatsapp(customer_id,code,extra=None):
     c=base.db(); cu=c.execute('SELECT * FROM customers WHERE id=?',(customer_id,)).fetchone(); t=c.execute('SELECT * FROM whatsapp_templates WHERE code=? AND active=1',(code,)).fetchone()
-    if not cu or not t or not cu['phone']: c.close(); return False
+    from customer_phones import recipients
+    phones = recipients(cu) if cu else []
+    if not cu or not t or not phones: c.close(); return False
     data={'name':cu['name'],'amount':'','due_date':''}; data.update(extra or {})
     try: msg=t['body'].format(**data)
     except: msg=t['body']
-    c.execute('INSERT INTO whatsapp_outbox(customer_id,phone,template_code,message,status,created_at) VALUES(?,?,?,?,?,?)',(customer_id,cu['phone'],code,msg,'PENDIENTE',datetime.now().isoformat(timespec='seconds'))); c.commit(); c.close(); return True
+    for phone in phones:
+        c.execute('INSERT INTO whatsapp_outbox(customer_id,phone,template_code,message,status,created_at) VALUES(?,?,?,?,?,?)',(customer_id,phone,code,msg,'PENDIENTE',datetime.now().isoformat(timespec='seconds')))
+    c.commit(); c.close(); return True
 
 def try_send_outbox(limit=25):
     api=os.getenv('WHATSAPP_API_URL','').strip(); token=os.getenv('WHATSAPP_API_TOKEN','').strip()

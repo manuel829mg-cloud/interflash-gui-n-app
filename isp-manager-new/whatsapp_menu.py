@@ -32,7 +32,8 @@ def enqueue(c, thread, text, event_id, instance):
     if c.execute('SELECT 1 FROM whatsapp_menu_jobs WHERE event_id=?',(event_id,)).fetchone(): return
     pause=0; reply=MENU
     if command=='1':
-        matches=[r for r in c.execute("SELECT id,phone FROM customers WHERE COALESCE(status,'')<>'ELIMINADO'").fetchall() if wa._wa_phone(r['phone'])==phone]
+        from customer_phones import recipients
+        matches=[r for r in c.execute("SELECT * FROM customers WHERE COALESCE(status,'')<>'ELIMINADO'").fetchall() if phone in recipients(r)]
         if len(matches)!=1:
             reply='Para consultar tu factura, un asesor debe verificar tu cuenta. Escribe ASESOR para solicitar atención.'
         else:

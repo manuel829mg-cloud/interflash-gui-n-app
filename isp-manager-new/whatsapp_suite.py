@@ -41,9 +41,9 @@ def _rd_time(value, short=False):
 
 def _thread_names(c, rows):
     names = {}
-    for customer in c.execute("SELECT name,phone FROM customers WHERE COALESCE(status,'')<>'ELIMINADO'"):
-        phone = _wa_phone(customer['phone'])
-        if phone:
+    from customer_phones import recipients
+    for customer in c.execute("SELECT * FROM customers WHERE COALESCE(status,'')<>'ELIMINADO'"):
+        for phone in recipients(customer):
             names.setdefault(phone, []).append(customer['name'])
     result = []
     for row in rows:
@@ -165,8 +165,9 @@ def _customer_by_phone(c, phone):
     target = _wa_phone(phone)
     if not target:
         return None
-    for r in c.execute("SELECT id,name,phone FROM customers WHERE COALESCE(status,'ACTIVO')<>'ELIMINADO' AND COALESCE(phone,'')<>''").fetchall():
-        if _wa_phone(r['phone']) == target:
+    from customer_phones import recipients
+    for r in c.execute("SELECT * FROM customers WHERE COALESCE(status,'ACTIVO')<>'ELIMINADO'").fetchall():
+        if target in recipients(r):
             return r
     return None
 

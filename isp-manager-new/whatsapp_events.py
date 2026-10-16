@@ -29,13 +29,19 @@ def enqueue(c, key, customer_id, code, message):
     if dict(c.execute('SELECT key,value FROM app_settings')).get('whatsapp_enabled') != '1':
         return False
     cu = c.execute("SELECT * FROM customers WHERE id=? AND status<>'ELIMINADO'", (customer_id,)).fetchone()
-    if not cu or not cu['phone']:
+    from customer_phones import recipients
+    phones = recipients(cu) if cu else []
+    if not phones:
         return False
     if not c.execute('INSERT OR IGNORE INTO whatsapp_event_keys(event_key) VALUES(?)', (key,)).rowcount:
         return False
-    oid = c.execute("INSERT INTO whatsapp_outbox(customer_id,phone,template_code,message,status,created_at) VALUES(?,?,?,?,'PENDIENTE',?)",
-                    (customer_id, cu['phone'], code, message, wa._now())).lastrowid
-    c.execute('UPDATE whatsapp_event_keys SET outbox_id=? WHERE event_key=?', (oid, key))
+    for index, phone in enumerate(phones):
+        recipient_key = key if index == 0 else key + '|PHONE:' + phone
+        if index:
+            c.execute('INSERT INTO whatsapp_event_keys(event_key) VALUES(?)', (recipient_key,))
+        oid = c.execute("INSERT INTO whatsapp_outbox(customer_id,phone,template_code,message,status,created_at) VALUES(?,?,?,?,'PENDIENTE',?)",
+                        (customer_id, phone, code, message, wa._now())).lastrowid
+        c.execute('UPDATE whatsapp_event_keys SET outbox_id=? WHERE event_key=?', (oid, recipient_key))
     return True
 
 

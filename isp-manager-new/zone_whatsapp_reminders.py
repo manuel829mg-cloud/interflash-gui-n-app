@@ -62,7 +62,7 @@ def valid(c, outbox_id, now=None):
     event = c.execute('SELECT event_key FROM whatsapp_event_keys WHERE outbox_id=?',(outbox_id,)).fetchone()
     if event:
         for row in candidates(c,now):
-            if row['event_key'] == event[0]:
+            if row['event_key'] == event[0].split('|PHONE:', 1)[0]:
                 c.execute('UPDATE whatsapp_outbox SET message=? WHERE id=?',(message_for(row),outbox_id))
                 return True
     return False

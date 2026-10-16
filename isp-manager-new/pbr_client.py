@@ -34,6 +34,7 @@ def ensure_schema():
     c = base.db()
     cols = _cols(c, 'customers')
     additions = [
+        ('phone_secondary', "TEXT DEFAULT ''"),
         ('pbr_line', 'TEXT'),
         ('mikrotik_profile', 'TEXT'),
         ('router_name', 'TEXT DEFAULT "CCR2116"'),
@@ -105,7 +106,8 @@ def customer_form(row=None):
     new_checked = 'checked' if row is None else ''
     return f'''<form method="post" class="panel formgrid" data-if-existing="{1 if row is not None else 0}">
       <div><label>Nombre completo<input name="name" value="{esc(v('name'))}" required></label></div>
-      <div><label>Teléfono<input name="phone" value="{esc(v('phone'))}"></label></div>
+      <div><label>Teléfono<input type="tel" name="phone" value="{esc(v('phone'))}"></label></div>
+      <div><label>Teléfono secundario (opcional)<input type="tel" name="phone_secondary" value="{esc(v('phone_secondary'))}"></label><small class="muted">Los avisos de WhatsApp se enviarán a ambos números.</small></div>
       <div><label>Cédula / documento<input name="document" value="{esc(v('document'))}"></label></div>
       <div><label>Email<input name="email" value="{esc(v('email'))}"></label></div>
       <div class="full"><label>Dirección<textarea name="address" rows="2">{esc(v('address'))}</textarea></label></div>
@@ -190,7 +192,7 @@ def _post_values():
     return {
         'latitude': latitude, 'longitude': longitude,
         'name': (request.form.get('name') or '').strip(),
-        'phone': request.form.get('phone'), 'document': request.form.get('document'),
+        'phone': request.form.get('phone'), 'phone_secondary': (request.form.get('phone_secondary') or '').strip(), 'document': request.form.get('document'),
         'email': request.form.get('email'), 'address': request.form.get('address'),
         'zone': request.form.get('zone'), 'pppoe': (request.form.get('pppoe') or '').strip(),
         'ip': (request.form.get('ip_address') or '').strip(), 'onu': request.form.get('onu_serial'),
@@ -215,7 +217,7 @@ def customer_new_pbr():
         cur = c.execute('''INSERT INTO customers(code,name,phone,document,email,address,zone,pppoe,ip_address,onu_serial,plan_id,status,due_day,created_at,mikrotik_profile,pbr_line,router_name,service_status,latitude,longitude)
                            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                         (None,x['name'],x['phone'],x['document'],x['email'],x['address'],x['zone'],x['pppoe'],x['ip'],x['onu'],x['plan_id'],x['status'],x['due_day'],date.today().isoformat(),x['profile'],x['pbr'],x['router'],x['status'],x['latitude'],x['longitude']))
-        cid = cur.lastrowid; c.execute('UPDATE customers SET code=? WHERE id=?',(f'IF-{cid:05d}',cid))
+        cid = cur.lastrowid; c.execute('UPDATE customers SET phone_secondary=? WHERE id=?', (x['phone_secondary'],cid)); c.execute('UPDATE customers SET code=? WHERE id=?',(f'IF-{cid:05d}',cid))
         notes = []
         if x['create_in_router']:
             if x['pppoe'] and x['password'] and x['profile']:
@@ -254,6 +256,8 @@ def customer_edit_pbr(id):
         old_pbr = row['pbr_line'] or ''; old_ip = row['ip_address'] or ''; old_profile = row['mikrotik_profile'] or ''
         c.execute('''UPDATE customers SET name=?,phone=?,document=?,email=?,address=?,zone=?,pppoe=?,ip_address=?,onu_serial=?,plan_id=?,status=?,due_day=?,mikrotik_profile=?,pbr_line=?,router_name=?,service_status=? WHERE id=?''',
                   (x['name'],x['phone'],x['document'],x['email'],x['address'],x['zone'],x['pppoe'],x['ip'],x['onu'],x['plan_id'],x['status'],x['due_day'],x['profile'],x['pbr'],x['router'],x['status'],id))
+        if 'phone_secondary' in request.form:
+            c.execute('UPDATE customers SET phone_secondary=? WHERE id=?', (x['phone_secondary'],id))
         if 'latitude' in request.form or 'longitude' in request.form:
             c.execute('UPDATE customers SET latitude=?,longitude=? WHERE id=?', (x['latitude'],x['longitude'],id))
         notes=[]

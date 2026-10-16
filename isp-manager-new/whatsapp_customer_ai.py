@@ -67,8 +67,9 @@ def classify(text):
 def reply(c, phone, intent):
     # Select only the sender's unambiguous registered account. Never trust an
     # account number, name or identity supplied in the message or by the model.
-    matches = [r for r in c.execute("SELECT id,phone FROM customers WHERE COALESCE(status,'')<>'ELIMINADO'")
-               if wa._wa_phone(r['phone']) == phone]
+    from customer_phones import recipients
+    matches = [r for r in c.execute("SELECT * FROM customers WHERE COALESCE(status,'')<>'ELIMINADO'")
+               if phone in recipients(r)]
     customer_id = matches[0]['id'] if len(matches)==1 else None
     if intent in ('factura','plan') and customer_id is None:
         return 'Un asesor debe verificar tu cuenta antes de consultar esos datos. Escribe ASESOR para atención personal.'

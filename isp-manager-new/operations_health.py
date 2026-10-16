@@ -37,12 +37,12 @@ def prepare_due_notices():
         if not enabled or enabled[0] != '1':
             return 0
         today = date.today().isoformat()
-        rows = c.execute("""SELECT i.id, i.amount, i.customer_id, cu.name, cu.phone,
+        rows = c.execute("""SELECT i.id, i.amount, i.customer_id, cu.name, cu.phone, cu.phone_secondary,
                      COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id=i.id),0) paid
                      FROM invoices i JOIN customers cu ON cu.id=i.customer_id
                      WHERE i.status='PENDIENTE' AND i.due_date=?
                        AND COALESCE(cu.status,'ACTIVO')<>'ELIMINADO'
-                       AND COALESCE(TRIM(cu.phone),'')<>''""", (today,)).fetchall()
+                       AND (COALESCE(TRIM(cu.phone),'')<>'' OR COALESCE(TRIM(cu.phone_secondary),'')<>'')""", (today,)).fetchall()
         count = 0
         for row in rows:
             balance = float(row['amount']) - float(row['paid'])
@@ -53,7 +53,9 @@ def prepare_due_notices():
             if not c.execute('INSERT OR IGNORE INTO notice_events VALUES(?,?)',(key,now)).rowcount:
                 continue
             message = f"Hola {row['name']}, tu factura de INTER Flash vence hoy. Balance pendiente: RD${balance:,.2f}. Si ya pagaste, envíanos tu comprobante."
-            c.execute("INSERT INTO whatsapp_outbox(customer_id,phone,template_code,message,status,created_at) VALUES(?,?,'DUE',?,'PENDIENTE',?)", (row['customer_id'],row['phone'],message,now))
+            from customer_phones import recipients
+            for phone in recipients(row):
+                c.execute("INSERT INTO whatsapp_outbox(customer_id,phone,template_code,message,status,created_at) VALUES(?,?,'DUE',?,'PENDIENTE',?)", (row['customer_id'],phone,message,now))
             count += 1
         c.commit()
         return count

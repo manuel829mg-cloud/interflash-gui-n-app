@@ -75,7 +75,7 @@ def render_pdf(inv, company, banks=(), logo_path=None):
 
 
 def invoice_data(c, invoice_id):
-    row = c.execute('''SELECT i.*,cu.name customer,cu.code customer_code,cu.phone,cu.address,cu.status customer_status,
+    row = c.execute('''SELECT i.*,cu.name customer,cu.code customer_code,cu.phone,cu.phone_secondary,cu.address,cu.status customer_status,
         COALESCE((SELECT SUM(amount) FROM payments WHERE invoice_id=i.id),0) paid_total
         FROM invoices i JOIN customers cu ON cu.id=i.customer_id WHERE i.id=?''',(invoice_id,)).fetchone()
     if not row: raise ValueError('Factura no encontrada.')
@@ -91,7 +91,8 @@ def send_invoice(c, phone, invoice_id, caption=None):
         inv,company,banks = invoice_data(c,int(invoice_id))
         if inv['status']!='PAGADA' or inv['customer_status']=='ELIMINADO':
             raise ValueError('Factura anulada o cliente eliminado; no se envió el documento.')
-        if wa._wa_phone(inv['phone']) != wa._wa_phone(phone):
+        from customer_phones import recipients
+        if wa._wa_phone(phone) not in recipients(inv):
             raise ValueError('El teléfono del cliente cambió; revisa el destinatario antes de reenviar.')
         if not waha.enabled(): raise ValueError('El envío de factura PDF requiere el proveedor WAHA conectado.')
         if not re.fullmatch(r'[1-9][0-9]{7,14}',wa._wa_phone(phone)):

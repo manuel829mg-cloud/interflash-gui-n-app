@@ -46,7 +46,9 @@ def classify(text):
     simple = ''.join(ch for ch in unicodedata.normalize('NFD', text.lower().strip())
                      if unicodedata.category(ch) != 'Mn')
     known = {'1':'factura','2':'bancos','3':'pago','4':'soporte',
-             'menu':'saludo','hola':'saludo','asesor':'asesor'}
+             'menu':'saludo','hola':'saludo','asesor':'asesor',
+             'cuenta':'bancos','cuentas':'bancos',
+             'cuenta bancaria':'bancos','cuentas bancarias':'bancos'}
     if simple in known:
         return known[simple]
     key = finance_ai.get_key()

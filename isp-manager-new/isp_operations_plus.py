@@ -288,7 +288,8 @@ def customers_plus():
         row_class = 'overdue-row' if overdue else ''
         if overdue_filter:
             # Acciones compactas de cobranza, según la referencia visual.
-            actions_html = f'''<a class="ico debt-promise" title="Promesa de pago" aria-label="Promesa de pago para {esc(r['name'])}" href="{url_for('promise_new',customer_id=r['id'])}"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="m2 12 4-4 4 2 3-2 5 1 4 4-5 5-3-1-2 2-3-2-2 1-5-6Z"/><path d="m10 10 3 3 4 2M7 13l3 3M12 8l-2 3"/></svg></a>
+            actions_html = f'''<a class="ico wa debt-reminder" title="Enviar recordatorio de pago por WhatsApp" aria-label="Recordatorio de pago para {esc(r['name'])}" href="{url_for('customer_payment_reminder',id=r['id'])}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9H13a8.5 8.5 0 0 1 8 8v.5Z"/><path d="M8 8c0 4 4 8 8 8l1-2-3-1-1 1-3-3 1-1-1-3Z"/></svg></a>
+            <a class="ico debt-promise" title="Promesa de pago" aria-label="Promesa de pago para {esc(r['name'])}" href="{url_for('promise_new',customer_id=r['id'])}"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="m2 12 4-4 4 2 3-2 5 1 4 4-5 5-3-1-2 2-3-2-2 1-5-6Z"/><path d="m10 10 3 3 4 2M7 13l3 3M12 8l-2 3"/></svg></a>
             <a class="ico debt-edit" title="Editar cliente" aria-label="Editar {esc(r['name'])}" href="{url_for('customer_edit',id=r['id'])}">{icon_edit}</a>
             <a class="ico debt-pay" title="Cobrar" aria-label="Cobrar a {esc(r['name'])}" href="{url_for('customer_collect',id=r['id'])}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M17 6c-2-2-9-2-9 2 0 5 9 2 9 7 0 4-7 5-10 2"/></svg></a>'''
         else:
@@ -328,7 +329,7 @@ def customers_plus():
     .clients-table .icon-actions a.ico.debt-promise,.clients-table .icon-actions a.ico.debt-promise:hover{background-color:#f97316!important;color:#fff!important;border:2px solid #fdba74!important}
     .clients-table .icon-actions a.ico.debt-edit,.clients-table .icon-actions a.ico.debt-edit:hover{background-color:#7c3aed!important;color:#fff!important;border:2px solid #a78bfa!important}
     .clients-table .icon-actions a.ico.debt-pay,.clients-table .icon-actions a.ico.debt-pay:hover{background-color:#16a34a!important;color:#fff!important;border:2px solid #86efac!important}
-    .clients-table .icon-actions a.ico svg{stroke:#fff!important;opacity:1!important}.ico.debt-promise svg{width:28px;height:28px;stroke:#fff;fill:none}.ico.debt-edit svg,.ico.debt-pay svg{width:22px;height:22px}.ico.service-suspended{background:#4a161b;color:#ff7b86;border-color:#b94350}.ico.service-suspended:hover{background:#65212a;color:#ffacb4}.ico.service-active{background:#063f2a;color:#39e998;border-color:#148854}.ico.service-active:hover{background:#095537;color:#8affc5}.ico.wa{color:#3ee38f}.ico.warnx{color:#ffcb69}.ico.good{color:#6af0ac}.ico.danger{color:#ff8791}.danger-text{color:#ff7b86}.good-text{color:#5ce3a0}.overdue-row{background:#3b15192e;box-shadow:inset 3px 0 #e34855}.toolbar2{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}.toolbar2 .field{flex:1;min-width:250px}.quick-links{display:flex;gap:8px;flex-wrap:wrap}
+    .clients-table .icon-actions a.ico svg{stroke:#fff!important;opacity:1!important}.ico.debt-promise svg{width:28px;height:28px;stroke:#fff;fill:none}.ico.debt-edit svg,.ico.debt-pay svg{width:22px;height:22px}.ico.service-suspended{background:#4a161b;color:#ff7b86;border-color:#b94350}.ico.service-suspended:hover{background:#65212a;color:#ffacb4}.ico.service-active{background:#063f2a;color:#39e998;border-color:#148854}.ico.service-active:hover{background:#095537;color:#8affc5}.ico.wa{color:#3ee38f}.ico.debt-reminder{background:#087c50;color:#fff;border:2px solid #5de6a4;width:40px;height:40px}.ico.warnx{color:#ffcb69}.ico.good{color:#6af0ac}.ico.danger{color:#ff8791}.danger-text{color:#ff7b86}.good-text{color:#5ce3a0}.overdue-row{background:#3b15192e;box-shadow:inset 3px 0 #e34855}.toolbar2{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}.toolbar2 .field{flex:1;min-width:250px}.quick-links{display:flex;gap:8px;flex-wrap:wrap}
     @media(max-width:1300px){.c-zone,.c-pay{display:none}.c-client{width:24%}.c-actions{width:20%}}
     @media(max-width:1050px){.c-plan{display:none}.c-client{width:27%}.c-pppoe{width:18%}.c-actions{width:25%}}
     @media(max-width:780px){.clients-table thead{display:none}.clients-table,.clients-table tbody,.clients-table tr,.clients-table td{display:block;width:100%!important}.clients-table tr{background:#0b1725;border:1px solid #22374e;border-radius:12px;margin-bottom:10px;padding:10px}.clients-table td{border:0;padding:5px 0}.c-zone,.c-plan,.c-pay{display:block}.icon-actions{margin-top:6px}}
@@ -813,7 +814,89 @@ def customer_collect(id):
     return redirect(url_for('customers',overdue=1))
 
 
+
+def customer_payment_reminder(id):
+    """Preview a current balance; send only after an authenticated confirmation."""
+    import secrets
+    import hmac
+    import hashlib
+    import whatsapp_suite as wa
+    from flask import abort
+    if not base.logged_in():
+        return redirect(url_for('login'))
+    if (session.get('role') or 'ADMIN').upper() not in ('ADMIN', 'CAJA', 'COBRADOR'):
+        abort(403)
+    c = base.db()
+    try:
+        cu = c.execute("SELECT * FROM customers WHERE id=? AND COALESCE(status,'ACTIVO')<>'ELIMINADO'", (id,)).fetchone()
+        if not cu:
+            abort(404)
+        invoices = c.execute("""SELECT i.due_date,
+            MAX(0,COALESCE(i.amount,0)+COALESCE(i.late_fee,0)-
+            COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id=i.id),0)) balance
+            FROM invoices i WHERE i.customer_id=?
+            AND UPPER(COALESCE(i.status,'PENDIENTE')) NOT IN ('PAGADA','ANULADA','CANCELADA')
+            ORDER BY i.due_date,i.id""", (id,)).fetchall()
+        outstanding = [i for i in invoices if i['balance'] > 0]
+        debt = sum(float(i['balance']) for i in outstanding)
+        phone = wa._wa_phone(cu['phone'])
+        back = url_for('customers', overdue=1)
+        if debt <= 0 or not re.fullmatch(r'[1-9][0-9]{7,14}', phone or ''):
+            flash('El cliente no tiene deuda pendiente o su teléfono no es válido.')
+            return redirect(back)
+        due = outstanding[0]['due_date'] or 'sin fecha'
+        message = (f"Hola {cu['name']}, INTER Flash te recuerda que tienes un saldo pendiente "
+                   f"de RD${debt:,.2f}. Vencimiento de la factura pendiente más antigua: {due}. "
+                   "Si ya realizaste el pago, envíanos tu comprobante. Gracias.")
+        fingerprint = hashlib.sha256((str(id)+'|'+phone+'|'+message).encode()).hexdigest()
+        if request.method == 'POST':
+            token = request.form.get('csrf', '')
+            saved = session.get('payment_reminder_preview') or {}
+            if not token or not hmac.compare_digest(saved.get('token', ''), token) or saved.get('customer_id') != id:
+                abort(403)
+            session.pop('payment_reminder_preview', None)
+            if saved.get('fingerprint') != fingerprint:
+                flash('El saldo o el teléfono cambió. Revisa el recordatorio de nuevo.')
+                return redirect(url_for('customer_payment_reminder', id=id))
+            # A durable unique key also blocks repeated POSTs from the same preview.
+            c.execute('BEGIN IMMEDIATE')
+            if not c.execute("INSERT OR IGNORE INTO whatsapp_event_keys(event_key) VALUES(?)",
+                             ('MANUAL_REMINDER:'+token,)).rowcount:
+                c.rollback()
+                flash('Este recordatorio ya fue registrado. Revisa la cola de WhatsApp.')
+                return redirect(back)
+            thread = wa._thread_for_phone(c, phone, cu['name'], id)
+            qid = c.execute("""INSERT INTO whatsapp_queue
+                (thread_id,customer_id,phone,kind,body,status,created_at)
+                VALUES(?,?,?,'text',?,'PENDIENTE',?)""",
+                (thread['id'], id, phone, message, wa._now())).lastrowid
+            c.commit()
+            job = c.execute('SELECT * FROM whatsapp_queue WHERE id=?', (qid,)).fetchone()
+            ok, error = wa._process_queue_item(c, job)
+            c.commit()
+            flash('El proveedor aceptó el recordatorio; revisa la cola para confirmar la entrega.'
+                  if ok else 'No se confirmó el envío. Revisa la cola de WhatsApp antes de reintentar.')
+            return redirect(back)
+        token = secrets.token_urlsafe(32)
+        session['payment_reminder_preview'] = {'token': token, 'customer_id': id, 'fingerprint': fingerprint}
+        body = f'''<div class="head"><div><h1>Recordatorio de pago</h1></div></div>
+        <div class="panel"><p>Cliente: <b>{esc(cu['name'])}</b></p>
+        <p>WhatsApp: <b>+{esc(phone)}</b></p><p>Saldo pendiente: <b>RD${debt:,.2f}</b></p>
+        <p>Vencimiento más antiguo: {esc(due)}</p>
+        <div style="white-space:pre-wrap;padding:16px;border:1px solid #29425b;border-radius:8px">{esc(message)}</div>
+        <form method="post" style="margin-top:16px" onsubmit="this.querySelector('button').disabled=true">
+        <input type="hidden" name="csrf" value="{esc(token)}">
+        <button class="btn green" type="submit">Enviar recordatorio por WhatsApp</button>
+        <a class="btn" href="{back}">Cancelar</a></form>
+        <p class="muted">Envío manual al número indicado mediante el WhatsApp conectado.
+        Consulta el estado de entrega en <a href="/whatsapp/queue">Cola de mensajes</a>.</p></div>'''
+        return base.shell('Recordatorio de pago', body, 'customers')
+    finally:
+        c.close()
+
+
 def setup(app):
+    app.add_url_rule('/customers/<int:id>/payment-reminder', endpoint='customer_payment_reminder', view_func=customer_payment_reminder, methods=['GET','POST'])
     app.add_url_rule('/customers/<int:id>/collect', endpoint='customer_collect', view_func=customer_collect, methods=['GET'])
     _backfill_pppoe_phones()
     ensure_schema()

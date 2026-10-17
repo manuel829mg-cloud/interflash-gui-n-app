@@ -91,10 +91,8 @@ def reply(c, phone, intent):
                         (customer_id,)).fetchone()
         return 'Tu plan registrado en INTER Flash es: '+str(row['name'])+'.' if row and row['name'] else 'No tengo un plan registrado para informarte. Escribe ASESOR.'
     if intent == 'bancos':
-        rows = c.execute("SELECT bank,account_type,account_number,label FROM bank_accounts WHERE active=1 AND COALESCE(account_number,'')<>'' ORDER BY id").fetchall()
-        return ('Cuentas de INTER Flash:\n'+'\n\n'.join(
-            str(r['bank'])+' · '+str(r['account_type'] or '')+'\n'+str(r['account_number'])+'\n'+str(r['label'] or '')
-            for r in rows))[:4000] if rows else 'Escribe ASESOR para solicitar los datos de pago.'
+        return ('Cuentas de ahorro de INTER Flash a nombre de Manuel Gómez. '
+                'Después de realizar el pago, envíanos el comprobante.')
     if intent == 'pago':
         return ('Gracias. Indica banco, monto, fecha y referencia del pago. Un asesor debe verificarlo. '
                 'Este mensaje no confirma el pago ni reactiva el servicio. '
@@ -107,6 +105,31 @@ def reply(c, phone, intent):
     if intent == 'asesor':
         return 'Tu solicitud queda en esta conversación para atención personal. La IA queda pausada 24 horas; escribe MENÚ para volver.'
     return MENU if intent == 'saludo' else 'Puedo ayudarte con tu factura, cuentas bancarias, plan o soporte de INTER Flash. Escribe ASESOR si necesitas atención personal.'
+
+
+def send_bank_accounts_image(phone, caption):
+    """Send the supplied bank card once, without changing account data."""
+    import re
+    from pathlib import Path
+    if not re.fullmatch(r'[1-9][0-9]{7,14}', phone):
+        return False, '', 'Número de teléfono inválido.'
+    try:
+        data = (Path(__file__).resolve().parent / 'assets' / 'bank_accounts.jpg.b64').read_text().strip()
+        if not data:
+            return False, '', 'Imagen de cuentas no disponible.'
+        cfg = waha.config()
+        result = waha.api('/api/sendImage', {
+            'session': cfg['session_name'], 'chatId': phone + '@c.us',
+            'file': {'mimetype': 'image/jpeg', 'filename': 'cuentas-interflash.jpg', 'data': data},
+            'caption': caption,
+        }, cfg)
+        mid = result.get('id')
+        if not isinstance(mid, str) or not mid:
+            return False, '', 'WAHA no confirmó la imagen. Revisa el chat antes de reenviar.'
+        return True, 'waha:' + cfg['session_name'] + ':' + mid, ''
+    except (OSError, waha.APIError):
+        return False, '', 'No se confirmó el envío de la imagen de cuentas. Revisa el chat antes de reenviar.'
+
 
 def finish(mid, state, detail=''):
     c=base.db()
@@ -174,7 +197,11 @@ def process_one():
         finally:
             c.close()
         # A single attempt only. Ambiguous failures are never retried automatically.
-        ok,pid,error=waha.send_text(phone,answer)
+        if intent == 'bancos':
+            ok,pid,error=send_bank_accounts_image(phone,answer)
+            answer='[Imagen de cuentas bancarias] '+answer
+        else:
+            ok,pid,error=waha.send_text(phone,answer)
         c=base.db()
         try:
             wa._record_outgoing(c,row['thread_id'],answer,pid,'ACEPTADO' if ok else 'ERROR',error)

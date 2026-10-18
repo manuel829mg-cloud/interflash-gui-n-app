@@ -68,13 +68,21 @@ def api(path,values=None,cfg=None,method=None):
     if not isinstance(result,(dict,list)):raise APIError('WAHA devolvió una respuesta inválida.')
     return result
 
+def message_id(data):
+    """Use the same provider ID for send responses and webhook acknowledgements."""
+    mid=data.get('id') if isinstance(data,dict) else None
+    if isinstance(mid,dict):
+        mid=mid.get('_serialized')
+    return mid if isinstance(mid,str) and mid.strip() else None
+
+
 def send_text(phone,body):
     cfg=config()
     if not re.fullmatch(r'[1-9][0-9]{7,14}',phone):return False,'','Número de teléfono inválido.'
     try:
         result=api('/api/sendText',{'session':cfg['session_name'],'chatId':phone+'@c.us','text':body[:4096]},cfg)
-        mid=result.get('id')
-        if not isinstance(mid,str) or not mid:raise APIError('WAHA no confirmó el mensaje. Comprueba el chat antes de reenviar.')
+        mid=message_id(result)
+        if not mid:raise APIError('WAHA no confirmó el mensaje. Comprueba el chat antes de reenviar.')
         return True,'waha:'+cfg['session_name']+':'+mid,''
     except APIError as exc:return False,'',str(exc)
 
@@ -172,8 +180,8 @@ def webhook():
     if not isinstance(event,dict) or event.get('session')!=cfg['session_name']:abort(400)
     data=event.get('payload')
     if not isinstance(data,dict):abort(400)
-    mid=data.get('id')
-    if not isinstance(mid,str) or not mid:return jsonify(ok=True)
+    mid=message_id(data)
+    if not mid:return jsonify(ok=True)
     pid='waha:'+cfg['session_name']+':'+mid
     phone=None
     is_incoming=event.get('event') in ('message','message.any') and data.get('fromMe') is False

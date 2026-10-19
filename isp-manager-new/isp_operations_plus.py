@@ -285,6 +285,7 @@ def customers_plus():
         map_url = _customer_map_url(r)
         map_icon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>'
         map_btn = f'<a class="ico" title="Ver ubicación en el mapa" aria-label="Ver ubicación de {esc(r["name"])}" href="{esc(map_url)}" target="_blank" rel="noopener noreferrer">{map_icon}</a>' if map_url else f'<a class="ico" title="Agregar ubicación" aria-label="Agregar ubicación de {esc(r["name"])}" href="{url_for("customer_location",id=r["id"])}">{map_icon}</a>'
+        promise_btn = f'''<a class="ico debt-promise" title="Promesa de pago" aria-label="Promesa de pago para {esc(r['name'])}" href="{url_for('promise_new',customer_id=r['id'])}"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="m2 12 4-4 4 2 3-2 5 1 4 4-5 5-3-1-2 2-3-2-2 1-5-6Z"/><path d="m10 10 3 3 4 2M7 13l3 3M12 8l-2 3"/></svg></a>''' if service_suspended else ''
         row_class = 'overdue-row' if overdue else ''
         if overdue_filter:
             # Acciones compactas de cobranza, según la referencia visual.
@@ -298,6 +299,7 @@ def customers_plus():
             <a class="ico" title="Ficha" href="{url_for('customer_profile',id=r['id'])}">{icon_doc}</a>
             {wa_btn}
             {map_btn}
+            {promise_btn}
             <a class="ico" title="Editar" href="{url_for('customer_edit',id=r['id'])}">{icon_edit}</a>
             <form method="post" action="{url_for('customer_service_action',id=r['id'],action=service_action)}"><button class="ico {service_cls}" style="{service_style}" title="{service_label}" aria-label="{service_label}" onclick="return confirm('¿{service_title} este cliente?')">{service_icon}</button></form>
             <form method="post" action="{url_for('customer_service_action',id=r['id'],action='DELETE')}"><button class="ico danger" title="Eliminar" onclick="return confirm('¿Enviar este cliente a la papelera y eliminar su PPPoE del MikroTik?')">{icon_trash}</button></form>'''

@@ -822,6 +822,8 @@ def setup(app):
     ultra.setup(app)
     whapi.setup(app)
     greenapi.setup(app)
+    import payment_reports
+    payment_reports.schema()
     waha.setup(app)
     import whatsapp_menu
     whatsapp_menu.setup(app)

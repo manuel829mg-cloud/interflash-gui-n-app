@@ -206,7 +206,12 @@ def webhook():
                 customer=wa._customer_by_phone(c,phone)
                 t=wa._thread_for_phone(c,phone,customer['name'] if customer else phone,customer['id'] if customer else None)
                 body=str(data.get('body') or '[Archivo o mensaje sin texto]')[:16000]
-                c.execute("INSERT INTO whatsapp_messages(thread_id,direction,message_type,body,provider_id,status,created_at) VALUES(?,'IN','text',?,?,'RECIBIDO',?)",(t['id'],body,pid,wa._now()))
+                import payment_reports
+                kind = payment_reports.attachment_type(data)
+                if kind:
+                    body = '[Archivo: posible comprobante] ' + body
+                mid = c.execute("INSERT INTO whatsapp_messages(thread_id,direction,message_type,body,provider_id,status,created_at) VALUES(?,'IN',?,?,?,'RECIBIDO',?)",(t['id'],kind or 'text',body,pid,wa._now())).lastrowid
+                payment_reports.capture(c,mid,t['id'],phone,kind,wa._now())
                 c.execute('UPDATE whatsapp_threads SET last_message=?,last_at=?,unread=unread+1 WHERE id=?',(body[:500],wa._now(),t['id']))
                 c.execute('UPDATE whatsapp_webhook_health SET last_event=?,last_incoming=? WHERE id=1',(wa._now(),wa._now()))
         elif event.get('event')=='message.ack' and data.get('fromMe') is True:

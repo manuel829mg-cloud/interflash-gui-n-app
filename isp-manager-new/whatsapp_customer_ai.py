@@ -25,9 +25,7 @@ MENU = ('Soy el asistente virtual de INTER Flash. Puedes preguntarme por tu sald
         'Escribe ASESOR para atención personal.')
 
 def in_service_hours(now=None):
-    """Daily customer replies: 21:00 inclusive to 08:00 exclusive, Dominican time."""
-    local = (now or datetime.now(timezone.utc)).astimezone(timezone(timedelta(hours=-4)))
-    return local.hour >= 21 or local.hour < 8
+    return True
 
 def schema():
     c = base.db()
@@ -233,7 +231,7 @@ def settings():
     finally:
         c.close()
     body='<div class="panel"><h1>IA de WhatsApp</h1><p>Estado: '+('ACTIVA' if cfg[0] else 'PAUSADA')+'</p>'
-    body+='<p>Horario diario: 9:00 p. m. a 8:00 a. m. (República Dominicana). Fuera de ese horario no responde automáticamente.</p>'
+    body+='<p>Horario: 24 horas, todos los días. Escribe CUENTA o CUENTAS para recibir la imagen de cuentas bancarias.</p>'
     body+='<p>Interpreta consultas y responde con los datos de la cuenta vinculada al número remitente. No modifica clientes, pagos, planes ni MikroTik. Comprobantes y soporte requieren atención personal.</p>'
     body+='<p>Hasta 300 consultas al día y 10 por número. Los mensajes anteriores no se responden automáticamente. La API de OpenAI tiene consumo facturable.</p>'
     body+='<p>Hoy: '+wa.esc(', '.join(str(r['state'])+': '+str(r['n']) for r in counts) or 'Sin consultas')+'</p>'

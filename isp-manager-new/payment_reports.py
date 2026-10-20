@@ -112,20 +112,46 @@ def detail(id):
         if not r: abort(404)
         if request.method=='POST':
             check_csrf()
+            if request.form.get('action') == 'pay':
+                if request.form.get('verified') != '1': abort(400)
+                from payment_flow import record_payment
+                try:
+                    pid=record_payment(customer_id=int(request.form.get('customer_id','0')),
+                        invoice_id=int(request.form.get('invoice_id','0')),
+                        amount=request.form.get('amount'),method=request.form.get('method','TRANSFERENCIA'),
+                        reference=request.form.get('reference',''),actor=session.get('user') or base.ADMIN_USER,
+                        proof='Comprobante WhatsApp #'+str(id),report_id=id)
+                except (ValueError,TypeError) as exc:
+                    flash(str(exc)); return redirect(url_for('payment_report_detail',id=id))
+                flash('Pago registrado y aviso cerrado.')
+                return redirect(url_for('payment_receipt',id=pid))
             from datetime import datetime
-            c.execute("UPDATE whatsapp_payment_reports SET status='REVISADO',reviewed_at=? WHERE id=?",(datetime.now().isoformat(timespec='seconds'),id))
+            c.execute("UPDATE whatsapp_payment_reports SET status='REVISADO',reviewed_at=? WHERE id=? AND status='PENDIENTE'",(datetime.now().isoformat(timespec='seconds'),id))
             c.commit(); flash('Reporte revisado. Esta acción no registra ningún pago.')
             return redirect(url_for('payment_report_detail',id=id))
+        customers=c.execute("SELECT id,name FROM customers WHERE COALESCE(status,'')<>'ELIMINADO' ORDER BY name").fetchall()
+        selected=r['customer_id'] or request.args.get('customer_id',type=int)
         invoices=c.execute('''SELECT i.*,i.amount-COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id=i.id),0) balance
-            FROM invoices i WHERE i.customer_id=? AND i.status='PENDIENTE' ORDER BY i.due_date,i.id''',(r['customer_id'],)).fetchall() if r['customer_id'] else []
+            FROM invoices i WHERE i.customer_id=? AND i.status='PENDIENTE' ORDER BY i.due_date,i.id''',(selected,)).fetchall() if selected else []
     finally: c.close()
     body=f'<div class="head"><h1>{esc(r["name"] or "Cliente por identificar")}</h1></div><div class="panel"><span class="tag warn">{esc(r["status"])}</span><p>Posible comprobante recibido · {esc(r["phone"])} · {esc(r["created_at"])}</p><p>{esc(r["body"] or "Archivo recibido")}</p><p>Abre el WhatsApp del negocio para ver el archivo original. Comprueba el ingreso en tu banco antes de registrar el pago.</p><a class="btn" href="{url_for("whatsapp_chat",thread=r["thread_id"])}">Abrir conversación</a> '
     if r['customer_id']: body+=f'<a class="btn" href="{url_for("customer_profile",id=r["customer_id"])}">Ficha del cliente</a>'
     else: body+='<p class="notice">El número no identifica a un solo cliente. Confirma el titular antes de registrar el pago.</p>'
-    for inv in invoices:
-        if inv['balance']>0:
-            body+=f'<p>Factura #{inv["id"]} · Balance RD${inv["balance"]:,.2f} <a class="btn blue" href="{url_for("invoice_detail",id=inv["id"])}#registrar-pago">Revisar y confirmar pago</a></p>'
-    if r['customer_id'] and not invoices: body+='<p>No hay facturas pendientes para este cliente.</p>'
+    if r['status']=='PENDIENTE':
+        if not r['customer_id']:
+            body+='<form method="get"><label>Selecciona el cliente <select name="customer_id" required><option value="">Elegir cliente</option>'
+            for cu in customers:
+                chosen=' selected' if cu['id']==selected else ''
+                body+=f'<option value="{cu["id"]}"{chosen}>{esc(cu["name"])}</option>'
+            body+='</select></label><button class="btn">Ver facturas pendientes</button></form>'
+        payable=[inv for inv in invoices if inv['balance']>0]
+        if payable:
+            body+=f'<h3>Registrar pago</h3><form method="post"><input type="hidden" name="csrf" value="{csrf()}"><input type="hidden" name="action" value="pay"><input type="hidden" name="customer_id" value="{selected}"><label>Factura <select name="invoice_id" required>'
+            for inv in payable:
+                body+=f'<option value="{inv["id"]}">Factura #{inv["id"]} · Balance RD${inv["balance"]:,.2f}</option>'
+            body+='</select></label><label>Monto RD$ <input name="amount" type="number" min="0.01" step="0.01" required></label><label>Método <select name="method"><option>TRANSFERENCIA</option><option>DEPOSITO</option><option>EFECTIVO</option></select></label><label>Referencia <input name="reference" maxlength="500"></label><label><input type="checkbox" name="verified" value="1" required> Verifiqué el ingreso y los datos del cliente y la factura</label><button class="btn green">Registrar pago y cerrar aviso</button></form>'
+        elif selected:
+            body+='<p>No hay facturas pendientes para este cliente.</p>'
     body+=f'<form method="post"><input type="hidden" name="csrf" value="{csrf()}"><button class="btn">Marcar reporte revisado</button></form><p class="muted">Marcar revisado solo cierra el aviso; el pago se registra en la factura.</p><a href="{url_for("payment_reports")}">Todos los reportes</a></div>'
     return base.shell('Revisar comprobante',body,'whatsapp_chat')
 

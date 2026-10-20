@@ -65,6 +65,22 @@ class ReportsTests(unittest.TestCase):
         self.assertEqual(self.client.post(path,data={}).status_code,403)
         self.assertEqual(self.client.post(path,data={'csrf':'csrf'}).status_code,302)
         self.assertEqual(self.rows('SELECT status FROM whatsapp_payment_reports')[0][0],'REVISADO')
+    def test_report_payment_atomic_and_duplicate_rejected(self):
+        self.post()
+        rid=self.rows('SELECT id FROM whatsapp_payment_reports')[0][0]
+        c=base.db()
+        iid=c.execute("INSERT INTO invoices(customer_id,concept,amount,issue_date,due_date,status) VALUES(1,'Prueba',100,'2026-10-20','2026-10-30','PENDIENTE')").lastrowid
+        c.commit();c.close()
+        with self.client.session_transaction() as sess:sess.update(auth=True,role='ADMIN',payment_report_csrf='csrf')
+        path='/pagos/reportados/'+str(rid)
+        data=dict(csrf='csrf',action='pay',verified='1',customer_id='1',invoice_id=str(iid),amount='50',method='TRANSFERENCIA')
+        self.assertEqual(self.client.post(path,data={**data,'amount':'101'}).status_code,302)
+        self.assertEqual(self.rows('SELECT status FROM whatsapp_payment_reports')[0][0],'PENDIENTE')
+        self.assertEqual(self.client.post(path,data=data).status_code,302)
+        self.assertEqual(self.rows('SELECT status FROM whatsapp_payment_reports')[0][0],'PAGO_REGISTRADO')
+        self.client.post(path,data=data)
+        self.assertEqual(len(self.rows('SELECT * FROM payments WHERE invoice_id='+str(iid))),1)
+
     def test_no_destination_still_records_without_sending(self):
         c=base.db();c.execute("DELETE FROM app_settings WHERE key='wan_alert_phone'");c.commit();c.close()
         self.post()

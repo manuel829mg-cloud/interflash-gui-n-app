@@ -15,10 +15,17 @@ def money(value):
         raise ValueError('El monto del pago no es válido.')
 
 
-def record_payment(customer_id=None, invoice_id=None, amount=None, method='EFECTIVO', reference='', actor='ADMIN', proof=''):
+def record_payment(customer_id=None, invoice_id=None, amount=None, method='EFECTIVO', reference='', actor='ADMIN', proof='', report_id=None):
     c = base.db()
     try:
         c.execute('BEGIN IMMEDIATE')
+        report = None
+        if report_id:
+            report = c.execute('SELECT * FROM whatsapp_payment_reports WHERE id=?', (report_id,)).fetchone()
+            if not report or report['status'] != 'PENDIENTE':
+                raise ValueError('Este comprobante ya fue revisado o pagado.')
+            if not invoice_id:
+                raise ValueError('Selecciona una factura para este comprobante.')
         inv = c.execute('SELECT * FROM invoices WHERE id=?', (invoice_id,)).fetchone() if invoice_id else None
         if invoice_id and not inv:
             raise ValueError('Factura no encontrada.')
@@ -71,6 +78,10 @@ def record_payment(customer_id=None, invoice_id=None, amount=None, method='EFECT
                 message = f"Hola {cu['name']}, recibimos tu pago de RD${amount:,.2f}. Gracias."
                 from whatsapp_events import enqueue
                 enqueue(c, f'PAYMENT:{pid}', customer_id, 'PAYMENT', message)
+        if report:
+            if report['customer_id'] and report['customer_id'] != customer_id:
+                raise ValueError('El comprobante pertenece a otro cliente.')
+            c.execute("UPDATE whatsapp_payment_reports SET status='PAGO_REGISTRADO',customer_id=?,reviewed_at=? WHERE id=?", (customer_id,now,report_id))
         c.commit()
         return pid
     except Exception:

@@ -1,5 +1,6 @@
 """Fail-closed PPPoE IPv4 assignment guard for the customer create/edit endpoints."""
 import ipaddress
+import re
 import fcntl
 import os
 import tempfile
@@ -229,8 +230,17 @@ def setup(app):
     original_form = pbr_client.customer_form
     def automatic_form(row=None):
         html = original_form(row)
+        html = re.sub(
+            r'(<button\b[^>]*onclick="IFIP.open\(\)"[^>]*>.*?</button>)',
+            lambda match: (
+                '<details class="if-ip-advanced" style="margin-top:6px">'
+                '<summary style="cursor:pointer;padding:10px 0">Opciones avanzadas</summary>'
+                '<div style="padding:6px 0">' + match.group(1) + '</div></details>'
+            ),
+            html, count=1, flags=re.S,
+        )
         return html.replace('IP remota (opcional)', 'IP remota (automática)').replace(
             'Consulta los pools del MikroTik y selecciona una IP disponible.',
-            'Deja el campo vacío: se asigna una IP libre compatible al guardar. Al editar, se conserva la IP válida. También puedes elegirla manualmente.')
+            'Deja el campo vacío: se asigna una IP libre compatible al guardar. Al editar, se conserva la IP válida. La selección manual está en Opciones avanzadas.')
     pbr_client.customer_form = automatic_form
 

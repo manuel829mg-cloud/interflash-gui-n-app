@@ -508,8 +508,8 @@ def chatbot_page():
         c.close()
     ai_enabled = bool(ai_cfg and ai_cfg['enabled'])
     ai_in_hours = customer_ai.in_service_hours()
-    ai_status = 'PAUSADA' if not ai_enabled else ('ACTIVA · EN HORARIO' if ai_in_hours else 'ACTIVADA · FUERA DE HORARIO')
-    body += f'<div class="panel" id="wa-automation"><h3>Inteligencia artificial</h3><span class="tag {"ok" if ai_enabled and ai_in_hours else "warn"}">{ai_status}</span><p>Horario diario: 9:00 p. m. a 8:00 a. m. (República Dominicana). Fuera de ese horario no responde automáticamente.</p><a class="btn" href="{url_for("whatsapp_customer_ai")}">Ver estado y configurar IA</a></div>'
+    ai_status = 'PAUSADA' if not ai_enabled else ('ACTIVA · 24/7' if ai_in_hours else 'ACTIVADA · FUERA DE HORARIO')
+    body += f'<div class="panel" id="wa-automation"><h3>Inteligencia artificial</h3><span class="tag {"ok" if ai_enabled and ai_in_hours else "warn"}">{ai_status}</span><p>Disponible las 24 horas, todos los días. CUENTA o CUENTAS envía automáticamente la imagen de cuentas bancarias.</p><a class="btn" href="{url_for("whatsapp_customer_ai")}">Ver estado y configurar IA</a></div>'
     body += whatsapp_menu.panel()
     return base.shell('Chatbot WhatsApp',body,'whatsapp_inbox')
 

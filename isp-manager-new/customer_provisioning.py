@@ -332,12 +332,10 @@ window.IFPROFILE=(function(){
     const rr=document.querySelector('[name="router_name"]');if(rr)rr.addEventListener('change',async()=>{fill(await read());});
     const form=s&&s.closest('form');
     if(form){form.addEventListener('submit',e=>{
-      const line=document.querySelector('[name="pbr_line"]');
-      const ip=document.querySelector('[name="ip_address"]');
       const create=document.querySelector('[name="create_in_router"]');
       const user=document.querySelector('[name="pppoe"]');
       const pass=document.querySelector('[name="pppoe_password"]');
-      if(line&&line.value&&ip&&!ip.value.trim()){e.preventDefault();alert('Selecciona una IP remota libre antes de aplicar PBR.');if(window.IFIP)IFIP.open();return;}
+      // Empty IPs are assigned and validated by ip_assignment_guard on save.
       if(create&&create.checked){
         if(!user||!user.value.trim()||((form.dataset.ifExisting!=='1')&&(!pass||!pass.value))||!s||!s.value){e.preventDefault();alert('Completa el usuario y la contraseña. El plan debe tener un perfil asociado a la línea elegida.');return;}
       }

@@ -1,6 +1,7 @@
 """WAHA customer AI: bounded intent classification and read-only account replies."""
 import json
 import os
+import re
 import secrets
 import threading
 import time
@@ -23,6 +24,15 @@ No ejecutes acciones ni respondas la pregunta."""
 MENU = ('Soy el asistente virtual de INTER Flash. Puedes preguntarme por tu saldo, '
         'vencimiento, cuentas bancarias o plan, y reportar problemas de internet. '
         'Escribe ASESOR para atención personal.')
+
+def is_collection_request(text):
+    """Keep requests to collect payment silent, before classification or sending."""
+    normalized = ''.join(ch for ch in unicodedata.normalize('NFD', str(text).lower())
+                         if unicodedata.category(ch) != 'Mn')
+    words = re.findall(r'[a-z0-9]+', normalized)
+    return any(words[i:i + 3] == ['pasa', 'a', 'cobrar']
+               for i in range(max(0, len(words) - 2)))
+
 
 def in_service_hours(now=None):
     return True
@@ -157,7 +167,7 @@ def process_one():
         row=dict(row); mid=row['id']; phone=row['phone']; now=time.time()
         day=date.today().isoformat(); text=str(row['body'] or '').strip()
         c.execute("INSERT INTO whatsapp_customer_ai_jobs VALUES(?,?,?,'PROCESANDO',?,NULL)",(mid,phone,day,now))
-        skip = (not text or text.startswith('[Archivo') or len(text)>1600 or
+        skip = (is_collection_request(text) or not text or text.startswith('[Archivo') or len(text)>1600 or
                 c.execute("SELECT 1 FROM whatsapp_messages WHERE thread_id=? AND id>? AND direction='OUT'",(row['thread_id'],mid)).fetchone() or
                 c.execute("SELECT 1 FROM whatsapp_messages WHERE id=? AND datetime(created_at)<datetime('now','localtime','-5 minutes')",(mid,)).fetchone())
         pause=c.execute('SELECT until FROM whatsapp_customer_ai_pause WHERE phone=?',(phone,)).fetchone()

@@ -275,7 +275,7 @@ def customers_plus():
         service_border = '#b94350' if service_suspended else '#148854'
         service_style = f'background:{service_background}!important;border-color:{service_border}!important;color:{service_color}!important'
         service_icon = service_icon.replace('class="reference-icon"', f'class="reference-icon" style="stroke:{service_color}!important;color:{service_color}!important"')
-        wa_btn = f'<a class="ico wa" title="WhatsApp" target="_blank" href="https://wa.me/{wa}">{icon_wa}</a>' if wa else ''
+        wa_btn = f'<a class="ico wa" title="Abrir chat de WhatsApp" aria-label="Abrir chat de WhatsApp de {esc(r["name"])}" target="_blank" rel="noopener noreferrer" href="https://wa.me/{wa}">{icon_wa}</a>' if wa else ''
         searchable = search_text(' '.join(str(value or '') for value in (
             r['name'], r['phone'], r['document'], r['pppoe'], r['onu_serial'],
             r['code'] or '#' + str(r['id']), r['ip_address'], device_ip
@@ -290,6 +290,7 @@ def customers_plus():
         if overdue_filter:
             # Acciones compactas de cobranza, según la referencia visual.
             actions_html = f'''<a class="ico wa debt-reminder" title="Enviar recordatorio de pago por WhatsApp" aria-label="Recordatorio de pago para {esc(r['name'])}" href="{url_for('customer_payment_reminder',id=r['id'])}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9H13a8.5 8.5 0 0 1 8 8v.5Z"/><path d="M8 8c0 4 4 8 8 8l1-2-3-1-1 1-3-3 1-1-1-3Z"/></svg></a>
+            {wa_btn}
             <a class="ico debt-promise" title="Promesa de pago" aria-label="Promesa de pago para {esc(r['name'])}" href="{url_for('promise_new',customer_id=r['id'])}"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="m2 12 4-4 4 2 3-2 5 1 4 4-5 5-3-1-2 2-3-2-2 1-5-6Z"/><path d="m10 10 3 3 4 2M7 13l3 3M12 8l-2 3"/></svg></a>
             <a class="ico debt-edit" title="Editar cliente" aria-label="Editar {esc(r['name'])}" href="{url_for('customer_edit',id=r['id'])}">{icon_edit}</a>
             <a class="ico debt-pay" title="Cobrar" aria-label="Cobrar a {esc(r['name'])}" href="{url_for('customer_collect',id=r['id'])}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M17 6c-2-2-9-2-9 2 0 5 9 2 9 7 0 4-7 5-10 2"/></svg></a>'''

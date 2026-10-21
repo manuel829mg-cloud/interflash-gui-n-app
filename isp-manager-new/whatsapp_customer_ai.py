@@ -34,6 +34,15 @@ def is_collection_request(text):
                for i in range(max(0, len(words) - 2)))
 
 
+def is_bank_accounts_request(text):
+    normalized = ''.join(ch for ch in unicodedata.normalize('NFD', str(text).lower())
+                         if unicodedata.category(ch) != 'Mn')
+    words = re.findall(r'[a-z0-9]+', normalized)
+    return ('cuenta' in words or 'cuentas' in words or
+            'datos bancarios' in ' '.join(words) or
+            'donde pagar' in ' '.join(words))
+
+
 def in_service_hours(now=None):
     # Dominican Republic uses UTC-4 year-round, independent of server timezone.
     local_tz = timezone(timedelta(hours=-4))
@@ -66,6 +75,8 @@ def classify(text):
              'cuenta bancaria':'bancos','cuentas bancarias':'bancos'}
     if simple in known:
         return known[simple]
+    if is_bank_accounts_request(text):
+        return 'bancos'
     key = finance_ai.get_key()
     if not key:
         raise ValueError('CLAVE_PENDIENTE')
@@ -160,10 +171,6 @@ def process_one():
         cfg=c.execute('SELECT * FROM whatsapp_customer_ai_config WHERE id=1').fetchone()
         if not cfg['enabled'] or not c.execute('SELECT active FROM waha_config WHERE id=1').fetchone()[0]:
             c.rollback(); return
-        if not in_service_hours():
-            # Skip messages outside 22:00–06:00; do not replay them at night.
-            c.execute('UPDATE whatsapp_customer_ai_config SET floor=(SELECT COALESCE(MAX(id),0) FROM whatsapp_messages) WHERE id=1')
-            c.commit(); return
         row=c.execute("""SELECT m.*,t.phone FROM whatsapp_messages m
             JOIN whatsapp_threads t ON t.id=m.thread_id
             WHERE m.id>? AND m.direction='IN' AND m.provider_id LIKE 'waha:%'
@@ -174,11 +181,12 @@ def process_one():
         row=dict(row); mid=row['id']; phone=row['phone']; now=time.time()
         day=date.today().isoformat(); text=str(row['body'] or '').strip()
         c.execute("INSERT INTO whatsapp_customer_ai_jobs VALUES(?,?,?,'PROCESANDO',?,NULL)",(mid,phone,day,now))
-        skip = (is_collection_request(text) or not text or text.startswith('[Archivo') or len(text)>1600 or
+        bank_request = is_bank_accounts_request(text)
+        skip = ((not in_service_hours() and not bank_request) or is_collection_request(text) or not text or text.startswith('[Archivo') or len(text)>1600 or
                 c.execute("SELECT 1 FROM whatsapp_messages WHERE thread_id=? AND id>? AND direction='OUT'",(row['thread_id'],mid)).fetchone() or
                 c.execute("SELECT 1 FROM whatsapp_messages WHERE id=? AND datetime(created_at)<datetime('now','localtime','-5 minutes')",(mid,)).fetchone())
         pause=c.execute('SELECT until FROM whatsapp_customer_ai_pause WHERE phone=?',(phone,)).fetchone()
-        if text.lower() not in ('menu','menú') and pause and pause[0]>now: skip=True
+        if not bank_request and text.lower() not in ('menu','menú') and pause and pause[0]>now: skip=True
         global_count=c.execute("SELECT COUNT(*) FROM whatsapp_customer_ai_jobs WHERE day=? AND state<>'OMITIDO'",(day,)).fetchone()[0]
         phone_count=c.execute("SELECT COUNT(*) FROM whatsapp_customer_ai_jobs WHERE phone=? AND day=? AND state<>'OMITIDO'",(phone,day)).fetchone()[0]
         recent=c.execute("SELECT 1 FROM whatsapp_customer_ai_jobs WHERE phone=? AND message_id<>? AND created>? AND state<>'OMITIDO'",(phone,mid,now-10)).fetchone()
@@ -203,7 +211,7 @@ def process_one():
             enabled=c.execute('SELECT enabled FROM whatsapp_customer_ai_config WHERE id=1').fetchone()[0]
             remote=c.execute('SELECT active,session_name FROM waha_config WHERE id=1').fetchone()
             human=c.execute("SELECT 1 FROM whatsapp_messages WHERE thread_id=? AND id>? AND direction='OUT'",(row['thread_id'],mid)).fetchone()
-            if not in_service_hours() or not enabled or not remote['active'] or not row['provider_id'].startswith('waha:'+remote['session_name']+':') or human:
+            if (not in_service_hours() and intent != 'bancos') or not enabled or not remote['active'] or not row['provider_id'].startswith('waha:'+remote['session_name']+':') or human:
                 c.execute("UPDATE whatsapp_customer_ai_jobs SET state='OMITIDO' WHERE message_id=?",(mid,)); c.commit(); return
             if intent in ('asesor','pago','soporte'):
                 c.execute('INSERT OR REPLACE INTO whatsapp_customer_ai_pause VALUES(?,?)',(phone,time.time()+86400))
@@ -248,7 +256,7 @@ def settings():
     finally:
         c.close()
     body='<div class="panel"><h1>IA de WhatsApp</h1><p>Estado: '+('ACTIVA' if cfg[0] else 'PAUSADA')+'</p>'
-    body+='<p>Horario: de 10:00 p. m. a 6:00 a. m., todos los días (hora de República Dominicana). Escribe CUENTA o CUENTAS para recibir la imagen de cuentas bancarias.</p>'
+    body+='<p>Horario: de 10:00 p. m. a 6:00 a. m., todos los días (hora de República Dominicana). La imagen de cuentas bancarias se envía las 24 horas al pedir CUENTA, CUENTAS o el número de cuenta.</p>'
     body+='<p>Interpreta consultas y responde con los datos de la cuenta vinculada al número remitente. No modifica clientes, pagos, planes ni MikroTik. Comprobantes y soporte requieren atención personal.</p>'
     body+='<p>Hasta 300 consultas al día y 10 por número. Los mensajes anteriores no se responden automáticamente. La API de OpenAI tiene consumo facturable.</p>'
     body+='<p>Hoy: '+wa.esc(', '.join(str(r['state'])+': '+str(r['n']) for r in counts) or 'Sin consultas')+'</p>'

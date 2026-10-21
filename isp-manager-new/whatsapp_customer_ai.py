@@ -27,6 +27,7 @@ MENU = ('Soy el asistente virtual de INTER Flash. Puedes preguntarme por tu sald
 
 NIGHT_AWAY_MESSAGE = ('Gracias por escribir a INTER Flash. A partir de las 10 de la noche, '
                       'nuestra atención personal está fuera de horario. '
+                      'Estaremos disponibles a partir de las 7:00 de la mañana. '
                       'Déjanos tu mensaje y te responderemos cuando retomemos la atención.')
 
 

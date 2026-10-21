@@ -46,10 +46,10 @@ def _event(customer_id, action, detail=''):
 
 
 def _phone_wa(phone):
-    digits = ''.join(ch for ch in str(phone or '') if ch.isdigit())
+    digits = ''.join(ch for ch in str(phone or '') if ch.isascii() and ch.isdigit())
     if len(digits) == 10:
         digits = '1' + digits
-    return digits
+    return digits if 10 <= len(digits) <= 15 and not digits.startswith('0') else ''
 
 
 def _due_date_for(day_value):
@@ -244,7 +244,7 @@ def customers_plus():
     icon_pause = '<svg class="reference-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v9M5.6 5.6a9 9 0 1 0 12.8 0"/></svg>'
     icon_play = '<svg class="reference-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v9M5.6 5.6a9 9 0 1 0 12.8 0"/></svg>'
     icon_trash = '<svg class="reference-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7M14 10v7"/></svg>'
-    icon_wa = '<svg class="reference-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a9 9 0 0 1-13 8L3 21l1.5-5A9 9 0 1 1 21 11.5z"/></svg>'
+    icon_wa = '<svg class="reference-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a9 9 0 0 1-13 8L3 21l1.5-5A9 9 0 1 1 21 11.5z"/><path d="M8 7c0 5 4 9 9 9l1-2-3-1-1 1-3-3 1-1-1-3z"/></svg>'
 
     trs = []
     query_text = search_text(q)
@@ -258,7 +258,7 @@ def customers_plus():
         oldest_due = r['oldest_due'] or ''
         overdue = bool(oldest_due and oldest_due < today.isoformat() and debt > 0)
         due = oldest_due or _due_date_for(r['due_day']).isoformat()
-        wa = _phone_wa(r['phone'])
+        wa = _phone_wa(r['phone']) or _phone_wa(r['phone_secondary'])
         onu_status = (r['onu_status'] or '').upper()
         onu_bad = onu_status in ('OFFLINE','DOWN','LOS','CAIDA','CAÍDA')
         client_extra = []
@@ -289,8 +289,7 @@ def customers_plus():
         row_class = 'overdue-row' if overdue else ''
         if overdue_filter:
             # Acciones compactas de cobranza, según la referencia visual.
-            actions_html = f'''<a class="ico wa debt-reminder" title="Enviar recordatorio de pago por WhatsApp" aria-label="Recordatorio de pago para {esc(r['name'])}" href="{url_for('customer_payment_reminder',id=r['id'])}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9H13a8.5 8.5 0 0 1 8 8v.5Z"/><path d="M8 8c0 4 4 8 8 8l1-2-3-1-1 1-3-3 1-1-1-3Z"/></svg></a>
-            {wa_btn}
+            actions_html = f'''{wa_btn if wa else '<span class="ico wa" aria-disabled="true" title="Este cliente no tiene un teléfono registrado" aria-label="WhatsApp sin teléfono registrado" style="opacity:.4;cursor:not-allowed">'+icon_wa+'</span>'}
             <a class="ico debt-promise" title="Promesa de pago" aria-label="Promesa de pago para {esc(r['name'])}" href="{url_for('promise_new',customer_id=r['id'])}"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="m2 12 4-4 4 2 3-2 5 1 4 4-5 5-3-1-2 2-3-2-2 1-5-6Z"/><path d="m10 10 3 3 4 2M7 13l3 3M12 8l-2 3"/></svg></a>
             <a class="ico debt-edit" title="Editar cliente" aria-label="Editar {esc(r['name'])}" href="{url_for('customer_edit',id=r['id'])}">{icon_edit}</a>
             <a class="ico debt-pay" title="Cobrar" aria-label="Cobrar a {esc(r['name'])}" href="{url_for('customer_collect',id=r['id'])}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M17 6c-2-2-9-2-9 2 0 5 9 2 9 7 0 4-7 5-10 2"/></svg></a>'''

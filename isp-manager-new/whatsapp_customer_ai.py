@@ -35,7 +35,14 @@ def is_collection_request(text):
 
 
 def in_service_hours(now=None):
-    return True
+    # Dominican Republic uses UTC-4 year-round, independent of server timezone.
+    local_tz = timezone(timedelta(hours=-4))
+    now = now or datetime.now(local_tz)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=local_tz)
+    else:
+        now = now.astimezone(local_tz)
+    return now.hour >= 22 or now.hour < 6
 
 def schema():
     c = base.db()
@@ -154,7 +161,7 @@ def process_one():
         if not cfg['enabled'] or not c.execute('SELECT active FROM waha_config WHERE id=1').fetchone()[0]:
             c.rollback(); return
         if not in_service_hours():
-            # Keep daytime messages in the inbox without answering them at night.
+            # Skip messages outside 22:00–06:00; do not replay them at night.
             c.execute('UPDATE whatsapp_customer_ai_config SET floor=(SELECT COALESCE(MAX(id),0) FROM whatsapp_messages) WHERE id=1')
             c.commit(); return
         row=c.execute("""SELECT m.*,t.phone FROM whatsapp_messages m
@@ -241,7 +248,7 @@ def settings():
     finally:
         c.close()
     body='<div class="panel"><h1>IA de WhatsApp</h1><p>Estado: '+('ACTIVA' if cfg[0] else 'PAUSADA')+'</p>'
-    body+='<p>Horario: 24 horas, todos los días. Escribe CUENTA o CUENTAS para recibir la imagen de cuentas bancarias.</p>'
+    body+='<p>Horario: de 10:00 p. m. a 6:00 a. m., todos los días (hora de República Dominicana). Escribe CUENTA o CUENTAS para recibir la imagen de cuentas bancarias.</p>'
     body+='<p>Interpreta consultas y responde con los datos de la cuenta vinculada al número remitente. No modifica clientes, pagos, planes ni MikroTik. Comprobantes y soporte requieren atención personal.</p>'
     body+='<p>Hasta 300 consultas al día y 10 por número. Los mensajes anteriores no se responden automáticamente. La API de OpenAI tiene consumo facturable.</p>'
     body+='<p>Hoy: '+wa.esc(', '.join(str(r['state'])+': '+str(r['n']) for r in counts) or 'Sin consultas')+'</p>'

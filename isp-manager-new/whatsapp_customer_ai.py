@@ -25,6 +25,11 @@ MENU = ('Soy el asistente virtual de INTER Flash. Puedes preguntarme por tu sald
         'vencimiento, cuentas bancarias o plan, y reportar problemas de internet. '
         'Escribe ASESOR para atención personal.')
 
+NIGHT_AWAY_MESSAGE = ('Gracias por escribir a INTER Flash. A partir de las 10 de la noche, '
+                      'nuestra atención personal está fuera de horario. '
+                      'Déjanos tu mensaje y te responderemos cuando retomemos la atención.')
+
+
 def is_collection_request(text):
     """Keep requests to collect payment silent, before classification or sending."""
     normalized = ''.join(ch for ch in unicodedata.normalize('NFD', str(text).lower())
@@ -198,10 +203,11 @@ def process_one():
     finally:
         c.close()
     try:
-        intent=classify(text)
+        # Bank images stay available 24/7; other night messages get the approved notice.
+        intent='bancos' if bank_request else 'otro'
         c=base.db()
         try:
-            answer=reply(c,phone,intent)
+            answer=reply(c,phone,intent) if intent == 'bancos' else NIGHT_AWAY_MESSAGE
         finally:
             c.close()
         # Recheck after the external AI call; human replies take precedence.

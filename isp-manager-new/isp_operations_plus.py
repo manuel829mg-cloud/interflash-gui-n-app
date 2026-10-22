@@ -244,7 +244,7 @@ def customers_plus():
     icon_pause = '<svg class="reference-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v9M5.6 5.6a9 9 0 1 0 12.8 0"/></svg>'
     icon_play = '<svg class="reference-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v9M5.6 5.6a9 9 0 1 0 12.8 0"/></svg>'
     icon_trash = '<svg class="reference-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7M14 10v7"/></svg>'
-    icon_wa = '<svg class="reference-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a9 9 0 0 1-13 8L3 21l1.5-5A9 9 0 1 1 21 11.5z"/></svg>'
+    icon_wa = '<svg class="reference-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a9 9 0 0 1-13 8L3 21l1.5-5A9 9 0 1 1 21 11.5z"/><path d="m8 7 2 3-1.2 1.2a8 8 0 0 0 4 4L14 14l3 2c-1 3-4 2-6 1S6 12 6 10s1-3 2-3z"/></svg>'
 
     trs = []
     query_text = search_text(q)
@@ -275,7 +275,7 @@ def customers_plus():
         service_border = '#b94350' if service_suspended else '#148854'
         service_style = f'background:{service_background}!important;border-color:{service_border}!important;color:{service_color}!important'
         service_icon = service_icon.replace('class="reference-icon"', f'class="reference-icon" style="stroke:{service_color}!important;color:{service_color}!important"')
-        wa_btn = f'<a class="ico wa" title="WhatsApp" target="_blank" href="https://wa.me/{wa}">{icon_wa}</a>' if wa else ''
+        wa_btn = f'<a class="ico wa" title="Abrir chat de WhatsApp" aria-label="Abrir WhatsApp de {esc(r['name'])}" target="_blank" rel="noopener noreferrer" href="https://wa.me/{wa}">{icon_wa}</a>' if wa else ''
         searchable = search_text(' '.join(str(value or '') for value in (
             r['name'], r['phone'], r['document'], r['pppoe'], r['onu_serial'],
             r['code'] or '#' + str(r['id']), r['ip_address'], device_ip
@@ -290,6 +290,7 @@ def customers_plus():
         if overdue_filter:
             # Acciones compactas de cobranza, según la referencia visual.
             actions_html = f'''<a class="ico debt-reminder" title="Enviar recordatorio de pago por WhatsApp" aria-label="Recordatorio de pago para {esc(r['name'])}" href="{url_for('customer_payment_reminder',id=r['id'])}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4M12 2V1"/><path d="M12 6v9m2-7c-.5-1-4-1.5-4 .5s4 1 4 3c0 2-3.5 1.5-4 .5" stroke-width="1.4"/></svg></a>
+            {wa_btn}
             <a class="ico debt-promise" title="Promesa de pago" aria-label="Promesa de pago para {esc(r['name'])}" href="{url_for('promise_new',customer_id=r['id'])}"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="m2 12 4-4 4 2 3-2 5 1 4 4-5 5-3-1-2 2-3-2-2 1-5-6Z"/><path d="m10 10 3 3 4 2M7 13l3 3M12 8l-2 3"/></svg></a>
             <a class="ico debt-edit" title="Editar cliente" aria-label="Editar {esc(r['name'])}" href="{url_for('customer_edit',id=r['id'])}">{icon_edit}</a>
             <a class="ico debt-pay" title="Cobrar" aria-label="Cobrar a {esc(r['name'])}" href="{url_for('customer_collect',id=r['id'])}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M17 6c-2-2-9-2-9 2 0 5 9 2 9 7 0 4-7 5-10 2"/></svg></a>'''
@@ -328,6 +329,8 @@ def customers_plus():
     .device-ip{display:flex;flex-direction:column;gap:3px;margin-top:7px}.device-ip-main{color:#53c8ff;font-weight:700;font-size:13px;overflow-wrap:anywhere}.device-ip-https{font-size:10px;color:#8bdac9}.device-ip a:hover{text-decoration:underline}.device-ip-empty{display:block;margin-top:5px;font-size:10px}
 
     .clients-panel{overflow:hidden}.clients-table{width:100%;border-collapse:collapse;table-layout:fixed}.clients-table th,.clients-table td{padding:10px 7px;border-bottom:1px solid #1b3045;text-align:left;vertical-align:middle;font-size:12px;overflow-wrap:anywhere}.clients-table th{font-size:10px;color:#92a5b8;text-transform:uppercase}.c-code{width:8%}.c-client{width:20%}.c-plan{width:11%}.c-zone{width:10%}.c-pppoe{width:14%}.c-due{width:10%}.clients-table .c-debt{width:9%;white-space:nowrap;overflow-wrap:normal;word-break:normal}.c-debt b{display:inline-block;white-space:nowrap}.c-pay{width:9%}.c-actions{width:17%}.c-code span,.c-pppoe>span:first-child{white-space:nowrap}.icon-actions{display:flex;gap:5px;align-items:center;flex-wrap:wrap}.icon-actions form{margin:0}.ico{width:34px;height:34px;border:1px solid #2a4058;background:#132336;color:#b9c7d6;border-radius:7px;display:inline-grid;place-items:center;cursor:pointer;padding:0}.ico:hover{background:#1b3149;color:#fff}.ico svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.ico.invoice-create{color:#62d7ff;border-color:#2a7796}.ico.debt-promise{background:#ff831c;color:#fff;border:2px solid #ffb86d;box-shadow:0 0 0 2px #ff831c33,0 2px 9px #0005}.ico.debt-edit{background:#6232db;color:white;border-color:#6232db}.ico.debt-pay{background:#199b39;color:white;border-color:#199b39}.ico.debt-promise,.ico.debt-edit,.ico.debt-pay{width:40px;height:40px}
+    .clients-table .icon-actions a.ico.wa{background-color:#15803d!important;color:#fff!important;border:2px solid #86efac!important}
+    .clients-table .icon-actions a.ico.wa:hover,.clients-table .icon-actions a.ico.wa:focus-visible{background-color:#166534!important;outline:2px solid #86efac;outline-offset:2px}
     .clients-table .icon-actions a.ico.debt-reminder{background-color:#2563eb!important;color:#fff!important;border:2px solid #93c5fd!important;box-shadow:0 0 0 2px #2563eb26,0 2px 7px #0004!important}
     .clients-table .icon-actions a.ico.debt-reminder:hover,.clients-table .icon-actions a.ico.debt-reminder:focus-visible{background-color:#1d4ed8!important;border-color:#bfdbfe!important;outline:2px solid #93c5fd;outline-offset:2px}
     .clients-table .icon-actions a.ico.debt-reminder svg{width:24px;height:24px;stroke-width:2.1}

@@ -46,10 +46,10 @@ def _event(customer_id, action, detail=''):
 
 
 def _phone_wa(phone):
-    digits = ''.join(ch for ch in str(phone or '') if ch.isascii() and ch.isdigit())
+    digits = ''.join(ch for ch in str(phone or '') if ch.isdigit())
     if len(digits) == 10:
         digits = '1' + digits
-    return digits if 10 <= len(digits) <= 15 and not digits.startswith('0') else ''
+    return digits
 
 
 def _due_date_for(day_value):
@@ -244,7 +244,7 @@ def customers_plus():
     icon_pause = '<svg class="reference-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v9M5.6 5.6a9 9 0 1 0 12.8 0"/></svg>'
     icon_play = '<svg class="reference-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v9M5.6 5.6a9 9 0 1 0 12.8 0"/></svg>'
     icon_trash = '<svg class="reference-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7M14 10v7"/></svg>'
-    icon_wa = '<svg class="reference-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a9 9 0 0 1-13 8L3 21l1.5-5A9 9 0 1 1 21 11.5z"/><path d="M8 7c0 5 4 9 9 9l1-2-3-1-1 1-3-3 1-1-1-3z"/></svg>'
+    icon_wa = '<svg class="reference-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a9 9 0 0 1-13 8L3 21l1.5-5A9 9 0 1 1 21 11.5z"/></svg>'
 
     trs = []
     query_text = search_text(q)
@@ -258,7 +258,7 @@ def customers_plus():
         oldest_due = r['oldest_due'] or ''
         overdue = bool(oldest_due and oldest_due < today.isoformat() and debt > 0)
         due = oldest_due or _due_date_for(r['due_day']).isoformat()
-        wa = _phone_wa(r['phone']) or _phone_wa(r['phone_secondary'])
+        wa = _phone_wa(r['phone'])
         onu_status = (r['onu_status'] or '').upper()
         onu_bad = onu_status in ('OFFLINE','DOWN','LOS','CAIDA','CAÍDA')
         client_extra = []
@@ -275,7 +275,7 @@ def customers_plus():
         service_border = '#b94350' if service_suspended else '#148854'
         service_style = f'background:{service_background}!important;border-color:{service_border}!important;color:{service_color}!important'
         service_icon = service_icon.replace('class="reference-icon"', f'class="reference-icon" style="stroke:{service_color}!important;color:{service_color}!important"')
-        wa_btn = f'<a class="ico wa customer-chat" title="Abrir chat de WhatsApp" aria-label="Abrir chat de WhatsApp de {esc(r["name"])}" target="_blank" rel="noopener noreferrer" href="https://wa.me/{wa}">{icon_wa}</a>' if wa else ''
+        wa_btn = f'<a class="ico wa" title="WhatsApp" target="_blank" href="https://wa.me/{wa}">{icon_wa}</a>' if wa else ''
         searchable = search_text(' '.join(str(value or '') for value in (
             r['name'], r['phone'], r['document'], r['pppoe'], r['onu_serial'],
             r['code'] or '#' + str(r['id']), r['ip_address'], device_ip
@@ -289,8 +289,7 @@ def customers_plus():
         row_class = 'overdue-row' if overdue else ''
         if overdue_filter:
             # Acciones compactas de cobranza, según la referencia visual.
-            actions_html = f'''<a class="ico debt-reminder" title="Enviar recordatorio de pago" aria-label="Recordatorio de pago para {esc(r['name'])}" href="{url_for('customer_payment_reminder',id=r['id'])}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4a5 5 0 0 0-9 3v5l-2 3h10M7 18a2 2 0 0 0 4 0M10 2V1"/><circle cx="17" cy="15" r="6"/><path d="M17 11v8m2-6h-3a1 1 0 0 0 0 2h2a1 1 0 0 1 0 2h-3"/></svg></a>
-            {wa_btn if wa else '<span class="ico wa customer-chat" aria-disabled="true" title="Este cliente no tiene un teléfono registrado" aria-label="WhatsApp sin teléfono registrado" style="opacity:.4;cursor:not-allowed">'+icon_wa+'</span>'}
+            actions_html = f'''<a class="ico debt-reminder" title="Enviar recordatorio de pago por WhatsApp" aria-label="Recordatorio de pago para {esc(r['name'])}" href="{url_for('customer_payment_reminder',id=r['id'])}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4M12 2V1"/></svg></a>
             <a class="ico debt-promise" title="Promesa de pago" aria-label="Promesa de pago para {esc(r['name'])}" href="{url_for('promise_new',customer_id=r['id'])}"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="m2 12 4-4 4 2 3-2 5 1 4 4-5 5-3-1-2 2-3-2-2 1-5-6Z"/><path d="m10 10 3 3 4 2M7 13l3 3M12 8l-2 3"/></svg></a>
             <a class="ico debt-edit" title="Editar cliente" aria-label="Editar {esc(r['name'])}" href="{url_for('customer_edit',id=r['id'])}">{icon_edit}</a>
             <a class="ico debt-pay" title="Cobrar" aria-label="Cobrar a {esc(r['name'])}" href="{url_for('customer_collect',id=r['id'])}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M17 6c-2-2-9-2-9 2 0 5 9 2 9 7 0 4-7 5-10 2"/></svg></a>'''
@@ -332,7 +331,7 @@ def customers_plus():
     .clients-table .icon-actions a.ico.debt-promise,.clients-table .icon-actions a.ico.debt-promise:hover{background-color:#f97316!important;color:#fff!important;border:2px solid #fdba74!important}
     .clients-table .icon-actions a.ico.debt-edit,.clients-table .icon-actions a.ico.debt-edit:hover{background-color:#7c3aed!important;color:#fff!important;border:2px solid #a78bfa!important}
     .clients-table .icon-actions a.ico.debt-pay,.clients-table .icon-actions a.ico.debt-pay:hover{background-color:#16a34a!important;color:#fff!important;border:2px solid #86efac!important}
-    .clients-table .icon-actions a.ico svg{stroke:#fff!important;opacity:1!important}.ico.debt-promise svg{width:28px;height:28px;stroke:#fff;fill:none}.ico.debt-edit svg,.ico.debt-pay svg{width:22px;height:22px}.ico.service-suspended{background:#4a161b;color:#ff7b86;border-color:#b94350}.ico.service-suspended:hover{background:#65212a;color:#ffacb4}.ico.service-active{background:#063f2a;color:#39e998;border-color:#148854}.ico.service-active:hover{background:#095537;color:#8affc5}.ico.wa{color:#3ee38f}.ico.wa.customer-chat{background:#128c4a!important;border-color:#25d366!important;color:#fff!important}.ico.wa.customer-chat:hover{background:#0e713b!important}.ico.debt-reminder{background:#087c50;color:#fff;border:2px solid #5de6a4;width:40px;height:40px}.ico.warnx{color:#ffcb69}.ico.good{color:#6af0ac}.ico.danger{color:#ff8791}.danger-text{color:#ff7b86}.good-text{color:#5ce3a0}.overdue-row{background:#3b15192e;box-shadow:inset 3px 0 #e34855}.toolbar2{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}.toolbar2 .field{flex:1;min-width:250px}.quick-links{display:flex;gap:8px;flex-wrap:wrap}
+    .clients-table .icon-actions a.ico svg{stroke:#fff!important;opacity:1!important}.ico.debt-promise svg{width:28px;height:28px;stroke:#fff;fill:none}.ico.debt-edit svg,.ico.debt-pay svg{width:22px;height:22px}.ico.service-suspended{background:#4a161b;color:#ff7b86;border-color:#b94350}.ico.service-suspended:hover{background:#65212a;color:#ffacb4}.ico.service-active{background:#063f2a;color:#39e998;border-color:#148854}.ico.service-active:hover{background:#095537;color:#8affc5}.ico.wa{color:#3ee38f}.ico.debt-reminder{background:#087c50;color:#fff;border:2px solid #5de6a4;width:40px;height:40px}.ico.warnx{color:#ffcb69}.ico.good{color:#6af0ac}.ico.danger{color:#ff8791}.danger-text{color:#ff7b86}.good-text{color:#5ce3a0}.overdue-row{background:#3b15192e;box-shadow:inset 3px 0 #e34855}.toolbar2{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}.toolbar2 .field{flex:1;min-width:250px}.quick-links{display:flex;gap:8px;flex-wrap:wrap}
     @media(max-width:1300px){.c-zone,.c-pay{display:none}.c-client{width:24%}.c-actions{width:20%}}
     @media(max-width:1050px){.c-plan{display:none}.c-client{width:27%}.c-pppoe{width:18%}.c-actions{width:25%}}
     @media(max-width:780px){.clients-table thead{display:none}.clients-table,.clients-table tbody,.clients-table tr,.clients-table td{display:block;width:100%!important}.clients-table tr{background:#0b1725;border:1px solid #22374e;border-radius:12px;margin-bottom:10px;padding:10px}.clients-table td{border:0;padding:5px 0}.c-zone,.c-plan,.c-pay{display:block}.icon-actions{margin-top:6px}}

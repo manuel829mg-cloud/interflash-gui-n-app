@@ -380,6 +380,13 @@ def customers_plus():
     @media(min-width:781px) and (max-width:1200px){
       body .clients-panel .clients-table td.c-zone{font-size:10px;padding-left:2px;padding-right:2px}
     }
+
+    body .clients-panel .clients-table .icon-actions a.ico:is(.debt-reminder,.wa,.debt-promise,.debt-edit,.debt-pay){transition:filter .15s ease,box-shadow .15s ease;--action-glow:#60a5fa}
+    body .clients-panel .clients-table .icon-actions a.ico.wa,body .clients-panel .clients-table .icon-actions a.ico.debt-pay{--action-glow:#4ade80}
+    body .clients-panel .clients-table .icon-actions a.ico.debt-promise{--action-glow:#fb923c}
+    body .clients-panel .clients-table .icon-actions a.ico.debt-edit{--action-glow:#a78bfa}
+    body .clients-panel .clients-table .icon-actions a.ico:is(.debt-reminder,.wa,.debt-promise,.debt-edit,.debt-pay):is(:hover,:focus-visible){filter:brightness(1.3)!important;box-shadow:0 0 0 2px var(--action-glow),0 0 12px var(--action-glow)!important;outline:2px solid var(--action-glow);outline-offset:2px;position:relative;z-index:1}
+    @media(prefers-reduced-motion:reduce){body .clients-panel .clients-table .icon-actions a.ico{transition:none}}
     </style>'''
     body=f'''{css}<div class="head"><div><h1>{'Morosos' if overdue_value == 'vencida' else 'Clientes con factura pendiente' if overdue_filter else ('Clientes suspendidos' if status_filter else 'Clientes')}</h1><p>Estado PPPoE real, facturación, ONU y acciones rápidas</p></div><div class="quick-links"><a class="btn" href="{url_for('onu_overview')}">ONU / ONT</a><a class="btn" href="{url_for('customer_trash')}">Papelera</a><a class="btn green" href="{url_for('customer_new')}">+ Nuevo cliente</a></div></div>
     <div class="panel clients-panel">

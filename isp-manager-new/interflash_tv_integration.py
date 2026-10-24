@@ -20,7 +20,7 @@ def setup(app):
     setup_catalog(app, db_path=db_path, admin_check=base.logged_in)
     setup_subscribers(app, db_path=db_path, admin_check=base.logged_in)
     setup_devices(app, db_path=db_path, admin_check=base.logged_in)
-    # Add the TV module to the existing Inter Flash navigation only in staging.
+    # Register a separate TV navigation item; ISP billing remains unchanged.
     if not any(item[0] == "interflash_tv_panel" for item in base.NAV):
         base.NAV.append(("interflash_tv_panel", "📺", "Inter Flash TV"))
 
@@ -32,7 +32,7 @@ def setup(app):
 <html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Inter Flash TV</title>
 <style>body{font:16px system-ui;max-width:920px;margin:2rem auto;padding:1rem;background:#101c30;color:#f4f7ff}input,button{padding:.7rem;margin:.25rem;border-radius:6px}button{cursor:pointer}table{width:100%;text-align:left}td,th{padding:.6rem;border-bottom:1px solid #536075}</style>
-<h1>Inter Flash TV</h1><p>Panel de catálogo en pruebas. Solo canales con derechos de redistribución.</p>
+<h1>Inter Flash TV</h1><p><a href="/" style="color:#8ed8ff">← Volver a Inter Flash</a></p><p>Panel de TV en pruebas. Las suscripciones de TV son independientes del servicio de internet. Solo canales con derechos de redistribución.</p>
 <form id="channels"><input name="name" placeholder="Canal" required maxlength="120"><input name="category" placeholder="Categoría" maxlength="80" value="General"><input name="stream_url" type="url" placeholder="https://...m3u8" required><label><input name="rights_confirmed" type="checkbox" required>Confirmo derechos de distribución</label><button>Agregar</button></form>
 <h2>Suscripciones de TV</h2>
 <form id="subs"><input name="isp_client_id" inputmode="numeric" pattern="[0-9]+" placeholder="ID del cliente" required><select name="status"><option value="active">Activar</option><option value="suspended">Suspender</option><option value="inactive">Desactivar</option></select><input name="expires_at" type="datetime-local" aria-label="Vencimiento"><button>Guardar suscripción</button></form>

@@ -23,6 +23,26 @@ class DeviceAccessTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
+    def test_device_catalog_requires_token(self):
+        response = self.client.get("/interflash-tv/api/device/channels")
+        self.assertEqual(response.status_code, 401)
+
+    def test_only_rights_confirmed_channels_are_available(self):
+        expiry = (datetime.now(timezone.utc) + timedelta(days=5)).isoformat()
+        set_subscription(self.path, "42", "active", expiry)
+        token = self.client.post("/interflash-tv/api/devices", json={"isp_client_id":"42"}).json["device_token"]
+        created = self.client.post("/interflash-tv/api/channels", json={
+            "name":"Licensed Test Channel",
+            "category":"Test",
+            "stream_url":"https://example.com/authorized-test.m3u8",
+            "rights_confirmed":True
+        })
+        self.assertEqual(created.status_code, 201)
+        response = self.client.get("/interflash-tv/api/device/channels",
+                                   headers={"Authorization":"Bearer "+token})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json["channels"]), 1)
+
     def test_subscription_required_and_revocable(self):
         self.assertEqual(self.client.post("/interflash-tv/api/devices", json={"isp_client_id":"42"}).status_code, 409)
         expires = (datetime.now(timezone.utc) + timedelta(days=5)).isoformat()

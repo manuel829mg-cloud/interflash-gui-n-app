@@ -2,6 +2,7 @@ package com.interflash.tv;
 
 import android.app.Activity;
 import android.os.Bundle;
+import android.text.InputType;
 import android.graphics.Color;
 import android.view.View;
 import android.widget.Button;
@@ -49,12 +50,15 @@ public final class MainActivity extends Activity {
         root.addView(status);
         server = new EditText(this);
         server.setSingleLine(true);
+        server.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
         server.setHint("https://tu-servidor.example");
+        server.setText(getPreferences(MODE_PRIVATE).getString("server", ""));
         server.setTextColor(Color.WHITE);
         server.setHintTextColor(Color.LTGRAY);
         root.addView(server);
         token = new EditText(this);
         token.setSingleLine(true);
+        token.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
         token.setHint("Clave del televisor");
         token.setTextColor(Color.WHITE);
         token.setHintTextColor(Color.LTGRAY);
@@ -72,6 +76,7 @@ public final class MainActivity extends Activity {
             status.setText("Comprueba la dirección HTTPS y la clave del televisor.");
             return;
         }
+        getPreferences(MODE_PRIVATE).edit().putString("server", base).apply();
         status.setText("Consultando canales...");
         new Thread(() -> {
             try {

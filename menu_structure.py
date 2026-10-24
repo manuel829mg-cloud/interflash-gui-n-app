@@ -115,7 +115,7 @@ def shell(title, body, active='dashboard'):
         _top('dashboard','▦','Dashboard',active), _group('Clientes','👥',CLIENT_ITEMS,active), finance,
         _group('Almacén','▤',WAREHOUSE_ITEMS,active), _group('Administración','♢',ADMIN_ITEMS,active),
         _group('Soporte Técnico','◉',SUPPORT_ITEMS,active), '<div class="sep"></div>',
-        *[_top(k,*v,active) for k,v in NETWORK_ITEMS.items()], _group('OLT / Fibra','◉',OLT_ITEMS,active),
+        *[_top(k,*v,active) for k,v in NETWORK_ITEMS.items()], '<a class="toplink" href="https://inter-tv-prueba-production.up.railway.app/" target="_blank" rel="noopener noreferrer"><span class="ico">📺</span><span>Inter TV</span></a>', _group('OLT / Fibra','◉',OLT_ITEMS,active),
         _group('Antenas','⌁',ANTENNA_ITEMS,active), _group('Sistema','⚙',SYSTEM_ITEMS,active),
         _top('license_page','🔑','Licencia',active), config, _group('Hotspot','◉',HOTSPOT_ITEMS,active)
     ])

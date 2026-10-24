@@ -4,8 +4,8 @@ on:
   push:
     branches: [feature/interflash-tv]
     paths:
-      - 'isp-manager-new/interflash_tv_subscribers.py'
-      - 'isp-manager-new/test_interflash_tv_subscriptions.py'
+      - 'isp-manager-new/interflash_tv_*.py'
+      - 'isp-manager-new/test_interflash_tv_*.py'
       - '.github/workflows/interflash-tv-tests.yml'
 jobs:
   test:

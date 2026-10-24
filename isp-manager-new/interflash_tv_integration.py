@@ -6,7 +6,7 @@ Only licensed channel URLs may be entered.
 """
 import os
 from flask import redirect, url_for, request, render_template_string, abort
-import app as base
+import enhanced_app as base
 from interflash_tv_catalog import setup as setup_catalog
 
 def setup(app):
@@ -16,6 +16,9 @@ def setup(app):
     if not db_path:
         raise RuntimeError("INTERFLASH_TV_DB must point to persistent storage")
     setup_catalog(app, db_path=db_path, admin_check=base.logged_in)
+    # Add the TV module to the existing Inter Flash navigation only in staging.
+    if not any(item[0] == "interflash_tv_panel" for item in base.NAV):
+        base.NAV.append(("interflash_tv_panel", "📺", "Inter Flash TV"))
 
     @app.get("/interflash-tv")
     def interflash_tv_panel():

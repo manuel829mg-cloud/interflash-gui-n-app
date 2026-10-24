@@ -137,7 +137,11 @@ public final class MainActivity extends Activity {
         video = new PlayerView(this);
         video.setPlayer(player);
         root.addView(video, 5, new LinearLayout.LayoutParams(-1, 400));
-        player.setMediaItem(MediaItem.fromUri(url));
+        MediaItem.Builder media = new MediaItem.Builder().setUri(url);
+        if (url.toLowerCase(java.util.Locale.ROOT).contains(".m3u8")) {
+            media.setMimeType(androidx.media3.common.MimeTypes.APPLICATION_M3U8);
+        }
+        player.setMediaItem(media.build());
         player.prepare();
         player.play();
         video.requestFocus();

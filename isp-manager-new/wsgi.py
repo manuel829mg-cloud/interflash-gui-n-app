@@ -90,6 +90,10 @@ try:
     whatsapp_suite.base.NAV[:] = [x for x in whatsapp_suite.base.NAV if x[2] != 'WhatsApp']
     idx = next((i for i, x in enumerate(whatsapp_suite.base.NAV) if x[0] == 'audit_page'), len(whatsapp_suite.base.NAV))
     whatsapp_suite.base.NAV.insert(idx, ('whatsapp_chat', '◉', 'WhatsApp'))
+    # Inter TV: administrator menu shortcut immediately after WhatsApp.
+    app.add_url_rule('/inter-tv', endpoint='inter_tv', view_func=lambda: redirect('https://inter-tv-prueba-production.up.railway.app/', code=302))
+    whatsapp_suite.base.NAV[:] = [item for item in whatsapp_suite.base.NAV if item[0] != 'inter_tv']
+    whatsapp_suite.base.NAV.insert(idx + 1, ('inter_tv', '📺', 'Inter TV'))
 except Exception:
     pass
 

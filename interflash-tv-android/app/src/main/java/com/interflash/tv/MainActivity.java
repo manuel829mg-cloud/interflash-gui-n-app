@@ -110,7 +110,8 @@ public final class MainActivity extends Activity {
 
     private void showChannels(JSONArray channels) {
         status.setText(channels.length() + " canales disponibles");
-        if (video != null) { root.removeView(video); video = null; }
+        if (player != null) { player.release(); player = null; }
+        if (video != null) { video.setPlayer(null); root.removeView(video); video = null; }
         while (root.getChildCount() > 5) root.removeViewAt(root.getChildCount() - 1);
         for (int i = 0; i < channels.length(); i++) {
             JSONObject channel = channels.optJSONObject(i);
@@ -127,7 +128,7 @@ public final class MainActivity extends Activity {
     private void playAuthorizedStream(String url, String name) {
         if (!url.startsWith("https://")) { status.setText("Canal sin enlace HTTPS válido."); return; }
         if (player != null) player.release();
-        if (video != null) root.removeView(video);
+        if (video != null) { video.setPlayer(null); root.removeView(video); }
         player = new ExoPlayer.Builder(this).build();
         player.addListener(new Player.Listener() {
             @Override public void onPlayerError(PlaybackException error) {

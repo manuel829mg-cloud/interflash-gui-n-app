@@ -11,6 +11,8 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import androidx.media3.common.MediaItem;
+import androidx.media3.common.PlaybackException;
+import androidx.media3.common.Player;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.PlayerView;
 import org.json.JSONArray;
@@ -127,16 +129,23 @@ public final class MainActivity extends Activity {
         if (player != null) player.release();
         if (video != null) root.removeView(video);
         player = new ExoPlayer.Builder(this).build();
+        player.addListener(new Player.Listener() {
+            @Override public void onPlayerError(PlaybackException error) {
+                status.setText("No se puede reproducir este canal. Revisa la señal autorizada.");
+            }
+        });
         video = new PlayerView(this);
         video.setPlayer(player);
         root.addView(video, 5, new LinearLayout.LayoutParams(-1, 400));
         player.setMediaItem(MediaItem.fromUri(url));
         player.prepare();
         player.play();
+        video.requestFocus();
         status.setText("Reproduciendo: " + name);
     }
     @Override protected void onStop() {
         super.onStop();
         if (player != null) { player.release(); player = null; }
+        if (video != null) video.setPlayer(null);
     }
 }

@@ -36,3 +36,5 @@ jobs:
           path: |
             interflash-tv-android/app/build/outputs/apk/debug/app-debug.apk
             interflash-tv-android/app/build/outputs/apk/debug/SHA256SUMS.txt
+
+# Re-trigger isolated Inter Flash TV APK build verification.

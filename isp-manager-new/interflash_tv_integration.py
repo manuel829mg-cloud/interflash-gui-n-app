@@ -6,7 +6,7 @@ Only licensed channel URLs may be entered.
 """
 import os
 from flask import redirect, url_for, request, render_template_string, abort
-import enhanced_app as base
+import app as base
 from interflash_tv_catalog import setup as setup_catalog
 
 def setup(app):

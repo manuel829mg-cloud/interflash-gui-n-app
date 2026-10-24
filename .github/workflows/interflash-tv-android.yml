@@ -40,4 +40,4 @@ jobs:
             interflash-tv-android/app/build/outputs/apk/debug/app-debug.apk
             interflash-tv-android/app/build/outputs/apk/debug/SHA256SUMS.txt
 
-# Re-trigger isolated Inter Flash TV APK build verification.
+# Trigger Android TV APK compilation on the isolated feature branch.

@@ -14,6 +14,7 @@ from dashboard_sync import setup as setup_dashboard_sync
 from router_menu_sync import setup as setup_router_menu_sync
 from clients_sync import setup as setup_clients_sync
 from client_video_ui import setup as setup_client_video_ui
+from inter_tv_integration import setup as setup_inter_tv
 
 setup_public_site(app)
 setup_push_agent(app)
@@ -22,3 +23,4 @@ setup_dashboard_sync(app)
 setup_router_menu_sync(app)
 setup_clients_sync(app)
 setup_client_video_ui(app)
+setup_inter_tv(app)

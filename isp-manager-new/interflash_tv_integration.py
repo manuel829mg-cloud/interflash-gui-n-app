@@ -9,6 +9,7 @@ from flask import redirect, url_for, request, render_template_string, abort
 import app as base
 from interflash_tv_catalog import setup as setup_catalog
 from interflash_tv_subscriptions_api import setup as setup_subscribers
+from interflash_tv_devices import setup as setup_devices
 
 def setup(app):
     if os.environ.get("INTERFLASH_TV_ENABLED") != "1":
@@ -18,6 +19,7 @@ def setup(app):
         raise RuntimeError("INTERFLASH_TV_DB must point to persistent storage")
     setup_catalog(app, db_path=db_path, admin_check=base.logged_in)
     setup_subscribers(app, db_path=db_path, admin_check=base.logged_in)
+    setup_devices(app, db_path=db_path, admin_check=base.logged_in)
     # Add the TV module to the existing Inter Flash navigation only in staging.
     if not any(item[0] == "interflash_tv_panel" for item in base.NAV):
         base.NAV.append(("interflash_tv_panel", "📺", "Inter Flash TV"))
@@ -35,6 +37,9 @@ def setup(app):
 <h2>Suscripciones de TV</h2>
 <form id="subs"><input name="isp_client_id" inputmode="numeric" pattern="[0-9]+" placeholder="ID del cliente" required><select name="status"><option value="active">Activar</option><option value="suspended">Suspender</option><option value="inactive">Desactivar</option></select><input name="expires_at" type="datetime-local" aria-label="Vencimiento"><button>Guardar suscripción</button></form>
 <p id="submessage" role="status"></p><table><thead><tr><th>Cliente</th><th>Estado TV</th><th>Vence</th></tr></thead><tbody id="subrows"></tbody></table>
+<h2>Activar televisor</h2>
+<form id="device"><input name="isp_client_id" inputmode="numeric" pattern="[0-9]+" placeholder="ID del cliente con TV activa" required><button>Generar clave de televisor</button></form>
+<p id="devicemessage" role="status"></p><code id="devicetoken" style="overflow-wrap:anywhere"></code>
 <h2>Canales autorizados</h2>
 <p id="message" role="status"></p><table><thead><tr><th>Canal</th><th>Categoría</th></tr></thead><tbody id="rows"></tbody></table>
 <script>
@@ -42,4 +47,5 @@ async function load(){let r=await fetch('/interflash-tv/api/channels');if(!r.ok)
 document.querySelector('#channels').addEventListener('submit',async e=>{e.preventDefault();let f=e.target, v=new FormData(f);let r=await fetch('/interflash-tv/api/channels',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:v.get('name'),category:v.get('category'),stream_url:v.get('stream_url'),rights_confirmed:v.has('rights_confirmed')})});document.querySelector('#message').textContent=r.ok?'Canal guardado':'No se pudo guardar';if(r.ok){f.reset();load()}});load();
 async function loadSubs(){let r=await fetch('/interflash-tv/api/subscribers');if(!r.ok)return;let d=await r.json(),b=document.querySelector('#subrows');b.replaceChildren();for(let s of d.subscribers){let tr=document.createElement('tr');for(let x of [s.isp_client_id,s.status,s.expires_at||'—']){let td=document.createElement('td');td.textContent=x;tr.append(td)}b.append(tr)}}
 document.querySelector('#subs').addEventListener('submit',async e=>{e.preventDefault();let v=new FormData(e.target),raw=v.get('expires_at'),expiry=raw?new Date(raw).toISOString():null;let r=await fetch('/interflash-tv/api/subscribers',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({isp_client_id:v.get('isp_client_id'),status:v.get('status'),expires_at:expiry})});let d=await r.json();document.querySelector('#submessage').textContent=r.ok?'Suscripción guardada':(d.error||'Error al guardar');if(r.ok)loadSubs()});loadSubs();
+document.querySelector('#device').addEventListener('submit',async e=>{e.preventDefault();let v=new FormData(e.target);let r=await fetch('/interflash-tv/api/devices',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({isp_client_id:v.get('isp_client_id')})});let d=await r.json();document.querySelector('#devicemessage').textContent=r.ok?'Clave generada. Entrégala únicamente al cliente.':(d.error||'Error');document.querySelector('#devicetoken').textContent=r.ok?d.device_token:''});
 </script></html>""")

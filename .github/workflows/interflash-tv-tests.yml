@@ -1,0 +1,19 @@
+name: Inter Flash TV subscription tests
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/interflash-tv]
+    paths:
+      - 'isp-manager-new/interflash_tv_subscribers.py'
+      - 'isp-manager-new/test_interflash_tv_subscriptions.py'
+      - '.github/workflows/interflash-tv-tests.yml'
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Test subscriptions
+        run: python -m unittest discover -s isp-manager-new -p 'test_interflash_tv_subscriptions.py' -v

@@ -104,7 +104,7 @@ public final class MainActivity extends Activity {
     private void showChannels(JSONArray channels) {
         status.setText(channels.length() + " canales disponibles");
         if (video != null) { root.removeView(video); video = null; }
-        while (root.getChildCount() > 6) root.removeViewAt(root.getChildCount() - 1);
+        while (root.getChildCount() > 5) root.removeViewAt(root.getChildCount() - 1);
         for (int i = 0; i < channels.length(); i++) {
             JSONObject channel = channels.optJSONObject(i);
             if (channel == null) continue;
@@ -124,7 +124,7 @@ public final class MainActivity extends Activity {
         player = new ExoPlayer.Builder(this).build();
         video = new PlayerView(this);
         video.setPlayer(player);
-        root.addView(video, 6, new LinearLayout.LayoutParams(-1, 400));
+        root.addView(video, 5, new LinearLayout.LayoutParams(-1, 400));
         player.setMediaItem(MediaItem.fromUri(url));
         player.prepare();
         player.play();

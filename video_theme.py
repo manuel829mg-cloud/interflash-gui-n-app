@@ -20,6 +20,7 @@ def shell(title, body, active='dashboard'):
         m._top('plans', '▣', 'Planes', active),
         m._top('zones', '⌖', 'Zonas', active),
         m._top('whatsapp', '◯', 'WhatsApp', active),
+        m._top('inter_tv', '📺', 'Inter TV', active),
         m._group('OLT / Fibra', '◉', m.OLT_ITEMS, active),
         m._group('Soporte Técnico', '◉', m.SUPPORT_ITEMS, active),
         m._group('Administración', '♢', m.ADMIN_ITEMS, active),

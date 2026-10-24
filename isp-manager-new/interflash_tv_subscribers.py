@@ -23,7 +23,9 @@ def set_subscription(db_path, isp_client_id, status, expires_at=None):
     if not str(isp_client_id).strip():
         raise ValueError("Client ID required")
     if expires_at:
-        datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+        expiry = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+        if expiry.tzinfo is None:
+            raise ValueError("Expiry requires timezone")
     with sqlite3.connect(db_path) as db:
         db.execute("""INSERT INTO tv_subscribers
             (isp_client_id,status,expires_at,created_at)

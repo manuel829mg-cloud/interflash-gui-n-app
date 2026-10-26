@@ -27,6 +27,10 @@ def setup(app):
           name TEXT NOT NULL, approved INTEGER NOT NULL DEFAULT 0,
           created INTEGER NOT NULL, seen INTEGER NOT NULL);
         ''')
+        initial = os.environ.get('TV_DEFAULT_PLAYLIST_URL', '')
+        if initial:
+            c.execute('INSERT OR IGNORE INTO tv_native_settings(id,source_enc,revision) VALUES(1,?,1)',
+                      (host.enc(initial),))
         c.commit()
         try:
             yield c

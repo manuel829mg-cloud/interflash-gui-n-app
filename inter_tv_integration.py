@@ -4,7 +4,6 @@ import app as appmodule
 INTER_TV_URL = 'https://inter-tv-prueba-production.up.railway.app'
 
 def setup(flask_app):
-    @flask_app.get('/inter-tv')
     def inter_tv():
         if not appmodule.auth():
             return redirect(url_for('login'))
@@ -21,3 +20,9 @@ def setup(flask_app):
             '</div>'
         )
         return appmodule.shell('Inter TV', body, 'inter_tv')
+
+    # Reuse the existing endpoint when the base application defines it.
+    if 'inter_tv' in flask_app.view_functions:
+        flask_app.view_functions['inter_tv'] = inter_tv
+    else:
+        flask_app.add_url_rule('/inter-tv', endpoint='inter_tv', view_func=inter_tv)

@@ -284,3 +284,7 @@ whatsapp_customer_ai.setup(app)
 
 import payment_reports
 payment_reports.setup(app)
+
+# Manage the native TV source and approve devices from the existing Inter TV menu.
+import isp_tv_native
+isp_tv_native.setup(app)

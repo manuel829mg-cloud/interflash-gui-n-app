@@ -1,0 +1,21 @@
+name: Inter Flash TV subscription tests
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/interflash-tv]
+    paths:
+      - 'isp-manager-new/interflash_tv_*.py'
+      - 'isp-manager-new/test_interflash_tv_*.py'
+      - '.github/workflows/interflash-tv-tests.yml'
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Flask test dependency
+        run: python -m pip install 'Flask>=3,<4'
+      - name: Test subscriptions and device access
+        run: python -m unittest discover -s isp-manager-new -p 'test_interflash_tv_*.py' -v

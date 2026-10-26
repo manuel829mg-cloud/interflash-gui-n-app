@@ -284,3 +284,7 @@ whatsapp_customer_ai.setup(app)
 
 import payment_reports
 payment_reports.setup(app)
+
+# Optional TV admin module; disabled unless explicitly configured in staging.
+import interflash_tv_integration
+interflash_tv_integration.setup(app)

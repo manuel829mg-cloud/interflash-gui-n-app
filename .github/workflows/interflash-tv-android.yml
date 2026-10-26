@@ -1,0 +1,43 @@
+name: Build Inter Flash TV test APK
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [feature/interflash-tv]
+    paths:
+      - 'interflash-tv-android/**'
+      - '.github/workflows/interflash-tv-android.yml'
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: interflash-tv-android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Configure Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: '12266719'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build debug APK
+        run: gradle --no-daemon --stacktrace assembleDebug
+      - name: Verify APK and checksum
+        run: |
+          test -s app/build/outputs/apk/debug/app-debug.apk
+          sha256sum app/build/outputs/apk/debug/app-debug.apk > app/build/outputs/apk/debug/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: InterFlashTV-debug
+          path: |
+            interflash-tv-android/app/build/outputs/apk/debug/app-debug.apk
+            interflash-tv-android/app/build/outputs/apk/debug/SHA256SUMS.txt
+
+# Trigger Android TV APK compilation on the isolated feature branch.

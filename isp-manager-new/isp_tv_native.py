@@ -110,7 +110,7 @@ def setup(app):
             else:
                 return redirect('/inter-tv')
         token = host.e(csrf())
-        head = '<div class="head"><div><h1>Inter Flash TV</h1><p>Lista y televisores vinculados</p></div></div>'
+        head = '<style>.panel .field{display:grid;gap:7px;margin-bottom:12px}.panel .field input{width:100%;box-sizing:border-box;padding:11px;border:1px solid #354b64;border-radius:8px;background:#101f30;color:#e7eef8}.panel .field label{font-weight:600}.panel .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}</style><div class="head"><div><h1>Inter Flash TV</h1><p>Lista y televisores vinculados</p></div></div>'
         message = '<div class="notice">'+host.e(note)+'</div>' if note else ''
         if int(time.time()) - session.get('tv_verified_at', 0) >= 1800:
             body = head + message + '''<div class="panel"><p>Confirma tu contraseña de administrador para gestionar la lista de televisión.</p>
@@ -141,8 +141,8 @@ def setup(app):
             <div class="panel"><h2>Televisores vinculados</h2><table><tr><th>Nombre</th><th>Código</th><th>Acción</th></tr>'''+(
                 rows or '<tr><td colspan="3">Ningún televisor vinculado.</td></tr>')+'''</table>
             <p class="muted">Desvincular impide recibir nuevas configuraciones; no cancela la cuenta del proveedor ni borra lo ya descargado.</p></div>
-            <div class="panel"><a class="btn" href="https://inter-tv-prueba-production.up.railway.app/" target="_blank" rel="noopener">Abrir reproductor web</a>
-            <p class="muted">La vinculación requiere la actualización de la app nativa preparada para este panel.</p></div>'''
+            <div class="panel"><a class="btn blue" href="https://github.com/manuel829mg-cloud/InterFlashTV/releases/download/native-v9-panel-test/InterFlashTV-native-v9.apk">Descargar app nativa v9</a> <a class="btn" href="https://inter-tv-prueba-production.up.railway.app/" target="_blank" rel="noopener">Abrir reproductor web</a>
+            <p class="muted">Instala la app nativa v9 para vincularla. Si Android informa un conflicto de firma, desinstala la versión de prueba anterior; se borrarán sus ajustes locales.</p></div>'''
         response = app.make_response(host.shell('Inter Flash TV', body, 'inter_tv'))
         response.headers['Cache-Control'] = 'no-store'
         response.headers['Referrer-Policy'] = 'no-referrer'

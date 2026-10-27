@@ -236,7 +236,7 @@ def setup(app):
             saved_source = host.dec(config['source_enc'])
             if saved_source.startswith('m3ufile:'):
                 _, file_id, access_key = saved_source.split(':', 2)
-                payload = dict(kind='m3u', url=request.url_root.rstrip('/') + '/api/tv-native/playlist/' + file_id + '/' + access_key)
+                payload = dict(kind='m3u', url=request.url_root.rstrip('/') + '/api/tv-native/playlist/' + file_id + '/' + access_key + '.m3u')
             else:
                 payload = source_config(saved_source)
         except ValueError:
@@ -247,7 +247,7 @@ def setup(app):
         response.headers['Referrer-Policy'] = 'no-referrer'
         return response
 
-    @app.get('/api/tv-native/playlist/<file_id>/<access_key>')
+    @app.get('/api/tv-native/playlist/<file_id>/<access_key>.m3u')
     def tv_native_playlist_file(file_id, access_key):
         with db() as c:
             row = c.execute('SELECT content_enc,access_hash FROM tv_native_m3u_files WHERE id=?', (file_id,)).fetchone()

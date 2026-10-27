@@ -176,7 +176,7 @@ def setup(app):
                                 if not keep:
                                     note = 'Marca al menos un canal para guardar la lista.'
                                 else:
-                                    selected = '\\n'.join(preamble + [line for i, item in enumerate(items) if i in keep for line in item]).strip() + '\\n'
+                                    selected = '\n'.join(preamble + [line for i, item in enumerate(items) if i in keep for line in item]).strip() + '\n'
                                     target_file_id = preview['target_file_id']
                                     if target_file_id:
                                         found = c.execute('SELECT id FROM tv_native_m3u_files WHERE id=?', (target_file_id,)).fetchone()

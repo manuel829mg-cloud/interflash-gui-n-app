@@ -21,10 +21,14 @@ def schema():
     c.executescript('''CREATE TABLE IF NOT EXISTS waha_config (
       id INTEGER PRIMARY KEY CHECK(id=1), api_url TEXT NOT NULL DEFAULT '',
       token TEXT NOT NULL DEFAULT '', session_name TEXT NOT NULL DEFAULT 'default',
-      hook TEXT NOT NULL DEFAULT '', active INTEGER NOT NULL DEFAULT 0);
+      hook TEXT NOT NULL DEFAULT '', active INTEGER NOT NULL DEFAULT 0,
+      pending_api_url TEXT NOT NULL DEFAULT '', pending_session_name TEXT NOT NULL DEFAULT '');
       INSERT OR IGNORE INTO waha_config(id) VALUES(1);
       CREATE TABLE IF NOT EXISTS waha_acks(provider_id TEXT PRIMARY KEY,status TEXT NOT NULL);
     ''')
+    columns={row['name'] for row in c.execute('PRAGMA table_info(waha_config)')}
+    for name,definition in (('pending_api_url',"TEXT NOT NULL DEFAULT ''"),('pending_session_name',"TEXT NOT NULL DEFAULT ''")):
+        if name not in columns:c.execute('ALTER TABLE waha_config ADD COLUMN '+name+' '+definition)
     c.commit();c.close()
 
 def config():
@@ -102,6 +106,10 @@ def settings():
                 c=base.db();c.execute('UPDATE waha_config SET active=0');c.commit();c.close()
                 flash('WAHA desconectado de la plataforma.');return redirect(url_for('waha_settings'))
             new={'api_url':request.form.get('api_url','').strip().rstrip('/'),'token':request.form.get('token','').strip() or cfg['token'],'session_name':request.form.get('session_name','default').strip()}
+            # Keep the attempted endpoint visible even when WAHA rejects the
+            # check. Never replace the currently active endpoint until the
+            # full authentication and webhook handshake succeeds.
+            c=base.db();c.execute('UPDATE waha_config SET pending_api_url=?,pending_session_name=? WHERE id=1',(new['api_url'],new['session_name']));c.commit();c.close()
             validate(new)
             state=api('/api/sessions/'+new['session_name'],cfg=new)
             if not isinstance(state,dict) or state.get('status')!='WORKING':raise APIError('La sesión de WAHA debe mostrar WORKING antes de conectar.')
@@ -122,7 +130,7 @@ def settings():
                 raise APIError('WAHA no confirmó la recepción; el proveedor activo no se cambió.')
             encrypted=ultra.cipher().encrypt(new['token'].encode()).decode()
             c=base.db()
-            c.execute('UPDATE waha_config SET api_url=?,token=?,session_name=?,hook=?,active=1 WHERE id=1',(new['api_url'],encrypted,new['session_name'],hook))
+            c.execute("UPDATE waha_config SET api_url=?,token=?,session_name=?,hook=?,active=1,pending_api_url='',pending_session_name='' WHERE id=1",(new['api_url'],encrypted,new['session_name'],hook))
             for table in ('greenapi_config','whapi_config','ultramsg_config'):c.execute('UPDATE '+table+' SET active=0')
             c.commit();c.close();flash('WAHA conectado. GREEN-API desactivado. Comprueba un envío desde Inter Flash.')
         except ValueError as exc:flash(str(exc))
@@ -140,11 +148,13 @@ def settings():
         except APIError as exc:
             live_state = str(exc)
     csrf=session.setdefault('waha_csrf',secrets.token_urlsafe(32))
+    display_api_url=cfg.get('pending_api_url') or cfg['api_url']
+    display_session=cfg.get('pending_session_name') or cfg['session_name']
     body=f'''<div class="head"><div><h1>Conectar WAHA</h1><p>Usa el WhatsApp que vinculaste en tu computadora.</p></div><a class="btn" href="/whatsapp">Volver a WhatsApp</a></div>
     <div class="panel"><p>Configuración: {'ACTIVA' if cfg['active'] else 'PENDIENTE'}.</p><p>Estado comprobado: {wa.esc(live_state)}.</p><p>Motor WAHA: {wa.esc(engine)}.</p><p>La dirección local http://localhost:3000 funciona en tu PC. Para conectarla con esta plataforma necesitas su dirección pública HTTPS mediante un túnel.</p>
     <form method="post"><input type="hidden" name="csrf" value="{wa.esc(csrf)}">
-    <label>Dirección HTTPS de WAHA<input name="api_url" type="url" value="{wa.esc(cfg['api_url'])}" placeholder="https://tu-tunel.trycloudflare.com" required></label>
-    <label>Sesión<input name="session_name" value="{wa.esc(cfg['session_name'])}" required></label>
+    <label>Dirección HTTPS de WAHA<input name="api_url" type="url" value="{wa.esc(display_api_url)}" placeholder="https://tu-tunel.trycloudflare.com" required></label>
+    <label>Sesión<input name="session_name" value="{wa.esc(display_session)}" required></label>
     <label>API key<input type="password" name="token" autocomplete="new-password" placeholder="{'Guardada; deja vacío para conservarla' if cfg['token'] else 'Pega la API key de WAHA'}"></label>
     <p>La clave se guarda cifrada. Al comprobar la conexión, WAHA sustituye a GREEN-API para los envíos nuevos.</p><button class="btn green">Comprobar y conectar WAHA</button></form></div>'''
     if cfg['active']:

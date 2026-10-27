@@ -30,6 +30,9 @@ def setup(app):
         CREATE TABLE IF NOT EXISTS tv_native_settings (
           id INTEGER PRIMARY KEY CHECK(id=1), source_enc TEXT NOT NULL,
           revision INTEGER NOT NULL DEFAULT 1);
+        CREATE TABLE IF NOT EXISTS tv_native_m3u_files (
+          id TEXT PRIMARY KEY, content_enc TEXT NOT NULL, access_hash TEXT NOT NULL,
+          created INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS tv_native_devices (
           token_hash TEXT PRIMARY KEY, code TEXT UNIQUE NOT NULL,
           name TEXT NOT NULL, approved INTEGER NOT NULL DEFAULT 0,
@@ -93,6 +96,35 @@ def setup(app):
                             note = 'Lista guardada. Las apps vinculadas la consultarán al abrir.'
                         except ValueError as ex:
                             note = str(ex)
+                    elif action == 'upload_m3u':
+                        upload = request.files.get('m3u_file')
+                        if not upload or not upload.filename:
+                            note = 'Elige un archivo .m3u.'
+                        elif not upload.filename.lower().endswith(('.m3u', '.m3u8')):
+                            note = 'El archivo debe terminar en .m3u o .m3u8.'
+                        else:
+                            raw_bytes = upload.stream.read(10 * 1024 * 1024 + 1)
+                            if len(raw_bytes) > 10 * 1024 * 1024:
+                                note = 'El archivo supera el límite de 10 MB.'
+                            else:
+                                try:
+                                    content = raw_bytes.decode('utf-8-sig')
+                                    lines = [line.strip() for line in content.splitlines() if line.strip()]
+                                    if not lines or not lines[0].startswith('#EXTM3U'):
+                                        raise ValueError('El archivo no parece una lista M3U válida.')
+                                    if not any(line.startswith(('http://', 'https://')) for line in lines):
+                                        raise ValueError('La lista no contiene enlaces de canales.')
+                                    file_id = secrets.token_urlsafe(18)
+                                    access_key = secrets.token_urlsafe(32)
+                                    c.execute('INSERT INTO tv_native_m3u_files(id,content_enc,access_hash,created) VALUES(?,?,?,?)',
+                                              (file_id, host.enc(content), hashlib.sha256(access_key.encode()).hexdigest(), int(time.time())))
+                                    c.execute('''INSERT INTO tv_native_settings(id,source_enc,revision)
+                                      VALUES(1,?,1) ON CONFLICT(id) DO UPDATE SET
+                                      source_enc=excluded.source_enc,revision=revision+1''',
+                                              (host.enc('m3ufile:' + file_id + ':' + access_key),))
+                                    note = 'Archivo M3U cargado. La app vinculada lo consultará al abrir.'
+                                except (UnicodeDecodeError, ValueError) as ex:
+                                    note = str(ex) or 'No se pudo leer el archivo. Usa formato UTF-8.'
                     elif action == 'approve':
                         code = request.form.get('code', '').strip().upper()
                         found = c.execute('SELECT * FROM tv_native_devices WHERE code=? AND created>?',
@@ -133,6 +165,11 @@ def setup(app):
             <input type="password" name="playlist" autocomplete="off" required placeholder="Pega aquí la lista completa"></div>
             <p class="muted">El enlace se guarda cifrado. HTTP transmite los datos sin cifrar entre el televisor y el proveedor.</p>
             <button class="btn green">Guardar lista</button></form></div>
+            <div class="panel"><h2>O subir archivo M3U</h2><p>Selecciona la lista de canales que tienes guardada en tu computadora. El archivo se guarda cifrado.</p>
+            <form method="post" enctype="multipart/form-data"><input type="hidden" name="csrf" value="'''+token+'''">
+            <input type="hidden" name="action" value="upload_m3u"><div class="field"><label>Archivo de canales (.m3u o .m3u8)</label>
+            <input type="file" name="m3u_file" accept=".m3u,.m3u8,audio/x-mpegurl,application/vnd.apple.mpegurl" required></div>
+            <button class="btn blue">Cargar archivo M3U</button></form></div>
             <div class="panel"><h2>Vincular la app nueva</h2><p>Introduce el código que aparece en el televisor. Válido durante 15 minutos.</p>
             <form method="post" class="grid"><input type="hidden" name="csrf" value="'''+token+'''">
             <input type="hidden" name="action" value="approve"><div class="field"><label>Código del televisor</label>
@@ -196,11 +233,33 @@ def setup(app):
         if not config:
             return jsonify(error='No playlist configured'), 409
         try:
-            payload = source_config(host.dec(config['source_enc']))
+            saved_source = host.dec(config['source_enc'])
+            if saved_source.startswith('m3ufile:'):
+                _, file_id, access_key = saved_source.split(':', 2)
+                payload = dict(kind='m3u', url=request.url_root.rstrip('/') + '/api/tv-native/playlist/' + file_id + '/' + access_key)
+            else:
+                payload = source_config(saved_source)
         except ValueError:
             return jsonify(error='Invalid stored source'), 503
         payload.update(revision=config['revision'], name='Inter Flash TV')
         response = jsonify(payload)
+        response.headers['Cache-Control'] = 'no-store'
+        response.headers['Referrer-Policy'] = 'no-referrer'
+        return response
+
+    @app.get('/api/tv-native/playlist/<file_id>/<access_key>')
+    def tv_native_playlist_file(file_id, access_key):
+        with db() as c:
+            row = c.execute('SELECT content_enc,access_hash FROM tv_native_m3u_files WHERE id=?', (file_id,)).fetchone()
+        digest = hashlib.sha256(access_key.encode()).hexdigest()
+        if not row or not hmac.compare_digest(digest, row['access_hash']):
+            return 'No autorizado', 404
+        try:
+            content = host.dec(row['content_enc'])
+        except Exception:
+            return 'Archivo no disponible', 503
+        response = app.make_response(content)
+        response.headers['Content-Type'] = 'application/vnd.apple.mpegurl; charset=utf-8'
         response.headers['Cache-Control'] = 'no-store'
         response.headers['Referrer-Policy'] = 'no-referrer'
         return response

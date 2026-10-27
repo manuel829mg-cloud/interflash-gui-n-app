@@ -1,4 +1,5 @@
 """Private TV source management and approval of individual native installations."""
+import gzip
 import hashlib
 import hmac
 import os
@@ -241,7 +242,7 @@ def setup(app):
                 payload = source_config(saved_source)
         except ValueError:
             return jsonify(error='Invalid stored source'), 503
-        payload.update(revision=config['revision'] + (1 if saved_source.startswith('m3ufile:') else 0), name='Inter Flash TV')
+        payload.update(revision=config['revision'] + (2 if saved_source.startswith('m3ufile:') else 0), name='Inter Flash TV')
         response = jsonify(payload)
         response.headers['Cache-Control'] = 'no-store'
         response.headers['Referrer-Policy'] = 'no-referrer'
@@ -258,8 +259,9 @@ def setup(app):
             content = host.dec(row['content_enc'])
         except Exception:
             return 'Archivo no disponible', 503
-        response = app.make_response(content)
+        response = app.make_response(gzip.compress(content.encode('utf-8'), compresslevel=6))
         response.headers['Content-Type'] = 'application/vnd.apple.mpegurl; charset=utf-8'
+        response.headers['Content-Encoding'] = 'gzip'
         response.headers['Cache-Control'] = 'no-store'
         response.headers['Referrer-Policy'] = 'no-referrer'
         return response

@@ -241,7 +241,7 @@ def setup(app):
                 payload = source_config(saved_source)
         except ValueError:
             return jsonify(error='Invalid stored source'), 503
-        payload.update(revision=config['revision'], name='Inter Flash TV')
+        payload.update(revision=config['revision'] + (1 if saved_source.startswith('m3ufile:') else 0), name='Inter Flash TV')
         response = jsonify(payload)
         response.headers['Cache-Control'] = 'no-store'
         response.headers['Referrer-Policy'] = 'no-referrer'

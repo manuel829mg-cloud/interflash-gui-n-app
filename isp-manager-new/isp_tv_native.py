@@ -3,6 +3,7 @@ import gzip
 import hashlib
 import hmac
 import os
+import re
 import secrets
 import sqlite3
 import time
@@ -34,6 +35,9 @@ def setup(app):
         CREATE TABLE IF NOT EXISTS tv_native_m3u_files (
           id TEXT PRIMARY KEY, content_enc TEXT NOT NULL, access_hash TEXT NOT NULL,
           created INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS tv_native_m3u_previews (
+          id TEXT PRIMARY KEY, content_enc TEXT NOT NULL, target_file_id TEXT NOT NULL DEFAULT '',
+          created INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS tv_native_devices (
           token_hash TEXT PRIMARY KEY, code TEXT UNIQUE NOT NULL,
           name TEXT NOT NULL, approved INTEGER NOT NULL DEFAULT 0,
@@ -43,6 +47,7 @@ def setup(app):
         if initial:
             c.execute('INSERT OR IGNORE INTO tv_native_settings(id,source_enc,revision) VALUES(1,?,1)',
                       (host.enc(initial),))
+        c.execute('DELETE FROM tv_native_m3u_previews WHERE created<?', (int(time.time())-172800,))
         c.commit()
         try:
             yield c
@@ -67,6 +72,30 @@ def setup(app):
         if username and password:
             return dict(kind='xtream', server=base, username=username, password=password)
         return dict(kind='m3u', url=raw)
+
+    def playlist_entries(content):
+        preamble, entries, current = [], [], None
+        for line in content.splitlines():
+            if line.startswith('#EXTINF:'):
+                if current and any(v.strip() and not v.lstrip().startswith('#') for v in current[1:]):
+                    entries.append(current)
+                current = [line]
+            elif current is None:
+                preamble.append(line)
+            else:
+                current.append(line)
+        if current and any(v.strip() and not v.lstrip().startswith('#') for v in current[1:]):
+            entries.append(current)
+        return preamble, entries
+
+    def playlist_label(entry):
+        info = next((line for line in entry if line.startswith('#EXTINF:')), '')
+        name = info.rsplit(',', 1)[-1].strip() if ',' in info else ''
+        if not name:
+            match = re.search(r'tvg-name="([^"]+)"', info)
+            name = match.group(1).strip() if match else 'Canal sin nombre'
+        group = re.search(r'group-title="([^"]*)"', info)
+        return name, (group.group(1).strip() if group else '')
 
     def tv_page():
         # The legacy panel cookie is insufficient for disclosing provider secrets.
@@ -115,17 +144,63 @@ def setup(app):
                                         raise ValueError('El archivo no parece una lista M3U válida.')
                                     if not any(line.startswith(('http://', 'https://')) for line in lines):
                                         raise ValueError('La lista no contiene enlaces de canales.')
-                                    file_id = secrets.token_urlsafe(18)
-                                    access_key = secrets.token_urlsafe(32)
-                                    c.execute('INSERT INTO tv_native_m3u_files(id,content_enc,access_hash,created) VALUES(?,?,?,?)',
-                                              (file_id, host.enc(content), hashlib.sha256(access_key.encode()).hexdigest(), int(time.time())))
-                                    c.execute('''INSERT INTO tv_native_settings(id,source_enc,revision)
-                                      VALUES(1,?,1) ON CONFLICT(id) DO UPDATE SET
-                                      source_enc=excluded.source_enc,revision=revision+1''',
-                                              (host.enc('m3ufile:' + file_id + ':' + access_key),))
-                                    note = 'Archivo M3U cargado. La app vinculada lo consultará al abrir.'
+                                    _, items = playlist_entries(content)
+                                    if not items:
+                                        raise ValueError('No encontré canales con nombre en esa lista M3U.')
+                                    preview_id = secrets.token_urlsafe(18)
+                                    c.execute('INSERT INTO tv_native_m3u_previews(id,content_enc,target_file_id,created) VALUES(?,?,?,?)',
+                                              (preview_id, host.enc(content), '', int(time.time())))
+                                    session['tv_preview_id'] = preview_id
+                                    note = 'Encontré ' + str(len(items)) + ' canales o títulos. Elige cuáles quieres conservar y guarda la selección.'
                                 except (UnicodeDecodeError, ValueError) as ex:
                                     note = str(ex) or 'No se pudo leer el archivo. Usa formato UTF-8.'
+                    elif action == 'save_m3u_selection':
+                        preview_id = request.form.get('preview_id', '')
+                        if not preview_id or preview_id != session.get('tv_preview_id'):
+                            note = 'La lista de selección venció. Recarga la página e inténtalo otra vez.'
+                        else:
+                            preview = c.execute('SELECT * FROM tv_native_m3u_previews WHERE id=?', (preview_id,)).fetchone()
+                            if not preview:
+                                note = 'No encontré la lista para guardar. Vuelve a cargar el archivo.'
+                            else:
+                                content = host.dec(preview['content_enc'])
+                                preamble, items = playlist_entries(content)
+                                keep = set()
+                                for value in request.form.getlist('keep'):
+                                    try:
+                                        index = int(value)
+                                        if 0 <= index < len(items):
+                                            keep.add(index)
+                                    except (TypeError, ValueError):
+                                        pass
+                                if not keep:
+                                    note = 'Marca al menos un canal para guardar la lista.'
+                                else:
+                                    selected = '\\n'.join(preamble + [line for i, item in enumerate(items) if i in keep for line in item]).strip() + '\\n'
+                                    target_file_id = preview['target_file_id']
+                                    if target_file_id:
+                                        found = c.execute('SELECT id FROM tv_native_m3u_files WHERE id=?', (target_file_id,)).fetchone()
+                                        if not found:
+                                            note = 'El archivo original ya no está disponible. Vuelve a cargarlo.'
+                                        else:
+                                            c.execute('UPDATE tv_native_m3u_files SET content_enc=? WHERE id=?',
+                                                      (host.enc(selected), target_file_id))
+                                            c.execute('UPDATE tv_native_settings SET revision=revision+1 WHERE id=1')
+                                            note = 'Selección guardada: ' + str(len(keep)) + ' canales o títulos quedan en la lista.'
+                                    else:
+                                        file_id = secrets.token_urlsafe(18)
+                                        access_key = secrets.token_urlsafe(32)
+                                        c.execute('INSERT INTO tv_native_m3u_files(id,content_enc,access_hash,created) VALUES(?,?,?,?)',
+                                                  (file_id, host.enc(selected), hashlib.sha256(access_key.encode()).hexdigest(), int(time.time())))
+                                        c.execute('''INSERT INTO tv_native_settings(id,source_enc,revision)
+                                          VALUES(1,?,1) ON CONFLICT(id) DO UPDATE SET
+                                          source_enc=excluded.source_enc,revision=revision+1''',
+                                                  (host.enc('m3ufile:' + file_id + ':' + access_key),))
+                                        target_file_id = file_id
+                                        note = 'Selección guardada: ' + str(len(keep)) + ' canales o títulos quedan en la lista.'
+                                    if target_file_id:
+                                        c.execute('UPDATE tv_native_m3u_previews SET content_enc=?,target_file_id=?,created=? WHERE id=?',
+                                                  (host.enc(selected), target_file_id, int(time.time()), preview_id))
                     elif action == 'approve':
                         code = request.form.get('code', '').strip().upper()
                         found = c.execute('SELECT * FROM tv_native_devices WHERE code=? AND created>?',
@@ -159,7 +234,38 @@ def setup(app):
                        '<form method="post"><input type="hidden" name="csrf" value="'+token+'">'
                        '<input type="hidden" name="action" value="unlink"><input type="hidden" name="code" value="'+host.e(d['code'])+'">'
                        '<button class="btn small">Desvincular</button></form></td></tr>' for d in devices)
-        body = head + message + '<div class="panel"><h2>Lista de canales, películas y series</h2><p>' + (
+        preview_id = session.get('tv_preview_id', '')
+        if not preview_id:
+            with db() as c:
+                active = c.execute('SELECT source_enc FROM tv_native_settings WHERE id=1').fetchone()
+                if active:
+                    try:
+                        saved = host.dec(active['source_enc'])
+                        if saved.startswith('m3ufile:'):
+                            _, target_file_id, _ = saved.split(':', 2)
+                            file = c.execute('SELECT content_enc FROM tv_native_m3u_files WHERE id=?', (target_file_id,)).fetchone()
+                            if file:
+                                preview_id = secrets.token_urlsafe(18)
+                                c.execute('INSERT INTO tv_native_m3u_previews(id,content_enc,target_file_id,created) VALUES(?,?,?,?)',
+                                          (preview_id, file['content_enc'], target_file_id, int(time.time())))
+                                session['tv_preview_id'] = preview_id
+                    except Exception:
+                        preview_id = ''
+        selection_panel = ''
+        if preview_id:
+            with db() as c:
+                preview = c.execute('SELECT * FROM tv_native_m3u_previews WHERE id=?', (preview_id,)).fetchone()
+            if preview:
+                _, items = playlist_entries(host.dec(preview['content_enc']))
+                channel_rows = []
+                for i, item in enumerate(items):
+                    name, group = playlist_label(item)
+                    search = (name + ' ' + group).lower()
+                    channel_rows.append('<label class="tv-channel-row" data-search="'+host.e(search)+'"><input type="checkbox" name="keep" value="'+str(i)+'" checked><span>'+host.e(name)+'</span><small>'+host.e(group)+'</small></label>')
+                selection_panel = '<div class="panel"><h2>Elige qué dejar en tu lista</h2><p>Encontré '+str(len(items))+' canales o títulos. Los que queden marcados se conservarán; los demás se quitarán.</p><input id="tv-search" type="search" placeholder="Buscar por nombre o categoría" style="width:100%;padding:10px;margin:8px 0"><div style="display:flex;gap:8px;margin-bottom:10px"><button class="btn small" type="button" onclick="document.querySelectorAll(\'.tv-channel-row input\').forEach(x=>x.checked=true)">Marcar todos</button><button class="btn small" type="button" onclick="document.querySelectorAll(\'.tv-channel-row input\').forEach(x=>x.checked=false)">Desmarcar todos</button></div><form method="post" id="tv-select-form"><input type="hidden" name="csrf" value="'+token+'"><input type="hidden" name="action" value="save_m3u_selection"><input type="hidden" name="preview_id" value="'+host.e(preview_id)+'"><div style="max-height:55vh;overflow:auto;border:1px solid #354b64;border-radius:8px;padding:8px">'+''.join(channel_rows)+'</div><button class="btn green" style="margin-top:12px">Guardar selección</button></form><script>document.getElementById(\'tv-search\').addEventListener(\'input\',function(){const q=this.value.toLowerCase();document.querySelectorAll(\'.tv-channel-row\').forEach(x=>x.style.display=x.dataset.search.includes(q)?\'grid\':\'none\')})</script><style>.tv-channel-row{display:grid;grid-template-columns:24px 1fr auto;align-items:center;gap:8px;padding:8px;border-bottom:1px solid #26394d}.tv-channel-row small{opacity:.7}.tv-channel-row input{width:18px;height:18px}</style></div>'
+            else:
+                session.pop('tv_preview_id', None)
+        body = head + message + selection_panel + '<div class="panel"><h2>Lista de canales, películas y series</h2><p>' + (
             'Lista configurada · versión '+str(config['revision']) if config else 'Todavía no hay una lista guardada.') + '''</p>
             <form method="post"><input type="hidden" name="csrf" value="'''+token+'''">
             <input type="hidden" name="action" value="save"><div class="field"><label>Enlace M3U del proveedor</label>

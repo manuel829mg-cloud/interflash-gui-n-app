@@ -271,8 +271,11 @@ def setup(app):
                         else:
                             note = 'Código no encontrado o vencido. Abre de nuevo la app.'
                     elif action == 'unlink':
-                        c.execute('DELETE FROM tv_native_devices WHERE code=?', (request.form.get('code', ''),))
-                        note = 'Dispositivo desvinculado. Ya no recibirá configuraciones nuevas.'
+                        c.execute('UPDATE tv_native_devices SET approved=-1 WHERE code=? AND approved=1', (request.form.get('code', ''),))
+                        note = 'Televisor desvinculado. La nueva app bloqueará los canales al recibir el aviso.'
+                    elif action == 'reactivate':
+                        c.execute('UPDATE tv_native_devices SET approved=1 WHERE code=? AND approved=-1', (request.form.get('code', ''),))
+                        note = 'Televisor reactivado. Abre la app para sincronizar los canales.'
                     c.commit()
             else:
                 return redirect('/inter-tv')
@@ -288,11 +291,11 @@ def setup(app):
             return host.shell('Inter Flash TV', body, 'inter_tv')
         with db() as c:
             config = c.execute('SELECT revision FROM tv_native_settings WHERE id=1').fetchone()
-            devices = c.execute('SELECT * FROM tv_native_devices WHERE approved=1 ORDER BY seen DESC').fetchall()
+            devices = c.execute('SELECT * FROM tv_native_devices WHERE approved IN (1,-1) ORDER BY seen DESC').fetchall()
         rows = ''.join('<tr><td>'+host.e(d['name'])+'</td><td>'+host.e(d['code'])+'</td><td>'
                        '<form method="post"><input type="hidden" name="csrf" value="'+token+'">'
-                       '<input type="hidden" name="action" value="unlink"><input type="hidden" name="code" value="'+host.e(d['code'])+'">'
-                       '<button class="btn small">Desvincular</button></form></td></tr>' for d in devices)
+                       '<input type="hidden" name="action" value="'+('unlink' if d['approved']==1 else 'reactivate')+'"><input type="hidden" name="code" value="'+host.e(d['code'])+'">'
+                       '<button class="btn small">'+('Desvincular' if d['approved']==1 else 'Reactivar')+'</button></form></td></tr>' for d in devices)
         preview_id = session.get('tv_preview_id', '')
         if not preview_id:
             with db() as c:
@@ -350,7 +353,7 @@ def setup(app):
             <div><button class="btn blue">Vincular televisor</button></div></form></div>
             <div class="panel"><h2>Televisores vinculados</h2><table><tr><th>Nombre</th><th>Código</th><th>Acción</th></tr>'''+(
                 rows or '<tr><td colspan="3">Ningún televisor vinculado.</td></tr>')+'''</table>
-            <p class="muted">Desvincular impide recibir nuevas configuraciones; no cancela la cuenta del proveedor ni borra lo ya descargado.</p></div>
+            <p class="muted">Con la app actualizada, Desvincular detiene los canales de este televisor al recibir el aviso. Reactivar permite volver a sincronizarlos. Los enlaces directos del proveedor no se cancelan.</p></div>
             <div class="panel"><a class="btn blue" href="https://github.com/manuel829mg-cloud/InterFlashTV/releases/download/native-v9-panel-test/InterFlashTV-native-v9.apk">Descargar app nativa v9</a> <a class="btn" href="https://inter-tv-prueba-production.up.railway.app/" target="_blank" rel="noopener">Abrir reproductor web</a>
             <p class="muted">Instala la app nativa v9 para vincularla. Si Android informa un conflicto de firma, desinstala la versión de prueba anterior; se borrarán sus ajustes locales.</p></div>'''
         response = app.make_response(host.shell('Inter Flash TV', body, 'inter_tv'))
@@ -386,7 +389,7 @@ def setup(app):
                           (digest, code, str(data.get('name', 'Televisor'))[:100], 0, now, now))
                 found = dict(code=code, approved=0)
             c.commit()
-        response = jsonify(code=found['code'], approved=bool(found['approved']))
+        response = jsonify(code=found['code'], approved=found['approved']==1, revoked=found['approved']==-1)
         response.headers['Cache-Control'] = 'no-store'
         return response
 

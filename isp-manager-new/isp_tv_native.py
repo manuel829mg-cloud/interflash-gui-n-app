@@ -340,10 +340,18 @@ def setup(app):
                 from tv_subscriptions_isolated import create_schema, status
                 from datetime import date
                 create_schema(c)
-                sub = c.execute('SELECT id FROM tv_subscriptions WHERE device_token_hash=?',
-                                (digest,)).fetchone()
+                sub = c.execute('''SELECT s.id,s.device_token_hash,s.unlinked_at
+                    FROM tv_subscriptions s
+                    LEFT JOIN tv_subscription_device_history h
+                      ON h.subscription_id=s.id
+                    WHERE s.device_token_hash=? OR h.token_hash=?
+                    LIMIT 1''', (digest,digest)).fetchone()
                 if sub:
-                    tv_state = status(c, sub['id'], date.today())
+                    # A former TV must not regain access by merely re-registering:
+                    # authorization follows its immutable token history.
+                    tv_state = ('UNLINKED' if sub['device_token_hash'] != digest
+                                or sub['unlinked_at']
+                                else status(c, sub['id'], date.today()))
                     if tv_state not in ('ACTIVE', 'TRIAL'):
                         reply = jsonify(error='Servicio suspendido por falta de pago',
                                         tv_status=tv_state)

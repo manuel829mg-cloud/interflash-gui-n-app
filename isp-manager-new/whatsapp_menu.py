@@ -1,8 +1,10 @@
 """Deterministic opt-in menu; durable, single-attempt reply queue."""
+import base64
 import secrets
 import threading
 import time
 import unicodedata
+from pathlib import Path
 from flask import session, request, abort, redirect, url_for, flash
 import app as base
 
@@ -25,7 +27,10 @@ def enqueue(c, thread, text, event_id, instance):
     import greenapi_suite as green
     if not green.enabled() or not c.execute('SELECT enabled FROM whatsapp_menu_config WHERE id=1').fetchone()[0]: return
     command=''.join(ch for ch in unicodedata.normalize('NFD',text.lower().strip()) if unicodedata.category(ch)!='Mn')
-    if command in ('cuenta','cuentas'): command='2'
+    image_request=command in ('cuenta','cuentas','cuenta bancaria','cuentas bancarias',
+                              'numero de cuenta','numero de cuentas',
+                              'mandame el numero de cuenta','mandame el numero de cuentas')
+    if image_request: command='2'
     if command not in ('hola','menu','buenas','buenos dias','buenas tardes','buenas noches','1','2','3','4','asesor'): return
     now=time.time();phone=thread['phone']
     state=c.execute('SELECT * FROM whatsapp_menu_state WHERE phone=?',(phone,)).fetchone()
@@ -49,14 +54,17 @@ def enqueue(c, thread, text, event_id, instance):
         banks=[]
         if c.execute("SELECT 1 FROM sqlite_master WHERE name='bank_accounts' AND type='table'").fetchone():
             banks=c.execute("SELECT * FROM bank_accounts WHERE active=1 AND COALESCE(account_number,'')<>'' ORDER BY id").fetchall()
-        reply=('Cuentas de INTER Flash:\n'+'\n\n'.join(f"{b['bank']} · {b['account_type'] or ''}\n{b['account_number']}\n{b['label'] or ''}" for b in banks)+'\n\nEscribe 3 para reportar el pago.') if banks else 'Todavía no hay cuentas bancarias configuradas. Escribe ASESOR para solicitar los datos de pago.'
+        if image_request:
+            reply='Cuentas bancarias de INTER Flash. Envíanos tu comprobante después de pagar.'
+        else:
+            reply=('Cuentas de INTER Flash:\n'+'\n\n'.join(f"{b['bank']} · {b['account_type'] or ''}\n{b['account_number']}\n{b['label'] or ''}" for b in banks)+'\n\nEscribe 3 para reportar el pago.') if banks else 'Todavía no hay cuentas bancarias configuradas. Escribe ASESOR para solicitar los datos de pago.'
     elif command in ('3','4','asesor'):
         pause=now+86400
         reply={'3':'Para reportar tu pago, escribe el banco, monto, fecha y referencia. Un asesor lo revisará; este mensaje no registra ni confirma el pago. Puedes adjuntar el comprobante, pero su imagen todavía debe revisarse en el WhatsApp del negocio.',
                '4':'Cuéntanos qué problema tienes con tu internet. Tu consulta quedará en esta conversación para que un asesor la atienda.',
                'asesor':'Tu solicitud de atención quedará en esta conversación. Cuéntanos cómo podemos ayudarte.'}[command]
         reply+='\nEl menú queda pausado durante 24 horas. Escribe MENÚ para volver antes.'
-    cur=c.execute("INSERT INTO whatsapp_queue(thread_id,customer_id,phone,kind,body,status,created_at) VALUES(?,?,?,'text',?,'PENDIENTE',?)",(thread['id'],thread['customer_id'],phone,reply[:4096],wa._now()))
+    cur=c.execute("INSERT INTO whatsapp_queue(thread_id,customer_id,phone,kind,body,status,created_at) VALUES(?,?,?,?,?,'PENDIENTE',?)",(thread['id'],thread['customer_id'],phone,'image' if image_request else 'text',reply[:4096],wa._now()))
     c.execute('INSERT INTO whatsapp_menu_jobs(event_id,queue_id,instance,created) VALUES(?,?,?,?)',(event_id,cur.lastrowid,instance,now))
     c.execute('INSERT INTO whatsapp_menu_state(phone,last_reply,pause_until) VALUES(?,?,?) ON CONFLICT(phone) DO UPDATE SET last_reply=excluded.last_reply,pause_until=excluded.pause_until',(phone,now,pause))
 
@@ -79,10 +87,20 @@ def process_one():
             c.execute("UPDATE whatsapp_menu_jobs SET state='CANCELADO' WHERE event_id=?",(job['event_id'],));c.commit();return
         c.execute("UPDATE whatsapp_menu_jobs SET state='EN_PROCESO' WHERE event_id=?",(job['event_id'],))
         c.execute("UPDATE whatsapp_queue SET status='EN_PROCESO',attempts=attempts+1 WHERE id=?",(row['id'],));c.commit()
-        ok,pid,error=green.send_text(row['phone'],row['body'])
+        if row['kind']=='image':
+            try:
+                encoded=(Path(__file__).resolve().parent/'assets'/'bank_accounts.jpg.b64').read_text().strip()
+                image=base64.b64decode(encoded,validate=True)
+                ok,pid,error=green.send_image(row['phone'],image,'cuentas-interflash.jpg',row['body'])
+            except (OSError, ValueError):
+                ok,pid,error=False,'','No se pudo leer la imagen de cuentas bancarias.'
+            outgoing='[Imagen de cuentas bancarias] '+row['body']
+        else:
+            ok,pid,error=green.send_text(row['phone'],row['body'])
+            outgoing=row['body']
         status=green.confirmed_status(c,pid,'ACEPTADO') if ok else 'ERROR'
         c.execute('UPDATE whatsapp_queue SET status=?,provider_id=?,last_error=?,sent_at=? WHERE id=?',(status,pid or None,error or None,wa._now() if ok else None,row['id']))
-        wa._record_outgoing(c,row['thread_id'],row['body'],pid,status,error)
+        wa._record_outgoing(c,row['thread_id'],outgoing,pid,status,error)
         c.execute("UPDATE whatsapp_menu_jobs SET state='FINALIZADO' WHERE event_id=?",(job['event_id'],));c.commit()
     finally:c.close()
 
@@ -100,7 +118,7 @@ def panel():
     c=base.db();enabled=c.execute('SELECT enabled FROM whatsapp_menu_config WHERE id=1').fetchone()[0];c.close()
     token=session.setdefault('wa_menu_csrf',secrets.token_urlsafe(32))
     control=f'<form method="post" action="{url_for("whatsapp_menu_toggle")}"><input type="hidden" name="csrf" value="{wa.esc(token)}"><button class="btn" name="enabled" value="{0 if enabled else 1}">{"Desactivar" if enabled else "Activar"} menú automático</button></form>' if session.get('role')=='ADMIN' else ''
-    return f'<div class="panel"><h3>Menú automático sin IA · {"ACTIVO" if enabled else "DESACTIVADO"}</h3><pre style="white-space:pre-wrap">{wa.esc(MENU)}</pre><p>Responde a saludos, MENÚ, opciones 1–4 y CUENTA(S) para ver los datos bancarios. Consulta factura por el número registrado; no registra pagos ni cambia el servicio. Soporte y pagos pausan el menú 24 horas.</p>{control}</div>'
+    return f'<div class="panel"><h3>Menú automático sin IA · {"ACTIVO" if enabled else "DESACTIVADO"}</h3><pre style="white-space:pre-wrap">{wa.esc(MENU)}</pre><p>Responde a saludos, MENÚ y opciones 1–4. CUENTA, CUENTAS o “mándame el número de cuenta” envía el volante bancario como imagen. Consulta factura por el número registrado; no registra pagos ni cambia el servicio. Soporte y pagos pausan el menú 24 horas.</p>{control}</div>'
 
 
 def setup(app):

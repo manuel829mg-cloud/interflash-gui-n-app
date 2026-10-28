@@ -3,6 +3,7 @@ import hmac
 import json
 import re
 import secrets
+import uuid
 import urllib.request
 import urllib.error
 from flask import request, session, abort, jsonify, redirect, url_for, flash, current_app
@@ -79,6 +80,60 @@ def send_text(phone, body):
     except APIError as exc: return False, '', str(exc)
 
 
+def send_image(phone, image, filename, caption=''):
+    """Send one local image using GREEN-API's media host."""
+    if not re.fullmatch(r'[1-9][0-9]{7,14}', str(phone)):
+        return False, '', 'Número de teléfono inválido.'
+    if not isinstance(image, bytes) or not image or len(image) > 5 * 1024 * 1024:
+        return False, '', 'La imagen no está disponible o excede el límite de WhatsApp.'
+    if filename not in ('cuentas-interflash.jpg', 'cuentas-interflash.png'):
+        return False, '', 'Nombre de archivo de imagen no válido.'
+    cfg = config()
+    try:
+        validate(cfg)
+        boundary = '----InterFlash' + uuid.uuid4().hex
+        fields = (
+            ('chatId', (phone + '@c.us').encode()),
+            ('fileName', filename.encode()),
+            ('caption', str(caption)[:20000].encode()),
+        )
+        parts = []
+        for name, value in fields:
+            parts.extend((
+                ('--' + boundary + '\r\n').encode(),
+                f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode(),
+                value,
+                b'\r\n',
+            ))
+        mime = 'image/png' if filename.endswith('.png') else 'image/jpeg'
+        parts.extend((
+            ('--' + boundary + '\r\n').encode(),
+            f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'.encode(),
+            f'Content-Type: {mime}\r\n\r\n'.encode(),
+            image,
+            b'\r\n',
+            ('--' + boundary + '--\r\n').encode(),
+        ))
+        body = b''.join(parts)
+        media_url = re.sub(r'\.api\.greenapi\.com$', '.media.greenapi.com', cfg['api_url'])
+        url = media_url + '/waInstance' + cfg['channel'] + '/sendFileByUpload/' + cfg['token']
+        req = urllib.request.Request(url, data=body, headers={
+            'Accept': 'application/json',
+            'Content-Type': 'multipart/form-data; boundary=' + boundary,
+        })
+        with urllib.request.build_opener(ultra.NoRedirect).open(req, timeout=30) as response:
+            result = json.loads(response.read(2_000_000))
+        mid = result.get('idMessage') if isinstance(result, dict) else None
+        if not isinstance(mid, str) or not mid:
+            return False, '', 'GREEN-API no confirmó la imagen. Revisa su panel antes de reenviar.'
+        return True, 'greenapi:' + cfg['channel'] + ':' + mid, ''
+    except urllib.error.HTTPError as exc:
+        return False, '', 'GREEN-API rechazó la imagen (HTTP ' + str(exc.code) + '). Revisa su panel antes de reenviar.'
+    except (APIError, Exception):
+        # The endpoint contains the secret token; never return or log exception text.
+        return False, '', 'No se confirmó la imagen de GREEN-API. Revisa el chat antes de reenviar.'
+
+
 def confirmed_status(c, pid, default):
     row = c.execute('SELECT status FROM greenapi_acks WHERE provider_id=?', (pid,)).fetchone()
     return row['status'] if row else default
@@ -142,7 +197,7 @@ def settings():
     <p>El token se guarda cifrado. Al conectar se comprueba el canal y se configura la recepción automáticamente.</p>
     <button class="btn green" name="action" value="save">Comprobar y conectar GREEN-API</button></form>
     <p>Canal: {wa.esc(cfg['channel'] or 'Sin configurar')} · Número: {wa.esc(cfg['phone'] or 'Se detecta al conectar')}</p></div>
-    <div class="panel"><p>Envía y recibe texto. Los archivos entrantes aparecen como avisos; no se descargan. Se aplican los límites de tu plan de GREEN-API.</p>
+    <div class="panel"><p>Envía y recibe texto e imágenes. Los archivos entrantes aparecen como avisos; no se descargan. Se aplican los límites de tu plan de GREEN-API.</p>
 </div>'''
     response = current_app.make_response(base.shell('GREEN-API', body, 'whatsapp_inbox'))
     response.headers['Cache-Control'] = 'no-store'; response.headers['Referrer-Policy'] = 'no-referrer'

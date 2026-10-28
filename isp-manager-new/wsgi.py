@@ -288,3 +288,14 @@ payment_reports.setup(app)
 # Manage the native TV source and approve devices from the existing Inter TV menu.
 import isp_tv_native
 isp_tv_native.setup(app)
+
+# Separate TV subscriptions remain OFF unless explicitly enabled after
+# staging tests, existing-device mapping, and verified streaming access control.
+if os.environ.get('TV_SUBSCRIPTIONS_ENABLED') == '1':
+    import tv_subscription_admin_staging
+    import app as tv_base
+    from flask import session as tv_session
+    tv_subscription_admin_staging.setup(
+        app, tv_base.db, tv_base.logged_in,
+        tv_verified=lambda: int(time.time()) - tv_session.get('tv_verified_at', 0) < 1800,
+    )

@@ -343,7 +343,7 @@ def setup(app):
             saved_source = host.dec(config['source_enc'])
             if saved_source.startswith('m3ufile:'):
                 _, file_id, access_key = saved_source.split(':', 2)
-                payload = dict(kind='m3u', url=request.url_root.rstrip('/') + '/api/tv-native/playlist/' + file_id + '/' + access_key + '.m3u')
+                payload = dict(kind='m3u', url='https://interflash-isp-manager.up.railway.app/api/tv-native/playlist/' + file_id + '/' + access_key + '.m3u')
             else:
                 payload = source_config(saved_source)
         except ValueError:

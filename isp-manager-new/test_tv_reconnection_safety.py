@@ -32,6 +32,17 @@ class TVReconnectionSafetyTests(unittest.TestCase):
         self.db.execute("UPDATE tv_subscriptions SET device_token_hash='new-token' WHERE id=1")
         self.assertEqual(status(self.db,1,date(2026,10,28)),'ACTIVE')
 
+    def test_same_receipt_cannot_pay_two_customers(self):
+        self.db.execute("""INSERT INTO tv_subscriptions
+            (id,customer_id,billing_day,created_at)
+            VALUES (2,22,10,'2026-07-01')""")
+        record_payment(self.db,1,'shared-receipt',date(2026,10,28))
+        with self.assertRaises(ValueError):
+            record_payment(self.db,2,'shared-receipt',date(2026,10,28))
+        self.assertIsNone(self.db.execute(
+            "SELECT paid_through FROM tv_subscriptions WHERE id=2"
+        ).fetchone()[0])
+
     def test_payment_cancels_trial_without_deducting_days(self):
         self.db.execute(
             "UPDATE tv_subscriptions SET device_token_hash='token',paid_through=NULL,trial_used=0 WHERE id=1"

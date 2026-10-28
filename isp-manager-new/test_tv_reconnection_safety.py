@@ -29,7 +29,7 @@ class TVReconnectionSafetyTests(unittest.TestCase):
 
     def test_after_repair_paid_subscription_is_active(self):
         record_payment(self.db,1,'receipt-123',date(2026,10,28))
-        self.db.execute("UPDATE tv_subscriptions SET device_token_hash='new-token' WHERE id=1")
+        self.db.execute("UPDATE tv_subscriptions SET device_token_hash='new-token',unlinked_at=NULL WHERE id=1")
         self.assertEqual(status(self.db,1,date(2026,10,28)),'ACTIVE')
 
     def test_same_receipt_cannot_pay_two_customers(self):

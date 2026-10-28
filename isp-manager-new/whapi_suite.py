@@ -1,5 +1,6 @@
 """Whapi.Cloud text adapter, private callbacks and administrator setup."""
 import hmac
+import base64
 import json
 import re
 import secrets
@@ -73,6 +74,31 @@ def send_text(phone, body):
     except APIError as exc: return False, '', str(exc)
 
 
+def send_image(phone, image, filename, caption=''):
+    """Send a local JPEG/PNG using Whapi.Cloud's image endpoint."""
+    if not re.fullmatch(r'[1-9][0-9]{7,14}', str(phone)):
+        return False, '', 'Número de teléfono inválido.'
+    if not isinstance(image, bytes) or not image or len(image) > 5 * 1024 * 1024:
+        return False, '', 'La imagen no está disponible o excede el límite permitido.'
+    if filename not in ('cuentas-interflash.jpg', 'cuentas-interflash.png'):
+        return False, '', 'Nombre de archivo de imagen no válido.'
+    mime = 'image/png' if filename.endswith('.png') else 'image/jpeg'
+    encoded = base64.b64encode(image).decode('ascii')
+    cfg = config()
+    try:
+        result = api('messages/image', {
+            'to': phone,
+            'media': f'data:{mime};name={filename};base64,{encoded}',
+            'caption': str(caption)[:20000],
+        }, cfg)
+        msg = result.get('message') or {}
+        if result.get('sent') is not True or not isinstance(msg, dict) or not msg.get('id'):
+            raise APIError('Whapi no confirmó la aceptación de la imagen. Revisa su panel antes de reenviar.')
+        return True, 'whapi:' + cfg['channel'] + ':' + str(msg['id']), ''
+    except APIError as exc:
+        return False, '', str(exc)
+
+
 def confirmed_status(c, pid, default):
     row = c.execute('SELECT status FROM whapi_acks WHERE provider_id=?', (pid,)).fetchone()
     return row['status'] if row else default
@@ -98,6 +124,14 @@ def settings():
             health = api('health', cfg=new)
             if (health.get('status') or {}).get('text') != 'AUTH':
                 raise ValueError('Vincula primero tu teléfono mediante el QR en Whapi.Cloud.')
+            expected_phone = re.sub(r'\D', '', request.form.get('expected_phone', ''))
+            if len(expected_phone) == 10: expected_phone = '1' + expected_phone
+            phone = str((health.get('user') or {}).get('id', '')).split('@')[0]
+            normalized_phone = '1' + phone if len(phone) == 10 else phone
+            if (not re.fullmatch(r'[1-9][0-9]{7,14}', phone) or
+                    not re.fullmatch(r'[1-9][0-9]{7,14}', expected_phone) or
+                    normalized_phone != expected_phone):
+                raise ValueError('El número vinculado a Whapi.Cloud no coincide con el número indicado. GREEN-API sigue activo.')
             channel = health.get('channel_id', '')
             if not isinstance(channel, str) or not re.fullmatch(r'[A-Za-z0-9_-]{3,100}', channel):
                 raise ValueError('Whapi no devolvió un canal válido.')
@@ -115,8 +149,6 @@ def settings():
                        and item.get('mode') == 'body' and all(e in item.get('events', []) for e in desired['events'])
                        for item in verified.get('webhooks', [])):
                 raise ValueError('No se pudo verificar la recepción. El proveedor de envío no se cambió.')
-            phone = str((health.get('user') or {}).get('id', '')).split('@')[0]
-            if not re.fullmatch(r'[1-9][0-9]{7,14}', phone): phone = ''
             c = base.db()
             c.execute('UPDATE whapi_config SET channel=?,token=?,hook=?,phone=?,active=1 WHERE id=1', (channel, encrypted, hook, phone))
             c.execute('UPDATE ultramsg_config SET active=0 WHERE id=1'); c.execute('UPDATE greenapi_config SET active=0'); c.commit(); c.close()
@@ -127,11 +159,12 @@ def settings():
     body = f'''<div class="head"><div><h1>Conectar Whapi.Cloud</h1><p>Conecta a INTER Flash el WhatsApp que vinculaste por QR.</p></div><a class="btn" href="/whatsapp">Volver a WhatsApp</a></div>
     <div class="panel"><b>Proveedor de envío: {wa.esc(wa._provider_label())}</b><p>En el panel de Whapi.Cloud copia el campo Token y pégalo aquí.</p>
     <form method="post"><input type="hidden" name="csrf" value="{wa.esc(csrf)}">
+    <label>Número de WhatsApp que debe quedar conectado<input name="expected_phone" type="tel" value="{wa.esc(cfg['phone'])}" placeholder="809-000-0000" required></label>
     <label>Token de Whapi.Cloud<input type="password" name="token" autocomplete="new-password" placeholder="{'Guardado; deja vacío para conservarlo' if cfg['token'] else 'Pega aquí el token de Whapi.Cloud'}"></label>
     <p>El token se guarda cifrado. Al conectar se comprueba el canal y se configura la recepción automáticamente.</p>
     <button class="btn green" name="action" value="save">Comprobar y conectar Whapi.Cloud</button></form>
     <p>Canal: {wa.esc(cfg['channel'] or 'Sin configurar')} · Número: {wa.esc(cfg['phone'] or 'Se detecta al conectar')}</p></div>
-    <div class="panel"><p>Envía y recibe texto. Los archivos entrantes aparecen como avisos; no se descargan. Se aplican los límites de tu plan de Whapi.Cloud.</p>
+    <div class="panel"><p>Envía y recibe texto e imágenes. Los archivos entrantes aparecen como avisos; no se descargan. Se aplican los límites de tu plan de Whapi.Cloud.</p>
     <form method="post"><input type="hidden" name="csrf" value="{wa.esc(csrf)}"><button class="btn" name="action" value="meta">Usar Meta para enviar</button></form></div>'''
     response = current_app.make_response(base.shell('Whapi.Cloud', body, 'whatsapp_inbox'))
     response.headers['Cache-Control'] = 'no-store'; response.headers['Referrer-Policy'] = 'no-referrer'
@@ -172,6 +205,8 @@ def webhook():
                 c.execute("INSERT INTO whatsapp_messages(thread_id,direction,message_type,body,provider_id,status,created_at) VALUES(?,'IN',?,?,?,'RECIBIDO',?)", (t['id'], str(msg.get('type', 'text'))[:40], body, pid, wa._now()))
                 c.execute('UPDATE whatsapp_threads SET last_message=?,last_at=?,unread=unread+1 WHERE id=?', (body[:500], wa._now(), t['id']))
                 c.execute('UPDATE whatsapp_webhook_health SET last_event=?,last_incoming=? WHERE id=1', (wa._now(), wa._now()))
+                import whatsapp_menu
+                whatsapp_menu.enqueue(c, t, body, pid, 'whapi:' + cfg['channel'])
         if event.get('type') == 'statuses' and event.get('method') in ('post', 'put'):
             ranks = {'ACEPTADO': 0, 'ERROR': 1, 'ENVIADO': 2, 'ENTREGADO': 3, 'LEÍDO': 4}
             for status in payload.get('statuses', []):

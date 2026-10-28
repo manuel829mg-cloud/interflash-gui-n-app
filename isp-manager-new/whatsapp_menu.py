@@ -20,12 +20,22 @@ def schema():
     CREATE TABLE IF NOT EXISTS whatsapp_menu_state(phone TEXT PRIMARY KEY,last_reply REAL DEFAULT 0,pause_until REAL DEFAULT 0);
     CREATE TABLE IF NOT EXISTS whatsapp_menu_jobs(event_id TEXT PRIMARY KEY,queue_id INTEGER UNIQUE,instance TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'PENDIENTE',created REAL NOT NULL);
     ''');c.commit();c.close()
+    c=base.db();c.execute("UPDATE whatsapp_menu_jobs SET instance='greenapi:'||instance WHERE instr(instance,':')=0");c.commit();c.close()
 
 
 def enqueue(c, thread, text, event_id, instance):
     import whatsapp_suite as wa
     import greenapi_suite as green
-    if not green.enabled() or not c.execute('SELECT enabled FROM whatsapp_menu_config WHERE id=1').fetchone()[0]: return
+    import whapi_suite as whapi
+    if ':' not in instance: return
+    provider, channel = instance.split(':', 1)
+    if provider == 'greenapi':
+        active = green.enabled()
+    elif provider == 'whapi':
+        active = whapi.enabled()
+    else:
+        return
+    if not active or not c.execute('SELECT enabled FROM whatsapp_menu_config WHERE id=1').fetchone()[0]: return
     command=''.join(ch for ch in unicodedata.normalize('NFD',text.lower().strip()) if unicodedata.category(ch)!='Mn')
     image_request=command in ('cuenta','cuentas','cuenta bancaria','cuentas bancarias',
                               'numero de cuenta','numero de cuentas',
@@ -65,24 +75,31 @@ def enqueue(c, thread, text, event_id, instance):
                'asesor':'Tu solicitud de atención quedará en esta conversación. Cuéntanos cómo podemos ayudarte.'}[command]
         reply+='\nEl menú queda pausado durante 24 horas. Escribe MENÚ para volver antes.'
     cur=c.execute("INSERT INTO whatsapp_queue(thread_id,customer_id,phone,kind,body,status,created_at) VALUES(?,?,?,?,?,'PENDIENTE',?)",(thread['id'],thread['customer_id'],phone,'image' if image_request else 'text',reply[:4096],wa._now()))
-    c.execute('INSERT INTO whatsapp_menu_jobs(event_id,queue_id,instance,created) VALUES(?,?,?,?)',(event_id,cur.lastrowid,instance,now))
+    c.execute('INSERT INTO whatsapp_menu_jobs(event_id,queue_id,instance,created) VALUES(?,?,?,?)',(event_id,cur.lastrowid,provider+':'+channel,now))
     c.execute('INSERT INTO whatsapp_menu_state(phone,last_reply,pause_until) VALUES(?,?,?) ON CONFLICT(phone) DO UPDATE SET last_reply=excluded.last_reply,pause_until=excluded.pause_until',(phone,now,pause))
 
 
 def process_one():
     import whatsapp_suite as wa
     import greenapi_suite as green
+    import whapi_suite as whapi
     c=base.db()
     try:
         c.execute('BEGIN IMMEDIATE')
         job=c.execute("SELECT * FROM whatsapp_menu_jobs WHERE state='PENDIENTE' ORDER BY created LIMIT 1").fetchone()
         if not job: c.commit();return
-        cfg=green.config()
         enabled=c.execute('SELECT enabled FROM whatsapp_menu_config WHERE id=1').fetchone()[0]
         row=c.execute('SELECT * FROM whatsapp_queue WHERE id=?',(job['queue_id'],)).fetchone()
         if not row or row['status']!='PENDIENTE':
             c.execute("UPDATE whatsapp_menu_jobs SET state='OMITIDO' WHERE event_id=?",(job['event_id'],));c.commit();return
-        if not enabled or not cfg['active'] or cfg['channel']!=job['instance'] or time.time()-job['created']>300:
+        provider, separator, channel = job['instance'].partition(':')
+        if provider == 'greenapi':
+            cfg=green.config(); provider_active=green.enabled()
+        elif provider == 'whapi':
+            cfg=whapi.config(); provider_active=whapi.enabled()
+        else:
+            cfg={};provider_active=False
+        if not enabled or not provider_active or cfg.get('channel')!=channel or not separator or time.time()-job['created']>300:
             c.execute("UPDATE whatsapp_queue SET status='CANCELADO',last_error='Respuesta automática cancelada por pausa, cambio de conexión o antigüedad' WHERE id=?",(row['id'],))
             c.execute("UPDATE whatsapp_menu_jobs SET state='CANCELADO' WHERE event_id=?",(job['event_id'],));c.commit();return
         c.execute("UPDATE whatsapp_menu_jobs SET state='EN_PROCESO' WHERE event_id=?",(job['event_id'],))
@@ -91,14 +108,19 @@ def process_one():
             try:
                 encoded=(Path(__file__).resolve().parent/'assets'/'bank_accounts.jpg.b64').read_text().strip()
                 image=base64.b64decode(encoded,validate=True)
-                ok,pid,error=green.send_image(row['phone'],image,'cuentas-interflash.jpg',row['body'])
+                sender=green if provider=='greenapi' else whapi
+                ok,pid,error=sender.send_image(row['phone'],image,'cuentas-interflash.jpg',row['body'])
             except (OSError, ValueError):
                 ok,pid,error=False,'','No se pudo leer la imagen de cuentas bancarias.'
             outgoing='[Imagen de cuentas bancarias] '+row['body']
         else:
-            ok,pid,error=green.send_text(row['phone'],row['body'])
+            sender=green if provider=='greenapi' else whapi
+            ok,pid,error=sender.send_text(row['phone'],row['body'])
             outgoing=row['body']
-        status=green.confirmed_status(c,pid,'ACEPTADO') if ok else 'ERROR'
+        if ok:
+            status=green.confirmed_status(c,pid,'ACEPTADO') if provider=='greenapi' else whapi.confirmed_status(c,pid,'ACEPTADO')
+        else:
+            status='ERROR'
         c.execute('UPDATE whatsapp_queue SET status=?,provider_id=?,last_error=?,sent_at=? WHERE id=?',(status,pid or None,error or None,wa._now() if ok else None,row['id']))
         wa._record_outgoing(c,row['thread_id'],outgoing,pid,status,error)
         c.execute("UPDATE whatsapp_menu_jobs SET state='FINALIZADO' WHERE event_id=?",(job['event_id'],));c.commit()

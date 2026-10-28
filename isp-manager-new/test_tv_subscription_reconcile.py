@@ -33,6 +33,9 @@ class ReconcileTVTests(unittest.TestCase):
         self.assertEqual(self.db.execute('SELECT device_token_hash FROM tv_subscriptions').fetchone()[0], 'device_hash')
         events = reconcile_tv_day(self.db,date(2026,10,5))
         self.assertEqual([e['event_type'] for e in events], ['TV_UNLINK_NOTICE'])
+        self.assertEqual(self.db.execute(
+            'SELECT device_token_hash FROM tv_subscriptions WHERE id=1'
+        ).fetchone()[0], 'device_hash')
         self.assertEqual(status(self.db,1,date(2026,10,5)), 'UNLINKED')
         self.assertEqual(reconcile_tv_day(self.db,date(2026,10,5)), [])
 

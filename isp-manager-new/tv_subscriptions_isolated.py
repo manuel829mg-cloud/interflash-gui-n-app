@@ -77,7 +77,10 @@ def create_schema(db):
     """)
 
 def record_payment(db, subscription_id, key, today, now=None):
-    """Atomic, idempotent bookkeeping. Caller must authenticate admin/payment."""
+    """Atomic, idempotent bookkeeping. Caller must authenticate admin/payment.
+
+    Paying after automatic unlink must not silently rebind the old TV token.
+    """
     if not key or len(key) > 128:
         raise ValueError("Valid payment idempotency key required")
     now = now or datetime.now(timezone.utc)
@@ -99,7 +102,7 @@ def record_payment(db, subscription_id, key, today, now=None):
         previous = date.fromisoformat(row[1]) if row[1] else None
         due = extend_paid_through(today, previous, row[0])
         db.execute(
-            "UPDATE tv_subscriptions SET paid_through=?,first_unpaid_due=NULL,unlinked_at=NULL WHERE id=?",
+            "UPDATE tv_subscriptions SET paid_through=?,first_unpaid_due=NULL,trial_end_utc=NULL WHERE id=?",
             (due.isoformat(), subscription_id)
         )
         db.execute(
@@ -141,7 +144,7 @@ def start_one_time_trial(db, subscription_id, now=None):
     end = now + timedelta(hours=24)
     cur = db.execute(
         """UPDATE tv_subscriptions SET trial_used=1,trial_end_utc=?
-           WHERE id=? AND trial_used=0""", (end.isoformat(), subscription_id)
+           WHERE id=? AND trial_used=0 AND paid_through IS NULL""", (end.isoformat(), subscription_id)
     )
     db.commit()
     if cur.rowcount != 1:

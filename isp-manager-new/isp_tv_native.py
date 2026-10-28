@@ -537,8 +537,13 @@ def setup(app):
             if additions:
                 extra = []
                 for item in additions:
-                    extra.extend(['#EXTINF:-1 tvg-chno="'+str(item['number'])+'" group-title="Canales manuales",'+item['name'], host.dec(item['url_enc'])])
-                content = content.rstrip() + '\n' + '\n'.join(extra) + '\n'
+                    extra.extend(['#EXTINF:-1 tvg-chno="'+str(item['number'])+'" group-title="Canales Dominicanos",'+item['name'], host.dec(item['url_enc'])])
+                # Place this category first in the delivered M3U, without changing the saved original.
+                existing_lines = content.splitlines()
+                if existing_lines and existing_lines[0].strip().startswith('#EXTM3U'):
+                    content = '\n'.join([existing_lines[0]] + extra + existing_lines[1:]).rstrip() + '\n'
+                else:
+                    content = '#EXTM3U\n' + '\n'.join(extra) + '\n' + content.lstrip()
         except Exception:
             return 'Archivo no disponible', 503
         response = app.make_response(gzip.compress(content.encode('utf-8'), compresslevel=6))

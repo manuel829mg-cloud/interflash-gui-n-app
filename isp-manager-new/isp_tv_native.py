@@ -197,13 +197,13 @@ def setup(app):
                                             continue
                                         info = item[0]
                                         # OwnTV uses the M3U type attribute to place content in Movies or Series.
-                                        info = re.sub(r'\\s+(?:type|tvg-type)="[^"]*"', '', info)
+                                        info = re.sub(r'\s+(?:type|tvg-type)="[^"]*"', '', info)
                                         info = info.replace('#EXTINF:', '#EXTINF: type="' + media_type + '" ', 1)
                                         added.append([info] + item[1:])
                                         existing_urls.add(url)
                                     if not added:
                                         raise ValueError('No encontré títulos nuevos; los enlaces ya estaban guardados.')
-                                    merged = '\\n'.join(preamble + [s for entry in existing_items + added for s in entry]).strip() + '\\n'
+                                    merged = '\n'.join(preamble + [s for entry in existing_items + added for s in entry]).strip() + '\n'
                                     if len(merged.encode('utf-8')) > 10 * 1024 * 1024:
                                         raise ValueError('La lista combinada supera 10 MB. No se ha cambiado la lista actual.')
                                     c.execute('UPDATE tv_native_m3u_files SET content_enc=? WHERE id=?',

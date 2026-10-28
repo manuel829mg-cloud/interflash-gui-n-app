@@ -65,6 +65,44 @@ def setup(app, connection_factory, admin_authorized, tv_verified=None):
                 return jsonify(error="El cliente ya tiene una suscripción TV"), 409
         return jsonify(subscription_id=sid, amount_dop=TV_PRICE_DOP), 201
 
+    @app.post("/api/tv-subscriptions/<int:sid>/bind")
+    def tv_subscription_bind(sid):
+        error = gate()
+        if error:
+            return error
+        data = request.get_json(silent=True) or {}
+        code = str(data.get("device_code", "")).strip().upper()
+        if len(code) != 8 or any(ch not in "0123456789ABCDEF" for ch in code):
+            return jsonify(error="Código de televisor inválido"), 400
+        with db() as c:
+            c.execute("BEGIN IMMEDIATE")
+            try:
+                sub = c.execute("SELECT id,device_token_hash FROM tv_subscriptions WHERE id=?",
+                                (sid,)).fetchone()
+                if not sub:
+                    c.rollback()
+                    return jsonify(error="Suscripción TV no encontrada"), 404
+                device = c.execute("""SELECT token_hash FROM tv_native_devices
+                    WHERE code=? AND approved=1""", (code,)).fetchone()
+                if not device:
+                    c.rollback()
+                    return jsonify(error="El televisor debe aprobarse antes de vincularse"), 409
+                if sub["device_token_hash"] and sub["device_token_hash"] != device["token_hash"]:
+                    c.rollback()
+                    return jsonify(error="Desvincula primero el televisor anterior"), 409
+                assigned = c.execute("""SELECT id FROM tv_subscriptions
+                    WHERE device_token_hash=? AND id<>?""", (device["token_hash"], sid)).fetchone()
+                if assigned:
+                    c.rollback()
+                    return jsonify(error="Este televisor ya pertenece a otra cuenta TV"), 409
+                c.execute("UPDATE tv_subscriptions SET device_token_hash=?,unlinked_at=NULL WHERE id=?",
+                          (device["token_hash"], sid))
+                c.commit()
+            except Exception:
+                c.rollback()
+                raise
+        return jsonify(bound=True, subscription_id=sid)
+
     @app.post("/api/tv-subscriptions/<int:sid>/pay")
     def tv_subscription_pay(sid):
         error = gate()

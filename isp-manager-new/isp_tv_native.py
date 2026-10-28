@@ -48,6 +48,7 @@ def setup(app):
         CREATE TABLE IF NOT EXISTS tv_monthly_payments (
           id TEXT PRIMARY KEY, token_hash TEXT NOT NULL, amount_dop INTEGER NOT NULL,
           confirmed_at INTEGER NOT NULL, previous_until TEXT, paid_until TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS tv_manual_channels (id TEXT PRIMARY KEY, number INTEGER NOT NULL, name TEXT NOT NULL, url_enc TEXT NOT NULL, created INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS tv_native_devices (
           token_hash TEXT PRIMARY KEY, code TEXT UNIQUE NOT NULL,
           name TEXT NOT NULL, approved INTEGER NOT NULL DEFAULT 0,
@@ -145,6 +146,27 @@ def setup(app):
                             note = 'Lista guardada. Las apps vinculadas la consultarán al abrir.'
                         except ValueError as ex:
                             note = str(ex)
+                    elif action in ('manual_add', 'manual_delete'):
+                        if action == 'manual_delete':
+                            c.execute('DELETE FROM tv_manual_channels WHERE id=?', (request.form.get('channel_id',''),))
+                            c.execute('UPDATE tv_native_settings SET revision=revision+1 WHERE id=1')
+                            note = 'Canal eliminado.'
+                        else:
+                            name = request.form.get('channel_name','').strip()
+                            raw_number = request.form.get('channel_number','').strip()
+                            url = request.form.get('channel_url','').strip()
+                            try:
+                                number = int(raw_number)
+                                parsed = urlsplit(url)
+                                if not 1 <= number <= 9999 or not name or len(name)>100 or any(ch in name for ch in ('\\n','\\r','"')):
+                                    raise ValueError('Revisa el nombre y el número.')
+                                if parsed.scheme not in ('http','https') or not parsed.hostname or parsed.username or parsed.password or len(url)>4096 or any(ch.isspace() for ch in url):
+                                    raise ValueError('Enlace de canal no válido.')
+                                c.execute('INSERT INTO tv_manual_channels VALUES(?,?,?,?,?)', (secrets.token_urlsafe(12),number,name,host.enc(url),int(time.time())))
+                                c.execute('UPDATE tv_native_settings SET revision=revision+1 WHERE id=1')
+                                note = 'Canal guardado.'
+                            except ValueError as ex:
+                                note = str(ex)
                     elif action == 'upload_m3u':
                         upload = request.files.get('m3u_file')
                         if not upload or not upload.filename:
@@ -346,6 +368,18 @@ def setup(app):
             devices = c.execute('SELECT * FROM tv_native_devices WHERE approved IN (1,-1) ORDER BY seen DESC').fetchall()
             tv_dues = {r['token_hash']: r['paid_until'] for r in c.execute('SELECT token_hash,paid_until FROM tv_monthly_accounts').fetchall()}
             tv_trials = {r['token_hash']: r['expires_at'] for r in c.execute('SELECT token_hash,expires_at FROM tv_trial_uses').fetchall()}
+        with db() as c:
+            manual_channels = c.execute('SELECT id,number,name FROM tv_manual_channels ORDER BY number,name').fetchall()
+        manual_rows = ''.join('<li>'+host.e(x['number'])+' — '+host.e(x['name'])+
+            '<form method="post" style="display:inline"><input type="hidden" name="csrf" value="'+token+'">'+
+            '<input type="hidden" name="action" value="manual_delete"><input type="hidden" name="channel_id" value="'+host.e(x['id'])+'">'+
+            '<button class="btn small" type="submit">Eliminar</button></form></li>' for x in manual_channels)
+        manual_panel = ('<div class="panel"><h2>Agregar canal manualmente</h2><p>Los canales manuales se añaden a la lista M3U subida, sin reemplazarla.</p>'+
+            '<form method="post"><input type="hidden" name="csrf" value="'+token+'"><input type="hidden" name="action" value="manual_add">'+
+            '<div class="field"><label>Nombre</label><input name="channel_name" maxlength="100" required></div>'+
+            '<div class="field"><label>Número</label><input name="channel_number" type="number" min="1" max="9999" required></div>'+
+            '<div class="field"><label>Enlace</label><input name="channel_url" type="url" required></div>'+
+            '<button class="btn green">Guardar canal</button></form><h3>Canales manuales</h3><ul>'+manual_rows+'</ul></div>')
         rows = ''.join(
             '<tr><td>'+host.e(d['name'])+'</td><td>'+host.e(d['code'])+'</td><td>'+
             (('Vence '+host.e(tv_dues[d['token_hash']]) if tv_dues[d['token_hash']] > tv_today().isoformat() else 'Vencido '+host.e(tv_dues[d['token_hash']]))
@@ -389,7 +423,7 @@ def setup(app):
                 selection_panel = '<div class="panel"><h2>Elige qué dejar en tu lista</h2><p>Encontré '+str(len(items))+' canales o títulos. Los que queden marcados se conservarán; los demás se quitarán.</p><input id="tv-search" type="search" placeholder="Buscar por nombre o categoría" style="width:100%;padding:10px;margin:8px 0"><div style="display:flex;gap:8px;margin-bottom:10px"><button class="btn small" type="button" onclick="document.querySelectorAll(\'.tv-channel-row input\').forEach(x=>x.checked=true)">Marcar todos</button><button class="btn small" type="button" onclick="document.querySelectorAll(\'.tv-channel-row input\').forEach(x=>x.checked=false)">Desmarcar todos</button></div><form method="post" id="tv-select-form"><input type="hidden" name="csrf" value="'+token+'"><input type="hidden" name="action" value="save_m3u_selection"><input type="hidden" name="preview_id" value="'+host.e(preview_id)+'"><div style="max-height:55vh;overflow:auto;border:1px solid #354b64;border-radius:8px;padding:8px">'+''.join(channel_rows)+'</div><button class="btn green" style="margin-top:12px">Guardar selección</button></form><script>document.getElementById(\'tv-search\').addEventListener(\'input\',function(){const q=this.value.toLowerCase();document.querySelectorAll(\'.tv-channel-row\').forEach(x=>x.style.display=x.dataset.search.includes(q)?\'grid\':\'none\')})</script><style>.tv-channel-row{display:grid;grid-template-columns:24px 1fr auto;align-items:center;gap:8px;padding:8px;border-bottom:1px solid #26394d}.tv-channel-row small{opacity:.7}.tv-channel-row input{width:18px;height:18px}</style></div>'
             else:
                 session.pop('tv_preview_id', None)
-        body = head + message + selection_panel + '<div class="panel"><h2>Lista de canales, películas y series</h2><p>' + (
+        body = head + message + manual_panel + selection_panel + '<div class="panel"><h2>Lista de canales, películas y series</h2><p>' + (
             'Lista configurada · versión '+str(config['revision']) if config else 'Todavía no hay una lista guardada.') + '''</p>
             <form method="post"><input type="hidden" name="csrf" value="'''+token+'''">
             <input type="hidden" name="action" value="save"><div class="field"><label>Enlace M3U del proveedor</label>
@@ -498,6 +532,13 @@ def setup(app):
             return 'No autorizado', 404
         try:
             content = host.dec(row['content_enc'])
+            with db() as c:
+                additions = c.execute('SELECT number,name,url_enc FROM tv_manual_channels ORDER BY number,name').fetchall()
+            if additions:
+                extra = []
+                for item in additions:
+                    extra.extend(['#EXTINF:-1 tvg-chno="'+str(item['number'])+'" group-title="Canales manuales",'+item['name'], host.dec(item['url_enc'])])
+                content = content.rstrip() + '\\n' + '\\n'.join(extra) + '\\n'
         except Exception:
             return 'Archivo no disponible', 503
         response = app.make_response(gzip.compress(content.encode('utf-8'), compresslevel=6))

@@ -1,5 +1,8 @@
 """Private TV source management and approval of individual native installations."""
 import gzip
+import calendar
+from datetime import date
+from zoneinfo import ZoneInfo
 import hashlib
 import hmac
 import os
@@ -38,6 +41,12 @@ def setup(app):
         CREATE TABLE IF NOT EXISTS tv_native_m3u_previews (
           id TEXT PRIMARY KEY, content_enc TEXT NOT NULL, target_file_id TEXT NOT NULL DEFAULT '',
           created INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS tv_monthly_accounts (
+          token_hash TEXT PRIMARY KEY, paid_until TEXT NOT NULL,
+          created INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS tv_monthly_payments (
+          id TEXT PRIMARY KEY, token_hash TEXT NOT NULL, amount_dop INTEGER NOT NULL,
+          confirmed_at INTEGER NOT NULL, previous_until TEXT, paid_until TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS tv_native_devices (
           token_hash TEXT PRIMARY KEY, code TEXT UNIQUE NOT NULL,
           name TEXT NOT NULL, approved INTEGER NOT NULL DEFAULT 0,
@@ -53,6 +62,15 @@ def setup(app):
             yield c
         finally:
             c.close()
+
+    def tv_today():
+        return __import__('datetime').datetime.now(ZoneInfo('America/Santo_Domingo')).date()
+
+    def next_month_due(today):
+        # A paid month always advances from the existing date when prepaid.
+        month = 1 if today.month == 12 else today.month + 1
+        year = today.year + (1 if today.month == 12 else 0)
+        return date(year, month, min(today.day, calendar.monthrange(year, month)[1]))
 
     def csrf():
         if 'tv_csrf' not in session:
@@ -260,6 +278,29 @@ def setup(app):
                                     if target_file_id:
                                         c.execute('UPDATE tv_native_m3u_previews SET content_enc=?,target_file_id=?,created=? WHERE id=?',
                                                   (host.enc(selected), target_file_id, int(time.time()), preview_id))
+                    elif action == 'tv_confirm_payment':
+                        device_code = request.form.get('code', '').strip().upper()
+                        device = c.execute('SELECT token_hash,approved FROM tv_native_devices WHERE code=?',
+                                           (device_code,)).fetchone()
+                        if not device or device['approved'] == 0:
+                            note = 'No se encontró un televisor vinculado para registrar el pago.'
+                        else:
+                            existing = c.execute('SELECT paid_until FROM tv_monthly_accounts WHERE token_hash=?',
+                                                 (device['token_hash'],)).fetchone()
+                            old = date.fromisoformat(existing['paid_until']) if existing else None
+                            today = tv_today()
+                            anchor = max(today, old) if old else today
+                            due = next_month_due(anchor)
+                            payment_id = secrets.token_urlsafe(15)
+                            c.execute('''INSERT INTO tv_monthly_accounts(token_hash,paid_until,created)
+                                         VALUES(?,?,?) ON CONFLICT(token_hash) DO UPDATE SET paid_until=excluded.paid_until''',
+                                      (device['token_hash'], due.isoformat(), int(time.time())))
+                            c.execute('''INSERT INTO tv_monthly_payments
+                                         (id,token_hash,amount_dop,confirmed_at,previous_until,paid_until)
+                                         VALUES(?,?,?,?,?,?)''',
+                                      (payment_id,device['token_hash'],600,int(time.time()),
+                                       old.isoformat() if old else None,due.isoformat()))
+                            note = 'Pago de RD$600 confirmado para ' + host.e(device_code) + '. Vence el ' + due.strftime('%d/%m/%Y') + '.'
                     elif action == 'approve':
                         code = request.form.get('code', '').strip().upper()
                         found = c.execute('SELECT * FROM tv_native_devices WHERE code=? AND created>?',
@@ -292,10 +333,18 @@ def setup(app):
         with db() as c:
             config = c.execute('SELECT revision FROM tv_native_settings WHERE id=1').fetchone()
             devices = c.execute('SELECT * FROM tv_native_devices WHERE approved IN (1,-1) ORDER BY seen DESC').fetchall()
-        rows = ''.join('<tr><td>'+host.e(d['name'])+'</td><td>'+host.e(d['code'])+'</td><td>'
-                       '<form method="post"><input type="hidden" name="csrf" value="'+token+'">'
-                       '<input type="hidden" name="action" value="'+('unlink' if d['approved']==1 else 'reactivate')+'"><input type="hidden" name="code" value="'+host.e(d['code'])+'">'
-                       '<button class="btn small">'+('Desvincular' if d['approved']==1 else 'Reactivar')+'</button></form></td></tr>' for d in devices)
+            tv_dues = {r['token_hash']: r['paid_until'] for r in c.execute('SELECT token_hash,paid_until FROM tv_monthly_accounts').fetchall()}
+        rows = ''.join(
+            '<tr><td>'+host.e(d['name'])+'</td><td>'+host.e(d['code'])+'</td><td>'+
+            (('Vence '+host.e(tv_dues[d['token_hash']]) if tv_dues[d['token_hash']] > tv_today().isoformat() else 'Vencido '+host.e(tv_dues[d['token_hash']]))
+              if d['token_hash'] in tv_dues else 'Sin suscripción: canales actuales sin cambios')+'</td><td>'+
+            '<form method="post"><input type="hidden" name="csrf" value="'+token+'">'+
+            '<input type="hidden" name="action" value="tv_confirm_payment"><input type="hidden" name="code" value="'+host.e(d['code'])+'">'+
+            '<button class="btn small" type="submit">Confirmar pago RD$600</button></form></td><td>'+
+            '<form method="post"><input type="hidden" name="csrf" value="'+token+'">'+
+            '<input type="hidden" name="action" value="'+('unlink' if d['approved']==1 else 'reactivate')+'"><input type="hidden" name="code" value="'+host.e(d['code'])+'">'+
+            '<button class="btn small">'+('Desvincular' if d['approved']==1 else 'Reactivar')+'</button></form></td></tr>'
+            for d in devices)
         preview_id = session.get('tv_preview_id', '')
         if not preview_id:
             with db() as c:
@@ -351,8 +400,8 @@ def setup(app):
             <input type="hidden" name="action" value="approve"><div class="field"><label>Código del televisor</label>
             <input name="code" maxlength="8" required></div><div class="field"><label>Nombre</label><input name="name" placeholder="TV de Manuel"></div>
             <div><button class="btn blue">Vincular televisor</button></div></form></div>
-            <div class="panel"><h2>Televisores vinculados</h2><table><tr><th>Nombre</th><th>Código</th><th>Acción</th></tr>'''+(
-                rows or '<tr><td colspan="3">Ningún televisor vinculado.</td></tr>')+'''</table>
+            <div class="panel"><h2>Televisores y pagos TV (RD$600/mes)</h2><table><tr><th>Nombre</th><th>Código</th><th>Suscripción TV</th><th>Pago mensual</th><th>Acción</th></tr>'''+(
+                rows or '<tr><td colspan="5">Ningún televisor vinculado.</td></tr>')+'''</table>
             <p class="muted">Con la app actualizada, Desvincular detiene los canales de este televisor al recibir el aviso. Reactivar permite volver a sincronizarlos. Los enlaces directos del proveedor no se cancelan.</p></div>
             <div class="panel"><a class="btn blue" href="https://github.com/manuel829mg-cloud/InterFlashTV/releases/download/native-v9-panel-test/InterFlashTV-native-v9.apk">Descargar app nativa v9</a> <a class="btn" href="https://inter-tv-prueba-production.up.railway.app/" target="_blank" rel="noopener">Abrir reproductor web</a>
             <p class="muted">Instala la app nativa v9 para vincularla. Si Android informa un conflicto de firma, desinstala la versión de prueba anterior; se borrarán sus ajustes locales.</p></div>'''
@@ -401,8 +450,11 @@ def setup(app):
         digest = hashlib.sha256(auth[7:].encode()).hexdigest()
         with db() as c:
             device = c.execute('SELECT approved FROM tv_native_devices WHERE token_hash=?', (digest,)).fetchone()
-            if not device or not device['approved']:
+            if not device or device['approved'] != 1:
                 return jsonify(error='Approval required'), 403
+            subscription = c.execute('SELECT paid_until FROM tv_monthly_accounts WHERE token_hash=?', (digest,)).fetchone()
+            if subscription and subscription['paid_until'] <= tv_today().isoformat():
+                return jsonify(error='TV subscription expired', amount_dop=600), 402
             c.execute('UPDATE tv_native_devices SET seen=? WHERE token_hash=?', (int(time.time()), digest))
             config = c.execute('SELECT * FROM tv_native_settings WHERE id=1').fetchone()
             c.commit()

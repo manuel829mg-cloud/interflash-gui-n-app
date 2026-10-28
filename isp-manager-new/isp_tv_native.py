@@ -380,8 +380,7 @@ def setup(app):
             <div class="panel"><h2>Televisores vinculados</h2><table><tr><th>Nombre</th><th>Código</th><th>Acción</th></tr>'''+(
                 rows or '<tr><td colspan="3">Ningún televisor vinculado.</td></tr>')+'''</table>
             <p class="muted">Desvincular impide recibir nuevas configuraciones; no cancela la cuenta del proveedor ni borra lo ya descargado.</p></div>
-            <div class="panel"><a class="btn blue" href="https://github.com/manuel829mg-cloud/InterFlashTV/releases/download/native-v9-panel-test/InterFlashTV-native-v9.apk">Descargar app nativa v9</a> <a class="btn" href="https://inter-tv-prueba-production.up.railway.app/" target="_blank" rel="noopener">Abrir reproductor web</a>
-            <p class="muted">Instala la app nativa v9 para vincularla. Si Android informa un conflicto de firma, desinstala la versión de prueba anterior; se borrarán sus ajustes locales.</p></div>'''
+            <div class="panel"><h2>Aplicación Inter Flash TV</h2><p class="muted">La nueva aplicación OwnTV está en pruebas. No instales versiones antiguas del reproductor ni APK anteriores.</p></div>'''
         response = app.make_response(host.shell('Inter Flash TV', body, 'inter_tv'))
         response.headers['Cache-Control'] = 'no-store'
         response.headers['Referrer-Policy'] = 'no-referrer'

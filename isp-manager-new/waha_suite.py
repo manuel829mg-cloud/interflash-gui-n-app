@@ -66,7 +66,7 @@ def api(path,values=None,cfg=None,method=None):
         with urllib.request.build_opener(ultra.NoRedirect).open(req,timeout=20) as response:
             result=json.loads(response.read(2_000_000))
     except urllib.error.HTTPError as exc:
-        raise APIError('WAHA respondió HTTP '+str(exc.code)+'. Revisa el túnel, la clave y la sesión.') from None
+        raise APIError('WAHA respondió HTTP '+str(exc.code)+' en '+req.method+' '+path+'. Revisa la clave y la sesión.') from None
     except Exception:
         raise APIError('No se confirmó la respuesta de WAHA. Comprueba el chat antes de reenviar para evitar duplicados.') from None
     if not isinstance(result,(dict,list)):raise APIError('WAHA devolvió una respuesta inválida.')

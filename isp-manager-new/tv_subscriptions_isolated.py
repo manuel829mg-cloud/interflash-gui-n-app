@@ -56,6 +56,12 @@ def create_schema(db):
         unlinked_at TEXT,
         created_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS tv_subscription_device_history (
+        token_hash TEXT PRIMARY KEY,
+        subscription_id INTEGER NOT NULL,
+        first_bound_at TEXT NOT NULL,
+        FOREIGN KEY(subscription_id) REFERENCES tv_subscriptions(id)
+    );
     CREATE TABLE IF NOT EXISTS tv_subscription_payments (
         id INTEGER PRIMARY KEY,
         subscription_id INTEGER NOT NULL,
@@ -123,13 +129,13 @@ def record_payment(db, subscription_id, key, today, now=None):
 def status(db, subscription_id, today, now_utc=None):
     now_utc = now_utc or datetime.now(timezone.utc)
     row = db.execute(
-        """SELECT paid_through,trial_end_utc,device_token_hash,first_unpaid_due,billing_day
+        """SELECT paid_through,trial_end_utc,device_token_hash,first_unpaid_due,billing_day,unlinked_at
            FROM tv_subscriptions WHERE id=?""", (subscription_id,)
     ).fetchone()
     if not row:
         return "NOT_FOUND"
-    paid, trial, token, unpaid, anchor = row
-    if not token:
+    paid, trial, token, unpaid, anchor, unlinked = row
+    if not token or unlinked:
         return "UNLINKED"
     if paid and today < date.fromisoformat(paid):
         return "ACTIVE"

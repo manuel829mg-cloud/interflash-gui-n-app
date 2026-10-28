@@ -25,6 +25,7 @@ def enqueue(c, thread, text, event_id, instance):
     import greenapi_suite as green
     if not green.enabled() or not c.execute('SELECT enabled FROM whatsapp_menu_config WHERE id=1').fetchone()[0]: return
     command=''.join(ch for ch in unicodedata.normalize('NFD',text.lower().strip()) if unicodedata.category(ch)!='Mn')
+    if command in ('cuenta','cuentas'): command='2'
     if command not in ('hola','menu','buenas','buenos dias','buenas tardes','buenas noches','1','2','3','4','asesor'): return
     now=time.time();phone=thread['phone']
     state=c.execute('SELECT * FROM whatsapp_menu_state WHERE phone=?',(phone,)).fetchone()
@@ -99,7 +100,7 @@ def panel():
     c=base.db();enabled=c.execute('SELECT enabled FROM whatsapp_menu_config WHERE id=1').fetchone()[0];c.close()
     token=session.setdefault('wa_menu_csrf',secrets.token_urlsafe(32))
     control=f'<form method="post" action="{url_for("whatsapp_menu_toggle")}"><input type="hidden" name="csrf" value="{wa.esc(token)}"><button class="btn" name="enabled" value="{0 if enabled else 1}">{"Desactivar" if enabled else "Activar"} menú automático</button></form>' if session.get('role')=='ADMIN' else ''
-    return f'<div class="panel"><h3>Menú automático sin IA · {"ACTIVO" if enabled else "DESACTIVADO"}</h3><pre style="white-space:pre-wrap">{wa.esc(MENU)}</pre><p>Responde a HOLA, MENÚ y las opciones 1–4. Consulta factura por el número registrado; no registra pagos ni cambia el servicio. Soporte y pagos pausan el menú 24 horas.</p>{control}</div>'
+    return f'<div class="panel"><h3>Menú automático sin IA · {"ACTIVO" if enabled else "DESACTIVADO"}</h3><pre style="white-space:pre-wrap">{wa.esc(MENU)}</pre><p>Responde a saludos, MENÚ, opciones 1–4 y CUENTA(S) para ver los datos bancarios. Consulta factura por el número registrado; no registra pagos ni cambia el servicio. Soporte y pagos pausan el menú 24 horas.</p>{control}</div>'
 
 
 def setup(app):

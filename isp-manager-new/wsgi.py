@@ -82,20 +82,7 @@ optical_monitor.setup(app)
 whatsapp_suite.setup(app)
 branding.setup(app)
 
-def inter_tv_panel():
-    if not whatsapp_suite.base.logged_in():
-        return redirect(url_for('login'))
-    body = '''<style>
-    .tv-panel{padding:0;overflow:hidden}
-    .tv-player{display:block;width:100%;height:calc(100dvh - 185px);min-height:460px;border:0;background:#08111e}
-    @media(max-width:600px){.tv-player{height:calc(100dvh - 205px);min-height:420px}}
-    </style><div class="head"><div><h1>Inter Flash TV</h1>
-    <p>Televisión dentro de tu panel Inter Flash</p></div></div>
-    <div class="panel tv-panel"><iframe class="tv-player"
-    src="https://inter-tv-prueba-production.up.railway.app/"
-    title="Reproductor Inter Flash TV" allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
-    allowfullscreen referrerpolicy="no-referrer"></iframe></div>'''
-    return whatsapp_suite.base.shell('Inter Flash TV', body, 'inter_tv')
+# The Inter TV administrator lives in isp_tv_native.setup(app), not an external iframe.
 
 # Use a dedicated path for the new WhatsApp inbox. An older module already
 # owns /whatsapp, so this avoids the route collision and makes the menu open
@@ -106,7 +93,7 @@ try:
     idx = next((i for i, x in enumerate(whatsapp_suite.base.NAV) if x[0] == 'audit_page'), len(whatsapp_suite.base.NAV))
     whatsapp_suite.base.NAV.insert(idx, ('whatsapp_chat', '◉', 'WhatsApp'))
     # Inter TV: administrator menu shortcut immediately after WhatsApp.
-    app.add_url_rule('/inter-tv', endpoint='inter_tv', view_func=inter_tv_panel)
+    # /inter-tv is registered by isp_tv_native.setup(app) below.
     whatsapp_suite.base.NAV[:] = [item for item in whatsapp_suite.base.NAV if item[0] != 'inter_tv']
     whatsapp_suite.base.NAV.insert(idx + 1, ('inter_tv', '📺', 'Inter TV'))
 except Exception:

@@ -77,7 +77,7 @@ def setup(app, connection_factory, admin_authorized, tv_verified=None):
         with db() as c:
             c.execute("BEGIN IMMEDIATE")
             try:
-                sub = c.execute("SELECT id,device_token_hash FROM tv_subscriptions WHERE id=?",
+                sub = c.execute("SELECT id,device_token_hash,unlinked_at FROM tv_subscriptions WHERE id=?",
                                 (sid,)).fetchone()
                 if not sub:
                     c.rollback()
@@ -87,7 +87,7 @@ def setup(app, connection_factory, admin_authorized, tv_verified=None):
                 if not device:
                     c.rollback()
                     return jsonify(error="El televisor debe aprobarse antes de vincularse"), 409
-                if sub["device_token_hash"] and sub["device_token_hash"] != device["token_hash"]:
+                if sub["device_token_hash"] and not sub["unlinked_at"] and sub["device_token_hash"] != device["token_hash"]:
                     c.rollback()
                     return jsonify(error="Desvincula primero el televisor anterior"), 409
                 assigned = c.execute("""SELECT id FROM tv_subscriptions
@@ -95,6 +95,15 @@ def setup(app, connection_factory, admin_authorized, tv_verified=None):
                 if assigned:
                     c.rollback()
                     return jsonify(error="Este televisor ya pertenece a otra cuenta TV"), 409
+                used = c.execute("""SELECT subscription_id
+                    FROM tv_subscription_device_history WHERE token_hash=?""",
+                    (device["token_hash"],)).fetchone()
+                if used and used["subscription_id"] != sid:
+                    c.rollback()
+                    return jsonify(error="Televisor registrado previamente a otra cuenta"), 409
+                c.execute("""INSERT OR IGNORE INTO tv_subscription_device_history
+                    (token_hash,subscription_id,first_bound_at) VALUES (?,?,?)""",
+                    (device["token_hash"], sid, datetime.now(timezone.utc).isoformat()))
                 c.execute("UPDATE tv_subscriptions SET device_token_hash=?,unlinked_at=NULL WHERE id=?",
                           (device["token_hash"], sid))
                 c.commit()

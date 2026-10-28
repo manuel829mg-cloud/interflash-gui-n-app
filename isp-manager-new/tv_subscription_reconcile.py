@@ -48,7 +48,7 @@ def reconcile_tv_day(db, today: date, now=None):
                 if token and not unlinked_at:
                     db.execute(
                         """UPDATE tv_subscriptions
-                           SET device_token_hash=NULL, unlinked_at=?
+                           SET unlinked_at=?
                            WHERE id=?""", (timestamp, sid)
                     )
                     _emit(db, events, sid, "TV_UNLINK_NOTICE", today, timestamp)

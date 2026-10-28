@@ -154,6 +154,65 @@ def setup(app):
                                     note = 'Encontré ' + str(len(items)) + ' canales o títulos. Elige cuáles quieres conservar y guarda la selección.'
                                 except (UnicodeDecodeError, ValueError) as ex:
                                     note = str(ex) or 'No se pudo leer el archivo. Usa formato UTF-8.'
+                    elif action == 'append_vod_m3u':
+                        # Add a separate VOD playlist without replacing working live TV channels.
+                        media_type = request.form.get('media_type', '')
+                        upload = request.files.get('vod_file')
+                        if media_type not in ('movie', 'series'):
+                            note = 'Selecciona Películas o Series.'
+                        elif not upload or not upload.filename or not upload.filename.lower().endswith(('.m3u', '.m3u8')):
+                            note = 'Selecciona un archivo .m3u o .m3u8 válido.'
+                        else:
+                            raw = upload.stream.read(10 * 1024 * 1024 + 1)
+                            if len(raw) > 10 * 1024 * 1024:
+                                note = 'El archivo supera los 10 MB.'
+                            else:
+                                try:
+                                    new_content = raw.decode('utf-8-sig')
+                                    new_lines = [s.strip() for s in new_content.splitlines() if s.strip()]
+                                    if not new_lines or not new_lines[0].startswith('#EXTM3U'):
+                                        raise ValueError('El archivo no parece una lista M3U.')
+                                    _, new_items = playlist_entries(new_content)
+                                    if not new_items:
+                                        raise ValueError('No hay títulos válidos en ese archivo.')
+                                    current = c.execute('SELECT source_enc FROM tv_native_settings WHERE id=1').fetchone()
+                                    if not current:
+                                        raise ValueError('Primero guarda tu lista de canales desde el panel.')
+                                    current_source = host.dec(current['source_enc'])
+                                    if not current_source.startswith('m3ufile:'):
+                                        raise ValueError('Para añadir películas o series sin reemplazar canales, primero utiliza una lista de canales subida como archivo M3U.')
+                                    _, file_id, _ = current_source.split(':', 2)
+                                    existing_file = c.execute('SELECT content_enc FROM tv_native_m3u_files WHERE id=?', (file_id,)).fetchone()
+                                    if not existing_file:
+                                        raise ValueError('No se encontró la lista actual. No se modificó nada.')
+                                    existing_text = host.dec(existing_file['content_enc'])
+                                    preamble, existing_items = playlist_entries(existing_text)
+                                    def stream_url(item):
+                                        return next((s.strip() for s in item[1:] if s.strip().startswith(('http://', 'https://'))), '')
+                                    existing_urls = {stream_url(item) for item in existing_items}
+                                    added = []
+                                    for item in new_items:
+                                        url = stream_url(item)
+                                        if not url or url in existing_urls:
+                                            continue
+                                        info = item[0]
+                                        # OwnTV uses the M3U type attribute to place content in Movies or Series.
+                                        info = re.sub(r'\\s+(?:type|tvg-type)="[^"]*"', '', info)
+                                        info = info.replace('#EXTINF:', '#EXTINF: type="' + media_type + '" ', 1)
+                                        added.append([info] + item[1:])
+                                        existing_urls.add(url)
+                                    if not added:
+                                        raise ValueError('No encontré títulos nuevos; los enlaces ya estaban guardados.')
+                                    merged = '\\n'.join(preamble + [s for entry in existing_items + added for s in entry]).strip() + '\\n'
+                                    if len(merged.encode('utf-8')) > 10 * 1024 * 1024:
+                                        raise ValueError('La lista combinada supera 10 MB. No se ha cambiado la lista actual.')
+                                    c.execute('UPDATE tv_native_m3u_files SET content_enc=? WHERE id=?',
+                                              (host.enc(merged), file_id))
+                                    c.execute('UPDATE tv_native_settings SET revision=revision+1 WHERE id=1')
+                                    session.pop('tv_preview_id', None)
+                                    note = 'Agregados ' + str(len(added)) + (' títulos de películas.' if media_type == 'movie' else ' títulos de series.') + ' Los canales anteriores se conservan.'
+                                except (UnicodeDecodeError, ValueError) as ex:
+                                    note = str(ex)
                     elif action == 'save_m3u_selection':
                         preview_id = request.form.get('preview_id', '')
                         if not preview_id or preview_id != session.get('tv_preview_id'):
@@ -277,6 +336,13 @@ def setup(app):
             <input type="hidden" name="action" value="upload_m3u"><div class="field"><label>Archivo de canales (.m3u o .m3u8)</label>
             <input type="file" name="m3u_file" accept=".m3u,.m3u8,audio/x-mpegurl,application/vnd.apple.mpegurl" required></div>
             <button class="btn blue">Cargar archivo M3U</button></form></div>
+            <div class="panel"><h2>Añadir películas o series sin borrar canales</h2><p>Sube otra lista M3U con películas o episodios de series. Se agregarán a la lista de TV existente; no se reemplazarán los canales actuales.</p>
+            <form method="post" enctype="multipart/form-data"><input type="hidden" name="csrf" value="'''+token+'''">
+            <input type="hidden" name="action" value="append_vod_m3u">
+            <div class="field"><label>Tipo de contenido</label><select name="media_type" required style="width:100%;padding:11px;background:#101f30;color:#e7eef8;border:1px solid #354b64;border-radius:8px">
+            <option value="movie">Películas</option><option value="series">Series</option></select></div>
+            <div class="field"><label>Archivo M3U de películas o series</label><input type="file" name="vod_file" accept=".m3u,.m3u8" required></div>
+            <button class="btn blue">Añadir a Inter Flash TV</button></form></div>
             <div class="panel"><h2>Vincular la app nueva</h2><p>Introduce el código que aparece en el televisor. Válido durante 15 minutos.</p>
             <form method="post" class="grid"><input type="hidden" name="csrf" value="'''+token+'''">
             <input type="hidden" name="action" value="approve"><div class="field"><label>Código del televisor</label>

@@ -214,6 +214,66 @@ def setup(app):
                     elif action == 'unlink':
                         c.execute('DELETE FROM tv_native_devices WHERE code=?', (request.form.get('code', ''),))
                         note = 'Dispositivo desvinculado. Ya no recibirá configuraciones nuevas.'
+                    elif action in ('tv_sub_create', 'tv_sub_pay', 'tv_sub_trial', 'tv_sub_bind'):
+                        if os.environ.get('TV_SUBSCRIPTIONS_ENABLED') != '1':
+                            note = 'Suscripciones TV no habilitadas.'
+                        else:
+                            from datetime import date
+                            from tv_subscriptions_isolated import (
+                                create_schema, record_payment, start_one_time_trial
+                            )
+                            create_schema(c)
+                            try:
+                                if action == 'tv_sub_create':
+                                    customer_id = int(request.form.get('customer_id') or 0)
+                                    billing_day = int(request.form.get('billing_day') or 0)
+                                    if customer_id <= 0 or not 1 <= billing_day <= 31:
+                                        raise ValueError('Cliente o día de corte incorrecto.')
+                                    c.execute('''INSERT INTO tv_subscriptions
+                                        (customer_id,billing_day,created_at) VALUES(?,?,?)''',
+                                        (customer_id,billing_day,
+                                         __import__('datetime').datetime.now(
+                                             __import__('datetime').timezone.utc).isoformat()))
+                                    note = 'Suscripción de televisión creada sin afectar internet.'
+                                elif action == 'tv_sub_pay':
+                                    sid = int(request.form.get('subscription_id') or 0)
+                                    receipt = (request.form.get('receipt_reference') or '').strip()
+                                    new_due = record_payment(c,sid,receipt,date.today())
+                                    note = 'Pago TV RD$600 registrado. Próximo corte: ' + new_due.isoformat()
+                                elif action == 'tv_sub_trial':
+                                    sid = int(request.form.get('subscription_id') or 0)
+                                    ends = start_one_time_trial(c,sid)
+                                    note = 'Prueba única de TV activada hasta ' + ends.isoformat()
+                                else:
+                                    sid = int(request.form.get('subscription_id') or 0)
+                                    code = (request.form.get('code') or '').strip().upper()
+                                    device = c.execute('''SELECT token_hash FROM tv_native_devices
+                                        WHERE code=? AND approved=1''', (code,)).fetchone()
+                                    sub = c.execute('SELECT * FROM tv_subscriptions WHERE id=?',
+                                                    (sid,)).fetchone()
+                                    if not device or not sub:
+                                        raise ValueError('Aprueba el televisor y verifica la suscripción.')
+                                    current = sub['device_token_hash']
+                                    if current and not sub['unlinked_at'] and current != device['token_hash']:
+                                        raise ValueError('Desvincula primero el televisor de esta suscripción.')
+                                    found = c.execute('''SELECT id FROM tv_subscriptions WHERE
+                                        device_token_hash=? AND id<>?''', (device['token_hash'],sid)).fetchone()
+                                    history = c.execute('''SELECT subscription_id FROM
+                                        tv_subscription_device_history WHERE token_hash=?''',
+                                        (device['token_hash'],)).fetchone()
+                                    if found or (history and history['subscription_id'] != sid):
+                                        raise ValueError('El televisor ya pertenece a otra cuenta.')
+                                    c.execute('''INSERT OR IGNORE INTO tv_subscription_device_history
+                                        (token_hash,subscription_id,first_bound_at) VALUES(?,?,?)''',
+                                        (device['token_hash'],sid,
+                                         __import__('datetime').datetime.now(
+                                             __import__('datetime').timezone.utc).isoformat()))
+                                    c.execute('''UPDATE tv_subscriptions
+                                        SET device_token_hash=?,unlinked_at=NULL WHERE id=?''',
+                                        (device['token_hash'],sid))
+                                    note = 'Televisor vinculado a la suscripción TV.'
+                            except (ValueError, LookupError, sqlite3.IntegrityError) as ex:
+                                note = str(ex) or 'No se pudo completar la operación TV.'
                     c.commit()
             else:
                 return redirect('/inter-tv')
@@ -265,7 +325,42 @@ def setup(app):
                 selection_panel = '<div class="panel"><h2>Elige qué dejar en tu lista</h2><p>Encontré '+str(len(items))+' canales o títulos. Los que queden marcados se conservarán; los demás se quitarán.</p><input id="tv-search" type="search" placeholder="Buscar por nombre o categoría" style="width:100%;padding:10px;margin:8px 0"><div style="display:flex;gap:8px;margin-bottom:10px"><button class="btn small" type="button" onclick="document.querySelectorAll(\'.tv-channel-row input\').forEach(x=>x.checked=true)">Marcar todos</button><button class="btn small" type="button" onclick="document.querySelectorAll(\'.tv-channel-row input\').forEach(x=>x.checked=false)">Desmarcar todos</button></div><form method="post" id="tv-select-form"><input type="hidden" name="csrf" value="'+token+'"><input type="hidden" name="action" value="save_m3u_selection"><input type="hidden" name="preview_id" value="'+host.e(preview_id)+'"><div style="max-height:55vh;overflow:auto;border:1px solid #354b64;border-radius:8px;padding:8px">'+''.join(channel_rows)+'</div><button class="btn green" style="margin-top:12px">Guardar selección</button></form><script>document.getElementById(\'tv-search\').addEventListener(\'input\',function(){const q=this.value.toLowerCase();document.querySelectorAll(\'.tv-channel-row\').forEach(x=>x.style.display=x.dataset.search.includes(q)?\'grid\':\'none\')})</script><style>.tv-channel-row{display:grid;grid-template-columns:24px 1fr auto;align-items:center;gap:8px;padding:8px;border-bottom:1px solid #26394d}.tv-channel-row small{opacity:.7}.tv-channel-row input{width:18px;height:18px}</style></div>'
             else:
                 session.pop('tv_preview_id', None)
-        body = head + message + selection_panel + '<div class="panel"><h2>Lista de canales, películas y series</h2><p>' + (
+        subscription_panel = ''
+        if os.environ.get('TV_SUBSCRIPTIONS_ENABLED') == '1':
+            from tv_subscriptions_isolated import create_schema, status
+            from datetime import date
+            with db() as c:
+                create_schema(c)
+                subs = c.execute('''SELECT id,customer_id,billing_day,paid_through,
+                    device_token_hash FROM tv_subscriptions ORDER BY id DESC LIMIT 100''').fetchall()
+            forms = '''<div class="panel"><h2>Suscripciones TV · RD$600/mes</h2>
+            <p>La televisión se cobra por separado. No cambia el internet ni el MikroTik.</p>
+            <form method="post" class="grid"><input type="hidden" name="csrf" value="'''+token+'''">
+            <input type="hidden" name="action" value="tv_sub_create">
+            <input name="customer_id" type="number" min="1" placeholder="ID de cliente" required>
+            <input name="billing_day" type="number" min="1" max="31" placeholder="Día de corte" required>
+            <button class="btn blue">Crear cuenta TV</button></form></div>'''
+            entries = []
+            for sub in subs:
+                sid = str(sub['id'])
+                state = status(c,sub['id'],date.today()) if False else ''
+                entries.append('<tr><td>'+host.e(sub['customer_id'])+'</td><td>'+sid+
+                    '</td><td>'+host.e(sub['paid_through'] or 'Sin pago')+
+                    '</td><td>'+('Vinculado' if sub['device_token_hash'] else 'Sin TV')+'</td></tr>')
+            for action, title, attrs in (
+                ('tv_sub_pay','Registrar RD$600','<input name="receipt_reference" placeholder="Referencia bancaria única" required>'),
+                ('tv_sub_trial','Prueba 24 horas',''),
+                ('tv_sub_bind','Asociar TV aprobado','<input name="code" maxlength="8" placeholder="Código de televisor" required>'),
+            ):
+                forms += '<div class="panel"><h3>'+title+'</h3><form method="post" class="grid">'+\
+                    '<input type="hidden" name="csrf" value="'+token+'">'+\
+                    '<input type="hidden" name="action" value="'+action+'">'+\
+                    '<input type="number" min="1" name="subscription_id" placeholder="ID de suscripción" required>'+\
+                    attrs+'<button class="btn blue">'+title+'</button></form></div>'
+            subscription_panel = forms + '<div class="panel"><h3>Últimas 100 cuentas TV</h3><table>'+\
+                '<tr><th>Cliente</th><th>ID TV</th><th>Vence</th><th>Dispositivo</th></tr>'+\
+                ''.join(entries)+'</table></div>'
+        body = head + message + subscription_panel + selection_panel + '<div class="panel"><h2>Lista de canales, películas y series</h2><p>' + (
             'Lista configurada · versión '+str(config['revision']) if config else 'Todavía no hay una lista guardada.') + '''</p>
             <form method="post"><input type="hidden" name="csrf" value="'''+token+'''">
             <input type="hidden" name="action" value="save"><div class="field"><label>Enlace M3U del proveedor</label>

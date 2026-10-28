@@ -89,11 +89,13 @@ def record_payment(db, subscription_id, key, today, now=None):
     db.execute("BEGIN IMMEDIATE")
     try:
         existing = db.execute(
-            "SELECT new_due FROM tv_subscription_payments WHERE idempotency_key=?", (key,)
+            "SELECT subscription_id,new_due FROM tv_subscription_payments WHERE idempotency_key=?", (key,)
         ).fetchone()
         if existing:
+            if existing[0] != subscription_id:
+                raise ValueError('Payment reference already belongs to another TV subscription')
             db.commit()
-            return date.fromisoformat(existing[0])
+            return date.fromisoformat(existing[1])
         row = db.execute(
             "SELECT billing_day,paid_through FROM tv_subscriptions WHERE id=?", (subscription_id,)
         ).fetchone()

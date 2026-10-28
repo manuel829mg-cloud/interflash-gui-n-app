@@ -334,6 +334,22 @@ def setup(app):
             device = c.execute('SELECT approved FROM tv_native_devices WHERE token_hash=?', (digest,)).fetchone()
             if not device or not device['approved']:
                 return jsonify(error='Approval required'), 403
+            # TV billing is opt-in. Unmigrated devices preserve legacy behavior
+            # until an administrator associates their existing token with a TV account.
+            if os.environ.get('TV_SUBSCRIPTIONS_ENABLED') == '1':
+                from tv_subscriptions_isolated import create_schema, status
+                from datetime import date
+                create_schema(c)
+                sub = c.execute('SELECT id FROM tv_subscriptions WHERE device_token_hash=?',
+                                (digest,)).fetchone()
+                if sub:
+                    tv_state = status(c, sub['id'], date.today())
+                    if tv_state not in ('ACTIVE', 'TRIAL'):
+                        reply = jsonify(error='Servicio suspendido por falta de pago',
+                                        tv_status=tv_state)
+                        reply.status_code = 402
+                        reply.headers['Cache-Control'] = 'no-store'
+                        return reply
             c.execute('UPDATE tv_native_devices SET seen=? WHERE token_hash=?', (int(time.time()), digest))
             config = c.execute('SELECT * FROM tv_native_settings WHERE id=1').fetchone()
             c.commit()

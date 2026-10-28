@@ -115,7 +115,7 @@ def send_image(phone, image, filename, caption=''):
             ('--' + boundary + '--\r\n').encode(),
         ))
         body = b''.join(parts)
-        media_url = re.sub(r'\.api\.greenapi\.com$', '.media.greenapi.com', cfg['api_url'])
+        media_url = cfg['api_url']  # This channel's dashboard lists mediaUrl identical to apiUrl
         url = media_url + '/waInstance' + cfg['channel'] + '/sendFileByUpload/' + cfg['token']
         req = urllib.request.Request(url, data=body, headers={
             'Accept': 'application/json',

@@ -124,7 +124,7 @@ def settings():
             remote['webhooks']=[h for h in hooks if isinstance(h,dict) and h.get('url')!=callback]+[desired]
             # Persist the callback key before WAHA begins sending events.
             c=base.db();c.execute("UPDATE waha_config SET hook=? WHERE id=1",(hook,));c.commit();c.close()
-            api('/api/sessions/'+new['session_name'],{'name':new['session_name'],'config':remote},new,method='PUT')
+            api('/api/sessions/'+new['session_name'],{'name':new['session_name'],'config':remote},new,method='POST')
             verified=api('/api/sessions/'+new['session_name'],cfg=new)
             if not any(isinstance(h,dict) and all(h.get(k)==v for k,v in desired.items()) for h in ((verified.get('config') or {}).get('webhooks') or [])):
                 raise APIError('WAHA no confirmó la recepción; el proveedor activo no se cambió.')

@@ -158,7 +158,7 @@ def setup(app):
                             try:
                                 number = int(raw_number)
                                 parsed = urlsplit(url)
-                                if not 1 <= number <= 9999 or not name or len(name)>100 or any(ch in name for ch in ('\\n','\\r','"')):
+                                if not 1 <= number <= 9999 or not name or len(name)>100 or any(ch in name for ch in ('\n','\r','"')):
                                     raise ValueError('Revisa el nombre y el número.')
                                 if parsed.scheme not in ('http','https') or not parsed.hostname or parsed.username or parsed.password or len(url)>4096 or any(ch.isspace() for ch in url):
                                     raise ValueError('Enlace de canal no válido.')
@@ -538,7 +538,7 @@ def setup(app):
                 extra = []
                 for item in additions:
                     extra.extend(['#EXTINF:-1 tvg-chno="'+str(item['number'])+'" group-title="Canales manuales",'+item['name'], host.dec(item['url_enc'])])
-                content = content.rstrip() + '\\n' + '\\n'.join(extra) + '\\n'
+                content = content.rstrip() + '\n' + '\n'.join(extra) + '\n'
         except Exception:
             return 'Archivo no disponible', 503
         response = app.make_response(gzip.compress(content.encode('utf-8'), compresslevel=6))

@@ -197,7 +197,8 @@ def setup(app):
                                     note = str(ex) or 'No se pudo leer el archivo. Usa formato UTF-8.'
                     elif action == 'append_vod_m3u':
                         # Add a separate VOD playlist without replacing working live TV channels.
-                        media_type = request.form.get('media_type', '')                        upload = request.files.get('vod_file')
+                        media_type = request.form.get('media_type', '')
+                        upload = request.files.get('vod_file')
                         if media_type not in ('movie', 'series'):
                             note = 'Selecciona Películas o Series.'
                         elif not upload or not upload.filename or not upload.filename.lower().endswith(('.m3u', '.m3u8')):
@@ -396,7 +397,8 @@ def setup(app):
             with db() as c:
                 active = c.execute('SELECT source_enc FROM tv_native_settings WHERE id=1').fetchone()
                 if active:
-                    try:                        saved = host.dec(active['source_enc'])
+                    try:
+                        saved = host.dec(active['source_enc'])
                         if saved.startswith('m3ufile:'):
                             _, target_file_id, _ = saved.split(':', 2)
                             file = c.execute('SELECT content_enc FROM tv_native_m3u_files WHERE id=?', (target_file_id,)).fetchone()

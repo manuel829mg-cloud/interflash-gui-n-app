@@ -91,31 +91,40 @@ def invoice_data(c, invoice_id):
 def send_invoice(c, phone, invoice_id, caption=None):
     import whatsapp_suite as wa
     import waha_suite as waha
+    import greenapi_suite as green
     try:
         inv,company,banks = invoice_data(c,int(invoice_id))
         if inv['status']!='PAGADA' or inv['customer_status']=='ELIMINADO':
             raise ValueError('Factura anulada o cliente eliminado; no se envió el documento.')
         from customer_phones import recipients
-        if wa._wa_phone(phone) not in recipients(inv):
+        phone = wa._wa_phone(phone)
+        if phone not in recipients(inv):
             raise ValueError('El teléfono del cliente cambió; revisa el destinatario antes de reenviar.')
-        if not waha.enabled(): raise ValueError('El envío de factura PDF requiere el proveedor WAHA conectado.')
-        if not re.fullmatch(r'[1-9][0-9]{7,14}',wa._wa_phone(phone)):
+        if not re.fullmatch(r'[1-9][0-9]{7,14}',phone):
             raise ValueError('Número de teléfono inválido.')
         if float(inv['paid_total']) < float(inv['amount']):
             raise ValueError('La factura todavía tiene balance pendiente; no se envió como pagada.')
-        cfg = waha.config()
+        if not waha.enabled() and not green.enabled():
+            raise ValueError('El envío del PDF requiere WAHA o GREEN-API conectado.')
         filename = 'Factura-IF-%06d.pdf' % inv['id']
         pdf = render_pdf(inv,company,banks)
-        result = waha.api('/api/sendFile',{
-            'session':cfg['session_name'],'chatId':wa._wa_phone(phone)+'@c.us',
-            'file':{'mimetype':'application/pdf','filename':filename,'data':base64.b64encode(pdf).decode('ascii')},
-            'caption':caption or 'Hola '+inv['customer']+', adjuntamos tu factura '+('IF-%06d' % inv['id'])+' de INTER Flash.'},cfg)
-        mid = result.get('id')
-        if isinstance(mid,dict): mid=mid.get('_serialized')
-        if not isinstance(mid,str) or not mid:
-            raise ValueError('No se confirmó el PDF. Revisa el chat antes de reintentar para evitar duplicados.')
-        return True,'waha:'+cfg['session_name']+':'+mid,''
-    except (ValueError,OSError,waha.APIError) as exc:
+        message = caption or 'Hola '+inv['customer']+', adjuntamos tu factura '+('IF-%06d' % inv['id'])+' de INTER Flash.'
+        if waha.enabled():
+            cfg = waha.config()
+            result = waha.api('/api/sendFile',{
+                'session':cfg['session_name'],'chatId':phone+'@c.us',
+                'file':{'mimetype':'application/pdf','filename':filename,'data':base64.b64encode(pdf).decode('ascii')},
+                'caption':message},cfg)
+            mid = result.get('id')
+            if isinstance(mid,dict): mid=mid.get('_serialized')
+            if not isinstance(mid,str) or not mid:
+                raise ValueError('No se confirmó el PDF. Revisa el chat antes de reintentar para evitar duplicados.')
+            return True,'waha:'+cfg['session_name']+':'+mid,''
+        ok,provider_id,error = green.send_file(phone,pdf,filename,message)
+        if not ok:
+            raise ValueError(error or 'GREEN-API no confirmó el PDF. Revisa el chat antes de reenviar.')
+        return True,provider_id,''
+    except (ValueError,OSError,waha.APIError,green.APIError) as exc:
         return False,'',str(exc)
 
 

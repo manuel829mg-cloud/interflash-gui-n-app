@@ -517,10 +517,44 @@ def setup(app):
                 payload = source_config(saved_source)
         except ValueError:
             return jsonify(error='Invalid stored source'), 503
+        # Separate manual-channel source works alongside Xtream, external M3U and file M3U.
+        with db() as c:
+            manual_count = c.execute('SELECT COUNT(*) FROM tv_manual_channels').fetchone()[0]
+        if manual_count:
+            signature = hmac.new(host.PASSWORD.encode(), digest.encode(), hashlib.sha256).hexdigest()
+            payload['manual_url'] = ('https://interflash-isp-manager.up.railway.app/api/tv-native/manual/'
+                                     + digest + '/' + signature + '.m3u')
+            payload['manual_revision'] = config['revision']
         payload.update(revision=config['revision'] + (2 if saved_source.startswith('m3ufile:') else 0), name='Inter Flash TV')
         response = jsonify(payload)
         response.headers['Cache-Control'] = 'no-store'
         response.headers['Referrer-Policy'] = 'no-referrer'
+        return response
+
+    @app.get('/api/tv-native/manual/<digest>/<signature>.m3u')
+    def tv_native_manual_playlist(digest, signature):
+        if not re.fullmatch(r'[0-9a-f]{64}', digest) or not re.fullmatch(r'[0-9a-f]{64}', signature):
+            return 'No autorizado', 404
+        expected = hmac.new(host.PASSWORD.encode(), digest.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(expected, signature):
+            return 'No autorizado', 404
+        with db() as c:
+            device = c.execute('SELECT approved FROM tv_native_devices WHERE token_hash=?', (digest,)).fetchone()
+            if not device or device['approved'] != 1:
+                return 'No autorizado', 403
+            subscription = c.execute('SELECT paid_until FROM tv_monthly_accounts WHERE token_hash=?', (digest,)).fetchone()
+            trial = c.execute('SELECT expires_at FROM tv_trial_uses WHERE token_hash=?', (digest,)).fetchone()
+            if (subscription and subscription['paid_until'] <= tv_today().isoformat()) or (not subscription and trial and trial['expires_at'] <= int(time.time())):
+                return 'Suscripcion vencida', 403
+            channels = c.execute('SELECT number,name,url_enc FROM tv_manual_channels ORDER BY number,name').fetchall()
+        lines = ['#EXTM3U']
+        for item in channels:
+            lines.extend(['#EXTINF:-1 tvg-chno="'+str(item['number'])+'" group-title="Canales Dominicanos",'+item['name'],
+                          host.dec(item['url_enc'])])
+        response = app.make_response(gzip.compress(('\\n'.join(lines) + '\\n').encode('utf-8'), compresslevel=6))
+        response.headers['Content-Type'] = 'application/vnd.apple.mpegurl; charset=utf-8'
+        response.headers['Content-Encoding'] = 'gzip'
+        response.headers['Cache-Control'] = 'no-store'
         return response
 
     @app.get('/api/tv-native/playlist/<file_id>/<access_key>.m3u')

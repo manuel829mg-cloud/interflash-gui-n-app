@@ -134,6 +134,58 @@ def send_image(phone, image, filename, caption=''):
         return False, '', 'No se confirmó la imagen de GREEN-API. Revisa el chat antes de reenviar.'
 
 
+def send_file(phone, file_data, filename, caption=''):
+    """Send a local invoice PDF using GREEN-API's media host."""
+    if not re.fullmatch(r'[1-9][0-9]{7,14}', str(phone)):
+        return False, '', 'Número de teléfono inválido.'
+    if not isinstance(file_data, bytes) or not file_data or len(file_data) > 5 * 1024 * 1024:
+        return False, '', 'El PDF no está disponible o excede el límite de WhatsApp.'
+    if not re.fullmatch(r'Factura-IF-[0-9]{6}\.pdf', str(filename)):
+        return False, '', 'Nombre de archivo de factura no válido.'
+    cfg = config()
+    try:
+        validate(cfg)
+        boundary = '----InterFlash' + uuid.uuid4().hex
+        fields = (
+            ('chatId', (str(phone) + '@c.us').encode()),
+            ('fileName', filename.encode()),
+            ('caption', str(caption)[:20000].encode()),
+        )
+        parts = []
+        for name, value in fields:
+            parts.extend((
+                ('--' + boundary + '\r\n').encode(),
+                f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode(),
+                value,
+                b'\r\n',
+            ))
+        parts.extend((
+            ('--' + boundary + '\r\n').encode(),
+            f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'.encode(),
+            b'Content-Type: application/pdf\r\n\r\n',
+            file_data,
+            b'\r\n',
+            ('--' + boundary + '--\r\n').encode(),
+        ))
+        body = b''.join(parts)
+        url = cfg['api_url'] + '/waInstance' + cfg['channel'] + '/sendFileByUpload/' + cfg['token']
+        req = urllib.request.Request(url, data=body, headers={
+            'Accept': 'application/json',
+            'Content-Type': 'multipart/form-data; boundary=' + boundary,
+        })
+        with urllib.request.build_opener(ultra.NoRedirect).open(req, timeout=30) as response:
+            result = json.loads(response.read(2_000_000))
+        mid = result.get('idMessage') if isinstance(result, dict) else None
+        if not isinstance(mid, str) or not mid:
+            return False, '', 'GREEN-API no confirmó el PDF. Revisa su panel antes de reenviar.'
+        return True, 'greenapi:' + cfg['channel'] + ':' + mid, ''
+    except urllib.error.HTTPError as exc:
+        return False, '', 'GREEN-API rechazó el PDF (HTTP ' + str(exc.code) + '). Revisa la instancia y los límites del plan.'
+    except Exception:
+        # Provider URLs contain the credential; never return or log exception text.
+        return False, '', 'No se confirmó el PDF de GREEN-API. Revisa el chat antes de reenviar.'
+
+
 def confirmed_status(c, pid, default):
     row = c.execute('SELECT status FROM greenapi_acks WHERE provider_id=?', (pid,)).fetchone()
     return row['status'] if row else default

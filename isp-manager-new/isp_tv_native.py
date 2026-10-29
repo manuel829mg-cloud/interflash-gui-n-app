@@ -146,7 +146,7 @@ def setup(app):
                             note = 'Lista guardada. Las apps vinculadas la consultarán al abrir.'
                         except ValueError as ex:
                             note = str(ex)
-                    elif action in ('manual_add', 'manual_delete'):
+                    elif action in ('manual_add', 'manual_edit', 'manual_delete'):
                         if action == 'manual_delete':
                             c.execute('DELETE FROM tv_manual_channels WHERE id=?', (request.form.get('channel_id',''),))
                             c.execute('UPDATE tv_native_settings SET revision=revision+1 WHERE id=1')
@@ -162,9 +162,18 @@ def setup(app):
                                     raise ValueError('Revisa el nombre y el número.')
                                 if parsed.scheme not in ('http','https') or not parsed.hostname or parsed.username or parsed.password or len(url)>4096 or any(ch.isspace() for ch in url):
                                     raise ValueError('Enlace de canal no válido.')
-                                c.execute('INSERT INTO tv_manual_channels VALUES(?,?,?,?,?)', (secrets.token_urlsafe(12),number,name,host.enc(url),int(time.time())))
-                                c.execute('UPDATE tv_native_settings SET revision=revision+1 WHERE id=1')
-                                note = 'Canal guardado.'
+                                if action == 'manual_add':
+                                    c.execute('INSERT INTO tv_manual_channels VALUES(?,?,?,?,?)', (secrets.token_urlsafe(12),number,name,host.enc(url),int(time.time())))
+                                    note = 'Canal guardado.'
+                                else:
+                                    cur = c.execute('UPDATE tv_manual_channels SET number=?,name=?,url_enc=? WHERE id=?',
+                                                    (number,name,host.enc(url),request.form.get('channel_id','')))
+                                    if cur.rowcount:
+                                        note = 'Canal actualizado.'
+                                    else:
+                                        note = 'No encontré ese canal para editar.'
+                                if action == 'manual_add' or cur.rowcount:
+                                    c.execute('UPDATE tv_native_settings SET revision=revision+1 WHERE id=1')
                             except ValueError as ex:
                                 note = str(ex)
                     elif action == 'upload_m3u':
@@ -369,11 +378,25 @@ def setup(app):
             tv_dues = {r['token_hash']: r['paid_until'] for r in c.execute('SELECT token_hash,paid_until FROM tv_monthly_accounts').fetchall()}
             tv_trials = {r['token_hash']: r['expires_at'] for r in c.execute('SELECT token_hash,expires_at FROM tv_trial_uses').fetchall()}
         with db() as c:
-            manual_channels = c.execute('SELECT id,number,name FROM tv_manual_channels ORDER BY number,name').fetchall()
-        manual_rows = ''.join('<li>'+host.e(x['number'])+' — '+host.e(x['name'])+
-            '<form method="post" style="display:inline"><input type="hidden" name="csrf" value="'+token+'">'+
-            '<input type="hidden" name="action" value="manual_delete"><input type="hidden" name="channel_id" value="'+host.e(x['id'])+'">'+
-            '<button class="btn small" type="submit">Eliminar</button></form></li>' for x in manual_channels)
+            manual_channels = c.execute('SELECT id,number,name,url_enc FROM tv_manual_channels ORDER BY number,name').fetchall()
+        manual_rows_parts = []
+        for x in manual_channels:
+            channel_id = host.e(x['id'])
+            edit_id = 'manual-edit-' + channel_id
+            delete_form = ('<form method="post" style="display:inline"><input type="hidden" name="csrf" value="'+token+'">'+
+                '<input type="hidden" name="action" value="manual_delete"><input type="hidden" name="channel_id" value="'+channel_id+'">'+
+                '<button class="btn small" type="submit">Eliminar</button></form>')
+            edit_button = ('<button class="btn small" type="button" onclick="var f=document.getElementById(\''+edit_id+'\');f.style.display=f.style.display===\'none\'?\'block\':\'none\'">Editar</button>')
+            edit_form = ('<form method="post" id="'+edit_id+'" style="display:none;margin:8px 0 0 18px">'+
+                '<input type="hidden" name="csrf" value="'+token+'"><input type="hidden" name="action" value="manual_edit">'+
+                '<input type="hidden" name="channel_id" value="'+channel_id+'">'+
+                '<div class="field"><label>Nombre</label><input name="channel_name" maxlength="100" value="'+host.e(x['name'])+'" required></div>'+
+                '<div class="field"><label>Número</label><input name="channel_number" type="number" min="1" max="9999" value="'+host.e(x['number'])+'" required></div>'+
+                '<div class="field"><label>Enlace</label><input name="channel_url" type="url" value="'+host.e(host.dec(x['url_enc']))+'" required></div>'+
+                '<button class="btn small green" type="submit">Guardar cambios</button> '+
+                '<button class="btn small" type="button" onclick="document.getElementById(\''+edit_id+'\').style.display=\'none\'">Cancelar</button></form>')
+            manual_rows_parts.append('<li style="margin:8px 0">'+host.e(x['number'])+' — '+host.e(x['name'])+' '+edit_button+' '+delete_form+edit_form+'</li>')
+        manual_rows = ''.join(manual_rows_parts)
         manual_panel = ('<div class="panel"><h2>Agregar canal manualmente</h2><p>Los canales manuales se añaden a la lista M3U subida, sin reemplazarla.</p>'+
             '<form method="post"><input type="hidden" name="csrf" value="'+token+'"><input type="hidden" name="action" value="manual_add">'+
             '<div class="field"><label>Nombre</label><input name="channel_name" maxlength="100" required></div>'+

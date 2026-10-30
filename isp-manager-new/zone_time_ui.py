@@ -183,7 +183,6 @@ def zones_page():
     client_count = sum(zone_counts.values())
     c.close()
 
-    from datetime import datetime
     from zoneinfo import ZoneInfo
     preview_today = datetime.now(ZoneInfo('America/Santo_Domingo')).date().isoformat()
 

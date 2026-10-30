@@ -233,8 +233,53 @@ def process_zone_cuts(now=None, dry_run=False):
         c.close()
 
 
+def _cancel_unzoned_pending_invoices():
+    """Cancel unpaid pending invoices for customers who are not assigned to a zone."""
+    from invoice_void import cancel_invoice
+
+    c = base.db()
+    try:
+        rows = c.execute(f'''SELECT i.id
+            FROM invoices i
+            JOIN customers cu ON cu.id=i.customer_id
+            LEFT JOIN zones z ON {_zone_join()}
+            WHERE i.status='PENDIENTE'
+              AND z.id IS NULL
+              AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.invoice_id=i.id)
+            ORDER BY i.id''').fetchall()
+        protected = c.execute(f'''SELECT COUNT(*)
+            FROM invoices i
+            JOIN customers cu ON cu.id=i.customer_id
+            LEFT JOIN zones z ON {_zone_join()}
+            WHERE i.status='PENDIENTE'
+              AND z.id IS NULL
+              AND EXISTS (SELECT 1 FROM payments p WHERE p.invoice_id=i.id)''').fetchone()[0]
+        invoice_ids = [row['id'] for row in rows]
+    finally:
+        c.close()
+
+    cancelled = 0
+    for invoice_id in invoice_ids:
+        try:
+            cancelled += int(cancel_invoice(
+                invoice_id,
+                'Cliente sin zona asignada; facturación reservada a clientes con zona.',
+                'Sistema',
+            ))
+        except ValueError:
+            # Preserve invoices with payments or any state changed during cleanup.
+            continue
+    return cancelled, int(protected or 0)
+
+
 def run_billing():
     """Billing runner compatible with the old function, but zone-time aware."""
+    cancelled, protected = _cancel_unzoned_pending_invoices()
+    if cancelled or protected:
+        base.app.logger.info(
+            'INTERFLASH_UNZONED_INVOICES '
+            f'cancelled={cancelled} protected_with_payments={protected}'
+        )
     if bs.setting('billing_enabled', '1') != '1':
         return 0, 0, 0
     today = date.today()
@@ -259,7 +304,8 @@ def run_billing():
             LEFT JOIN zones z ON {_zone_join()}
             WHERE cu.plan_id IS NOT NULL
               AND COALESCE(cu.status,'ACTIVO') <> 'ELIMINADO'
-              AND (z.id IS NULL OR COALESCE(z.active,1)=1)
+              AND z.id IS NOT NULL
+              AND COALESCE(z.active,1)=1
               AND COALESCE(z.automatic_billing_enabled,1)=1 ''').fetchall()
 
         last_day = calendar.monthrange(today.year, today.month)[1]

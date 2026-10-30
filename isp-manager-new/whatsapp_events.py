@@ -139,17 +139,29 @@ def send_outbox(limit=25):
     if bs.setting('whatsapp_enabled', '0') != '1' or not wa._meta_ready():
         return 0, 'Avisos desactivados o proveedor pendiente.'
     sent = 0
+    deferred_ids = set()
     for _ in range(limit):
         c = base.db()
         try:
             c.execute('BEGIN IMMEDIATE')
             floor = int(dict(c.execute('SELECT key,value FROM app_settings')).get('whatsapp_event_floor', '0'))
-            row = c.execute("SELECT o.* FROM whatsapp_outbox o LEFT JOIN whatsapp_outbox_links l ON l.outbox_id=o.id WHERE o.id>? AND o.status='PENDIENTE' AND l.outbox_id IS NULL ORDER BY o.id LIMIT 1", (floor,)).fetchone()
+            sql = "SELECT o.* FROM whatsapp_outbox o LEFT JOIN whatsapp_outbox_links l ON l.outbox_id=o.id WHERE o.id>? AND o.status='PENDIENTE' AND l.outbox_id IS NULL"
+            params = [floor]
+            if deferred_ids:
+                sql += ' AND o.id NOT IN (' + ','.join('?' for _ in deferred_ids) + ')'
+                params.extend(sorted(deferred_ids))
+            sql += ' ORDER BY o.id LIMIT 1'
+            row = c.execute(sql, tuple(params)).fetchone()
             if not row:
                 c.rollback(); break
             if row['template_code'] == 'ZONE_REMINDER' or str(row['template_code'] or '').startswith('INVOICE_PDF_DUE:'):
                 from zone_whatsapp_reminders import valid
-                if not valid(c, row['id']):
+                reminder_validity = valid(c, row['id'])
+                if reminder_validity is None:
+                    deferred_ids.add(int(row['id']))
+                    c.rollback()
+                    continue
+                if not reminder_validity:
                     c.execute("UPDATE whatsapp_outbox SET status='CANCELADO',error='Recordatorio resuelto, desactivado o fuera de fecha' WHERE id=?", (row['id'],))
                     c.commit()
                     continue

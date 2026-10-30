@@ -267,7 +267,8 @@ def run_billing():
         for cu in rows:
             # Include next month's cycle when its issue date falls this month.
             next_month = (today.replace(day=28) + timedelta(days=4)).replace(day=1)
-            for cycle in (today.replace(day=1), next_month):
+            cycles = (today.replace(day=1), next_month) if int(cu['invoice_generation_enabled'] or 0) == 1 else ()
+            for cycle in cycles:
                 period = cycle.strftime('%Y-%m')
                 last_day = calendar.monthrange(cycle.year, cycle.month)[1]
                 due_source = cu['zone_billing_day'] if cu['zone_billing_day'] is not None else cu['due_day']

@@ -39,6 +39,7 @@ def ensure_schema():
         ('mikrotik_profile', 'TEXT'),
         ('router_name', 'TEXT DEFAULT "CCR2116"'),
         ('service_status', 'TEXT DEFAULT "ACTIVO"'),
+        ('invoice_generation_enabled', 'INTEGER NOT NULL DEFAULT 1'),
     ]
     for name, ddl in additions:
         if name not in cols:
@@ -104,6 +105,7 @@ def customer_form(row=None):
     router_opts = ''.join(f'<option value="{esc(name)}" {"selected" if current_router == name else ""}>{esc(label)}</option>' for name, label in router_names)
 
     new_checked = 'checked' if row is None else ''
+    invoice_checked = 'checked' if str(v('invoice_generation_enabled', 1 if row is None else 0)) == '1' else ''
     return f'''<form method="post" class="panel formgrid" data-if-existing="{1 if row is not None else 0}">
       <div><label>Nombre completo<input name="name" value="{esc(v('name'))}" required></label></div>
       <div><label>Teléfono<input type="tel" name="phone" value="{esc(v('phone'))}"></label></div>
@@ -131,6 +133,7 @@ def customer_form(row=None):
       <div><label>Router<select name="router_name">{router_opts or '<option value="CCR2116">CCR2116</option>'}</select></label></div>
       <div><label>Serial ONU<input name="onu_serial" value="{esc(v('onu_serial'))}"></label></div>
       <input type="hidden" name="due_day" value="{esc(v('due_day',30))}">
+      <div class="full" style="padding:12px;border:1px solid #29425b;border-radius:10px;background:#0b1725"><label style="display:flex;align-items:center;gap:9px"><input style="width:auto;margin:0" type="checkbox" name="invoice_generation_enabled" value="1" {invoice_checked}> Generar factura automáticamente</label><div class="muted" style="margin-top:7px">Desmárcalo para que este cliente no reciba facturas generadas automáticamente. No elimina facturas existentes.</div></div>
       <div><label>Estado<select name="status"><option {"selected" if v('status','ACTIVO')=='ACTIVO' else ''}>ACTIVO</option><option {"selected" if v('status')=='SUSPENDIDO' else ''}>SUSPENDIDO</option></select></label></div>
       <div class="full" style="padding:12px;border:1px solid #29425b;border-radius:10px;background:#0b1725">
         <label style="display:flex;align-items:center;gap:9px"><input style="width:auto;margin:0" type="checkbox" name="create_in_router" value="1" {new_checked}> Crear/actualizar el PPPoE en MikroTik usando la cola segura</label>
@@ -198,6 +201,7 @@ def _post_values():
         'ip': (request.form.get('ip_address') or '').strip(), 'onu': request.form.get('onu_serial'),
         'plan_id': request.form.get('plan_id') or None, 'status': request.form.get('status','ACTIVO'),
         'due_day': int(request.form.get('due_day') or 30),
+        'invoice_generation_enabled': int(request.form.get('invoice_generation_enabled') == '1'),
         'profile': (request.form.get('mikrotik_profile') or '').strip(),
         'pbr': pbr, 'router': (request.form.get('router_name') or 'CCR2116').strip() or 'CCR2116',
         'password': request.form.get('pppoe_password') or '',
@@ -214,9 +218,9 @@ def customer_new_pbr():
         except ValueError as error:
             return base.shell('Nuevo cliente', f'<div class="notice" role="alert">{esc(error)}</div>' + customer_form(request.form), 'customers'), 400
         c = base.db()
-        cur = c.execute('''INSERT INTO customers(code,name,phone,document,email,address,zone,pppoe,ip_address,onu_serial,plan_id,status,due_day,created_at,mikrotik_profile,pbr_line,router_name,service_status,latitude,longitude)
-                           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
-                        (None,x['name'],x['phone'],x['document'],x['email'],x['address'],x['zone'],x['pppoe'],x['ip'],x['onu'],x['plan_id'],x['status'],x['due_day'],date.today().isoformat(),x['profile'],x['pbr'],x['router'],x['status'],x['latitude'],x['longitude']))
+        cur = c.execute('''INSERT INTO customers(code,name,phone,document,email,address,zone,pppoe,ip_address,onu_serial,plan_id,status,due_day,created_at,mikrotik_profile,pbr_line,router_name,service_status,latitude,longitude,invoice_generation_enabled)
+                           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                        (None,x['name'],x['phone'],x['document'],x['email'],x['address'],x['zone'],x['pppoe'],x['ip'],x['onu'],x['plan_id'],x['status'],x['due_day'],date.today().isoformat(),x['profile'],x['pbr'],x['router'],x['status'],x['latitude'],x['longitude'],x['invoice_generation_enabled']))
         cid = cur.lastrowid; c.execute('UPDATE customers SET phone_secondary=? WHERE id=?', (x['phone_secondary'],cid)); c.execute('UPDATE customers SET code=? WHERE id=?',(f'IF-{cid:05d}',cid))
         c.execute('UPDATE customers SET telecable_enabled=? WHERE id=?', (int(request.form.get('telecable_enabled') == '1'), cid))
         notes = []
@@ -255,8 +259,8 @@ def customer_edit_pbr(id):
             flash('No se guardó: cambiar el usuario PPPoE o moverlo de router requiere una migración del servicio.')
             return redirect(url_for('customer_edit',id=id))
         old_pbr = row['pbr_line'] or ''; old_ip = row['ip_address'] or ''; old_profile = row['mikrotik_profile'] or ''
-        c.execute('''UPDATE customers SET name=?,phone=?,document=?,email=?,address=?,zone=?,pppoe=?,ip_address=?,onu_serial=?,plan_id=?,status=?,due_day=?,mikrotik_profile=?,pbr_line=?,router_name=?,service_status=? WHERE id=?''',
-                  (x['name'],x['phone'],x['document'],x['email'],x['address'],x['zone'],x['pppoe'],x['ip'],x['onu'],x['plan_id'],x['status'],x['due_day'],x['profile'],x['pbr'],x['router'],x['status'],id))
+        c.execute('''UPDATE customers SET name=?,phone=?,document=?,email=?,address=?,zone=?,pppoe=?,ip_address=?,onu_serial=?,plan_id=?,status=?,due_day=?,mikrotik_profile=?,pbr_line=?,router_name=?,service_status=?,invoice_generation_enabled=? WHERE id=?''',
+                  (x['name'],x['phone'],x['document'],x['email'],x['address'],x['zone'],x['pppoe'],x['ip'],x['onu'],x['plan_id'],x['status'],x['due_day'],x['profile'],x['pbr'],x['router'],x['status'],x['invoice_generation_enabled'],id))
         if 'phone_secondary' in request.form:
             c.execute('UPDATE customers SET phone_secondary=? WHERE id=?', (x['phone_secondary'],id))
         if 'latitude' in request.form or 'longitude' in request.form:

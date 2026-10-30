@@ -49,6 +49,8 @@ def ensure_zone_schema():
             ('active', 'INTEGER DEFAULT 1'),
             ('whatsapp_reminder_enabled', 'INTEGER NOT NULL DEFAULT 0'),
             ('whatsapp_reminder_days', 'INTEGER NOT NULL DEFAULT 2'),
+            ('whatsapp_reminder_start_time', "TEXT NOT NULL DEFAULT '10:00'"),
+            ('whatsapp_reminder_end_time', "TEXT NOT NULL DEFAULT '20:00'"),
             ('suspend_invoice_count', 'INTEGER NOT NULL DEFAULT 1'),
         ]
         for name, ddl in additions:

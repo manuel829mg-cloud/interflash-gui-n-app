@@ -1,3 +1,4 @@
+from datetime import datetime
 from flask import request, redirect, url_for, flash
 import app as base
 import business_suite as bs
@@ -132,6 +133,17 @@ def zones_page():
 
         reminder_enabled = int(request.form.get('whatsapp_reminder_enabled') == '1')
         reminder_days = 0
+        reminder_start = (request.form.get('whatsapp_reminder_start_time') or '10:00').strip()
+        reminder_end = (request.form.get('whatsapp_reminder_end_time') or '20:00').strip()
+        try:
+            datetime.strptime(reminder_start, '%H:%M')
+            datetime.strptime(reminder_end, '%H:%M')
+            if not '08:00' <= reminder_start < reminder_end <= '20:00':
+                raise ValueError()
+        except (TypeError, ValueError):
+            c.close()
+            flash('El horario de recordatorios debe estar entre 8:00 a. m. y 8:00 p. m., y la hora final debe ser posterior a la inicial.')
+            return redirect(url_for('zones_page', edit=zone_id) if zone_id else url_for('zones_page'))
 
         if zone_id:
             current = c.execute('SELECT * FROM zones WHERE id=?', (zone_id,)).fetchone()
@@ -141,8 +153,8 @@ def zones_page():
                 return redirect(url_for('zones_page'))
 
             c.execute(
-                'UPDATE zones SET name=?, billing_day=?, invoice_days_before=?, cut_days_after=?, cut_time=?, whatsapp_reminder_enabled=?, whatsapp_reminder_days=?, suspend_invoice_count=? WHERE id=?',
-                (name, billing_day, invoice_days_before, cut_days_after, cut_time, reminder_enabled, reminder_days, suspend_count, zone_id),
+                'UPDATE zones SET name=?, billing_day=?, invoice_days_before=?, cut_days_after=?, cut_time=?, whatsapp_reminder_enabled=?, whatsapp_reminder_days=?, whatsapp_reminder_start_time=?, whatsapp_reminder_end_time=?, suspend_invoice_count=? WHERE id=?',
+                (name, billing_day, invoice_days_before, cut_days_after, cut_time, reminder_enabled, reminder_days, reminder_start, reminder_end, suspend_count, zone_id),
             )
             try:
                 c.execute('UPDATE customers SET zone=? WHERE zone_id=?', (name, zone_id))
@@ -154,8 +166,8 @@ def zones_page():
             return redirect(url_for('zones_page'))
 
         c.execute(
-            'INSERT INTO zones(name,billing_day,invoice_days_before,cut_days_after,cut_time,whatsapp_reminder_enabled,whatsapp_reminder_days,suspend_invoice_count) VALUES(?,?,?,?,?,?,?,?)',
-            (name, billing_day, invoice_days_before, cut_days_after, cut_time, reminder_enabled, reminder_days, suspend_count),
+            'INSERT INTO zones(name,billing_day,invoice_days_before,cut_days_after,cut_time,whatsapp_reminder_enabled,whatsapp_reminder_days,whatsapp_reminder_start_time,whatsapp_reminder_end_time,suspend_invoice_count) VALUES(?,?,?,?,?,?,?,?,?,?)',
+            (name, billing_day, invoice_days_before, cut_days_after, cut_time, reminder_enabled, reminder_days, reminder_start, reminder_end, suspend_count),
         )
         c.commit()
         c.close()
@@ -171,7 +183,6 @@ def zones_page():
     client_count = sum(zone_counts.values())
     c.close()
 
-    from datetime import datetime
     from zoneinfo import ZoneInfo
     preview_today = datetime.now(ZoneInfo('America/Santo_Domingo')).date().isoformat()
 
@@ -181,6 +192,8 @@ def zones_page():
     form_cut_days = edit_zone['cut_days_after'] if edit_zone else 6
     form_cut_time = edit_zone['cut_time'] if edit_zone else '14:00'
     time_options = _time_options(form_cut_time)
+    form_reminder_start = edit_zone['whatsapp_reminder_start_time'] if edit_zone else '10:00'
+    form_reminder_end = edit_zone['whatsapp_reminder_end_time'] if edit_zone else '20:00'
     reminder_checked = 'checked' if edit_zone and edit_zone['whatsapp_reminder_enabled'] else ''
 
     suspend_count = edit_zone['suspend_invoice_count'] if edit_zone else 1
@@ -200,7 +213,7 @@ def zones_page():
         f'<td>{r["invoice_days_before"]} días antes</td>'
         f'<td>{r["cut_days_after"]} días después</td>'
         f'<td><span class="time-pill">{esc(_time12(r["cut_time"]))}</span></td>'
-        f'<td>{"El día de vencimiento" if r["whatsapp_reminder_enabled"] else "Desactivado"}</td>'
+        f'<td>{("El día de vencimiento · " + _time12(r["whatsapp_reminder_start_time"]) + "–" + _time12(r["whatsapp_reminder_end_time"])) if r["whatsapp_reminder_enabled"] else "Desactivado"}</td>'
         f'<td><div class="zone-actions">'
         f'<a class="edit-btn" href="/zones/{r["id"]}/summary">Resumen e historial</a>'
         f'<a class="edit-btn" href="{url_for("zones_page", edit=r["id"])}#zone-form">✎&nbsp; Editar</a>'
@@ -315,7 +328,9 @@ def zones_page():
           <div class="field-group"><label for="cut-days">Corte días después *</label><input id="cut-days" class="field" type="number" name="cut_days_after" value="{form_cut_days}" min="0"></div>
           <div class="field-group"><label for="cut-time">Hora de corte *</label><select id="cut-time" class="field" name="cut_time">{time_options}</select></div>
           <div class="field-group" style="grid-column:1/-1"><label for="suspend-invoice-count">Suspender servicio</label><select id="suspend-invoice-count" class="field" name="suspend_invoice_count">{suspend_options}</select><p class="muted">Aplica a todos los clientes de esta zona. Cuenta facturas vencidas con saldo pendiente y respeta los días y la hora de corte desde la factura que completa esa cantidad. Las promesas vigentes aplazan el corte.</p></div>
-          <div class="field-group" style="grid-column:1/-1"><label><input type="checkbox" name="whatsapp_reminder_enabled" value="1" {reminder_checked}> Recordatorio por WhatsApp</label><p class="muted">Avisa únicamente a clientes con pagos pendientes. Requiere avisos automáticos de WhatsApp activos. Se envía siempre el día de vencimiento de la factura, desde las 10:00, hora dominicana.</p></div>
+          <div class="field-group" style="grid-column:1/-1"><label><input type="checkbox" name="whatsapp_reminder_enabled" value="1" {reminder_checked}> Recordatorio por WhatsApp</label><p class="muted">Avisa únicamente a clientes con pagos pendientes. Requiere avisos automáticos de WhatsApp activos. Se envía el día de vencimiento dentro del horario de esta zona, hora dominicana.</p></div>
+          <div class="field-group"><label for="reminder-start">Recordatorios desde</label><input id="reminder-start" class="field" type="time" name="whatsapp_reminder_start_time" value="{esc(form_reminder_start)}" min="08:00" max="19:55" step="300" required></div>
+          <div class="field-group"><label for="reminder-end">Recordatorios hasta</label><input id="reminder-end" class="field" type="time" name="whatsapp_reminder_end_time" value="{esc(form_reminder_end)}" min="08:05" max="20:00" step="300" required></div>
           <section id="zone-calendar" style="grid-column:1/-1;padding:16px;border:1px solid #30445e;border-radius:12px;background:#101e31" aria-live="polite">
             <h4 style="margin:0 0 12px">Calendario del próximo vencimiento</h4>
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px">
@@ -337,7 +352,7 @@ def zones_page():
         </div>
         <div class="zone-table-wrap">
           <table class="zones-table">
-            <thead><tr><th>Zona</th><th>Clientes</th><th>Vence</th><th>Factura</th><th>Corte</th><th>Hora</th><th>WhatsApp</th><th>Acciones</th></tr></thead>
+            <thead><tr><th>Zona</th><th>Clientes</th><th>Vence</th><th>Factura</th><th>Corte</th><th>Hora</th><th>WhatsApp / horario</th><th>Acciones</th></tr></thead>
             <tbody id="zoneRows">{trs or '<tr><td colspan="8" class="empty-zone">Sin zonas registradas.</td></tr>'}</tbody>
           </table>
         </div>
@@ -351,7 +366,7 @@ def zones_page():
 
         const todayParts='{preview_today}'.split('-').map(Number);
         const today=new Date(Date.UTC(todayParts[0],todayParts[1]-1,todayParts[2]));
-        const ids=['billing-day','invoice-days','cut-days','cut-time','suspend-invoice-count'];
+        const ids=['billing-day','invoice-days','cut-days','cut-time','suspend-invoice-count','reminder-start','reminder-end'];
         const reminder=document.querySelector('[name="whatsapp_reminder_enabled"]');
         const fmt=new Intl.DateTimeFormat('es-DO',{{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'}});
         function updateCalendar(){{
@@ -368,11 +383,14 @@ def zones_page():
           const cut=new Date(due);cut.setUTCDate(cut.getUTCDate()+after);
           document.getElementById('preview-invoice').textContent=fmt.format(invoice)+(invoice<today?' (fecha programada ya pasada)':'');
           document.getElementById('preview-due').textContent=fmt.format(due);
-          document.getElementById('preview-whatsapp').textContent=reminder.checked?fmt.format(due)+' · desde las 10:00 a. m.':'Desactivado';
+          const start=document.getElementById('reminder-start').value;
+          const end=document.getElementById('reminder-end').value;
+          function hour12(value){{const p=(value||'10:00').split(':').map(Number);const h=p[0]%12||12;return h+':'+String(p[1]).padStart(2,'0')+(p[0]<12?' a. m.':' p. m.')}}
+          document.getElementById('preview-whatsapp').textContent=reminder.checked?fmt.format(due)+' · '+hour12(start)+'–'+hour12(end):'Desactivado';
           const count=Number(document.getElementById('suspend-invoice-count').value);
           const time=document.getElementById('cut-time').selectedOptions[0].textContent;
           document.getElementById('preview-cut').textContent=count===1?fmt.format(cut)+' · '+time:'Al acumular '+count+' facturas vencidas con saldo';
-          document.getElementById('preview-note').textContent='Vista previa de la programación, hora dominicana. No confirma facturas generadas ni mensajes enviados. '+(count===1?'El corte aplica si queda saldo pendiente y no hay promesa vigente.':'La fecha de corte depende de la factura que complete esa cantidad; se respetan el plazo y las promesas vigentes.');
+          document.getElementById('preview-note').textContent='Vista previa de la programación, hora dominicana. Los recordatorios se envían sólo dentro del horario seleccionado. No confirma facturas generadas ni mensajes enviados. '+(count===1?'El corte aplica si queda saldo pendiente y no hay promesa vigente.':'La fecha de corte depende de la factura que complete esa cantidad; se respetan el plazo y las promesas vigentes.');
         }}
         ids.forEach(id=>document.getElementById(id).addEventListener('input',updateCalendar));
         reminder.addEventListener('change',updateCalendar);updateCalendar();

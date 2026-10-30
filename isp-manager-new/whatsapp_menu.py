@@ -17,9 +17,14 @@ def schema():
     c=base.db()
     c.executescript('''CREATE TABLE IF NOT EXISTS whatsapp_menu_config(id INTEGER PRIMARY KEY CHECK(id=1),enabled INTEGER NOT NULL DEFAULT 1);
     INSERT OR IGNORE INTO whatsapp_menu_config(id) VALUES(1);
+    CREATE TABLE IF NOT EXISTS whatsapp_menu_migrations(name TEXT PRIMARY KEY);
     CREATE TABLE IF NOT EXISTS whatsapp_menu_state(phone TEXT PRIMARY KEY,last_reply REAL DEFAULT 0,pause_until REAL DEFAULT 0);
     CREATE TABLE IF NOT EXISTS whatsapp_menu_jobs(event_id TEXT PRIMARY KEY,queue_id INTEGER UNIQUE,instance TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'PENDIENTE',created REAL NOT NULL);
-    ''');c.commit();c.close()
+    ''');
+    migration=c.execute("INSERT OR IGNORE INTO whatsapp_menu_migrations(name) VALUES('disable_welcome_menu_20261030')")
+    if migration.rowcount:
+        c.execute('UPDATE whatsapp_menu_config SET enabled=0 WHERE id=1')
+    c.commit();c.close()
     c=base.db();c.execute("UPDATE whatsapp_menu_jobs SET instance='greenapi:'||instance WHERE instr(instance,':')=0");c.commit();c.close()
 
 

@@ -9,7 +9,8 @@ RD = ZoneInfo('America/Santo_Domingo')
 def candidates(c, now):
     from zone_cut_scheduler import _zone_join
     rows = c.execute(f'''SELECT cu.id customer_id,cu.name,z.id zone_id,
-        z.cut_days_after,z.cut_time,z.whatsapp_reminder_days,z.suspend_invoice_count,
+        z.cut_days_after,z.cut_time,z.whatsapp_reminder_days,z.whatsapp_reminder_start_time,
+        z.whatsapp_reminder_end_time,z.suspend_invoice_count,
         MIN(i.due_date) oldest_due,
         SUM(i.amount-COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id=i.id),0)) balance
         FROM customers cu JOIN zones z ON {_zone_join()}
@@ -30,6 +31,13 @@ def candidates(c, now):
             continue
 
 
+def _in_window(row, now):
+    start = str(row['whatsapp_reminder_start_time'] or '10:00')
+    end = str(row['whatsapp_reminder_end_time'] or '20:00')
+    current = now.strftime('%H:%M')
+    return '08:00' <= start < end <= '20:00' and start <= current < end
+
+
 def message_for(row):
     when = date.fromisoformat(row['due_date']).strftime('%d/%m/%Y')
     return f"Hola {row['name']}, INTER Flash te recuerda que tienes RD${row['balance']:,.2f} pendientes. Tu factura vence hoy, {when}. Realiza tu pago para mantener tu servicio al día. Si ya pagaste, envíanos tu comprobante."
@@ -40,13 +48,13 @@ def process(now=None):
     now = now or datetime.now(RD).replace(tzinfo=None)
     if now.tzinfo is not None:
         now = now.astimezone(RD).replace(tzinfo=None)
-    if not 10 <= now.hour < 20:
-        return 0
     c = base.db()
     try:
         c.execute('BEGIN IMMEDIATE')
         count = 0
         for row in candidates(c, now):
+            if not _in_window(row, now):
+                continue
             message = message_for(row)
             count += int(enqueue(c,row['event_key'],row['customer_id'],'ZONE_REMINDER',message))
         c.commit()
@@ -57,12 +65,12 @@ def process(now=None):
 
 def valid(c, outbox_id, now=None):
     now = now or datetime.now(RD).replace(tzinfo=None)
-    if not 10 <= now.hour < 20:
-        return False
     event = c.execute('SELECT event_key FROM whatsapp_event_keys WHERE outbox_id=?',(outbox_id,)).fetchone()
     if event:
         for row in candidates(c,now):
             if row['event_key'] == event[0].split('|PHONE:', 1)[0]:
+                if not _in_window(row, now):
+                    return None
                 c.execute('UPDATE whatsapp_outbox SET message=? WHERE id=?',(message_for(row),outbox_id))
                 return True
     return False

@@ -19,7 +19,7 @@ def invoices_plus():
             c.close(); flash('Cliente no encontrado.'); return redirect(url_for('invoices'))
         amount=float(request.form.get('amount') or (float(cu['plan_price'] or 0) + telecable.charge(cu)))
         if amount < telecable.charge(cu):
-            c.close(); flash('El monto debe incluir los RD$500 de Telecable.'); return redirect(url_for('invoices'))
+            c.close(); flash('El monto debe incluir el cargo de Telecable seleccionado para este cliente.'); return redirect(url_for('invoices'))
         period=(request.form.get('period') or date.today().strftime('%Y-%m')).strip()
         concept=(request.form.get('concept') or ('Servicio de Internet '+period)).strip()
         speed=(str(cu['download_mbps'] or 0)+'/'+str(cu['upload_mbps'] or 0)+' Mbps') if cu['plan_name'] else ''
@@ -33,7 +33,7 @@ def invoices_plus():
         try: base.audit('INVOICE_CREATE',f'#{iid} cliente {cid}')
         except Exception: pass
         flash('Factura creada.'); return redirect(url_for('invoice_detail',id=iid))
-    customers=c.execute("""SELECT cu.id,cu.name,cu.code,cu.phone,cu.pppoe,cu.telecable_enabled,p.name plan_name,(COALESCE(p.price,0) + CASE WHEN cu.telecable_enabled=1 THEN 500 ELSE 0 END) price FROM customers cu LEFT JOIN plans p ON p.id=cu.plan_id
+    customers=c.execute("""SELECT cu.id,cu.name,cu.code,cu.phone,cu.pppoe,cu.telecable_enabled,p.name plan_name,(COALESCE(p.price,0) + CASE WHEN COALESCE(cu.telecable_amount,0)>0 THEN cu.telecable_amount WHEN cu.telecable_enabled=1 THEN 500 ELSE 0 END) price FROM customers cu LEFT JOIN plans p ON p.id=cu.plan_id
                            WHERE COALESCE(cu.status,'ACTIVO')<>'ELIMINADO' ORDER BY cu.name""").fetchall()
     rows=c.execute("""SELECT i.*,cu.name customer FROM invoices i JOIN customers cu ON cu.id=i.customer_id ORDER BY i.id DESC LIMIT 500""").fetchall()
     c.close()

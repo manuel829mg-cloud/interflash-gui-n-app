@@ -26,6 +26,13 @@ def _cols(c, table):
     return {r['name'] for r in c.execute(f'PRAGMA table_info({table})').fetchall()}
 
 
+def _telecable_amount():
+    raw = request.form.get('telecable_amount')
+    if raw is not None:
+        return int(raw) if raw in ('500', '600', '800', '1000') else 0
+    return 500 if request.form.get('telecable_enabled') == '1' else 0
+
+
 def _table_exists(c, name):
     return c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone() is not None
 
@@ -222,7 +229,11 @@ def customer_new_pbr():
                            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                         (None,x['name'],x['phone'],x['document'],x['email'],x['address'],x['zone'],x['pppoe'],x['ip'],x['onu'],x['plan_id'],x['status'],x['due_day'],date.today().isoformat(),x['profile'],x['pbr'],x['router'],x['status'],x['latitude'],x['longitude'],x['invoice_generation_enabled']))
         cid = cur.lastrowid; c.execute('UPDATE customers SET phone_secondary=? WHERE id=?', (x['phone_secondary'],cid)); c.execute('UPDATE customers SET code=? WHERE id=?',(f'IF-{cid:05d}',cid))
-        c.execute('UPDATE customers SET telecable_enabled=? WHERE id=?', (int(request.form.get('telecable_enabled') == '1'), cid))
+        telecable_amount = _telecable_amount()
+        if 'telecable_amount' in _cols(c, 'customers'):
+            c.execute('UPDATE customers SET telecable_enabled=?,telecable_amount=? WHERE id=?', (int(telecable_amount > 0), telecable_amount, cid))
+        else:
+            c.execute('UPDATE customers SET telecable_enabled=? WHERE id=?', (int(telecable_amount > 0), cid))
         notes = []
         if x['create_in_router']:
             if x['pppoe'] and x['password'] and x['profile']:
@@ -266,7 +277,11 @@ def customer_edit_pbr(id):
         if 'latitude' in request.form or 'longitude' in request.form:
             c.execute('UPDATE customers SET latitude=?,longitude=? WHERE id=?', (x['latitude'],x['longitude'],id))
         if request.form.get('telecable_present') == '1':
-            c.execute('UPDATE customers SET telecable_enabled=? WHERE id=?', (int(request.form.get('telecable_enabled') == '1'), id))
+            telecable_amount = _telecable_amount()
+            if 'telecable_amount' in _cols(c, 'customers'):
+                c.execute('UPDATE customers SET telecable_enabled=?,telecable_amount=? WHERE id=?', (int(telecable_amount > 0), telecable_amount, id))
+            else:
+                c.execute('UPDATE customers SET telecable_enabled=? WHERE id=?', (int(telecable_amount > 0), id))
         notes=[]
         # Existing subscribers must never be sent through CREATE_PPPOE.
         if x['password'] and x['pppoe']:

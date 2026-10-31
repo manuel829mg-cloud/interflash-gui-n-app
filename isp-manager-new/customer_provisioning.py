@@ -33,6 +33,11 @@ def ensure_schema():
       PRIMARY KEY(router_name, plan_id, pbr_line)
     );
     ''')
+    customer_columns = {row['name'] for row in c.execute('PRAGMA table_info(customers)').fetchall()}
+    if 'telecable_amount' not in customer_columns:
+        c.execute('ALTER TABLE customers ADD COLUMN telecable_amount INTEGER NOT NULL DEFAULT 0')
+    # Existing Telecable subscribers keep their previous RD$500 charge.
+    c.execute('UPDATE customers SET telecable_amount=500 WHERE COALESCE(telecable_enabled,0)=1 AND COALESCE(telecable_amount,0)=0')
     c.commit(); c.close()
 
 
@@ -386,10 +391,22 @@ def _patch_customer_form():
     original = pbr_client.customer_form
     def form(row=None):
         html = _inject_profile_tools(original(row))
-        enabled = row is not None and 'telecable_enabled' in row.keys() and str(row['telecable_enabled']) == '1'
-        checkbox = ('<label style="display:block;margin-top:12px"><input type="hidden" name="telecable_present" value="1">'
-                    '<input type="checkbox" name="telecable_enabled" value="1" style="width:auto" '
-                    + ('checked' if enabled else '') + '> Telecable adicional — RD$500</label>'
+        amount = 0
+        if row is not None:
+            try:
+                amount = int(round(float(row['telecable_amount'] or 0))) if 'telecable_amount' in row.keys() else 0
+            except (TypeError, ValueError):
+                amount = 0
+            if amount == 0 and 'telecable_enabled' in row.keys() and str(row['telecable_enabled']) == '1':
+                amount = 500
+        elif request.form.get('telecable_amount') is not None:
+            raw_amount = request.form.get('telecable_amount')
+            amount = int(raw_amount) if raw_amount in ('500', '600', '800', '1000') else 0
+        options = [(0, 'Sin Telecable'), (500, 'RD$500'), (600, 'RD$600'), (800, 'RD$800'), (1000, 'RD$1,000')]
+        option_html = ''.join(f'<option value="{price}" {"selected" if amount == price else ""}>{label}</option>' for price, label in options)
+        checkbox = ('<input type="hidden" name="telecable_present" value="1">'
+                    '<label style="display:block;margin-top:12px">Telecable adicional'
+                    f'<select name="telecable_amount" style="display:block;margin-top:6px">{option_html}</select></label>'
                     '<small class="muted">Se suma cada mes a la misma factura del internet.</small>')
         return html.replace('Perfiles comerciales nuevos con precio del catálogo de planes.</small>',
                             'Perfiles comerciales nuevos con precio del catálogo de planes.</small>' + checkbox, 1)

@@ -35,9 +35,16 @@ def render_pdf(inv, company, banks=(), logo_path=None):
     brand = [p(company.get('business_name') or 'INTER Flash', 'Heading1')]
     for key in ('business_address', 'business_phone', 'business_email', 'business_rnc'):
         if company.get(key): brand.append(p(company[key]))
-    logo_path = logo_path or Path(__file__).resolve().parent / 'static' / 'interflash-symbol.png'
-    if Path(logo_path).is_file():
-        header = Table([[Image(str(logo_path), width=64, height=64), brand]], colWidths=[76,296])
+    # Reuse the logo already shipped with the Inter Flash platform.
+    # ReportLab cannot embed SVG directly, so convert the existing WebP to PNG in memory.
+    logo_path = Path(logo_path) if logo_path else Path(__file__).resolve().parent / 'static' / 'interflash-logo-round.webp'
+    if logo_path.is_file():
+        from PIL import Image as PILImage
+        with PILImage.open(logo_path) as source:
+            converted = BytesIO()
+            source.convert('RGBA').save(converted, format='PNG')
+        converted.seek(0)
+        header = Table([[Image(converted, width=64, height=64), brand]], colWidths=[76,296])
         header.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'TOP')]))
         story.append(header)
     else:

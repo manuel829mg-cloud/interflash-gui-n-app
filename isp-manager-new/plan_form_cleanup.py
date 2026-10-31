@@ -83,7 +83,8 @@ def setup(app):
             opts.append(
                 f'<option value="{pbr_client.esc(name)}"{selected}>{pbr_client.esc(name + inactive)}</option>'
             )
-        return '<div><label>Zona<select name="zone">' + ''.join(opts) + '</select></label></div>'
+        required = ' required' if row is None else ''
+        return '<div><label>Zona<select name="zone"' + required + '>' + ''.join(opts) + '</select></label></div>'
 
     def swap_zone_pppoe(html):
         zone_match = zone_any_pattern.search(html)

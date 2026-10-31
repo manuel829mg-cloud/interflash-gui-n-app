@@ -404,12 +404,31 @@ def _patch_customer_form():
             amount = int(raw_amount) if raw_amount in ('500', '600', '800', '1000') else 0
         options = [(0, 'Sin Telecable'), (500, 'RD$500'), (600, 'RD$600'), (800, 'RD$800'), (1000, 'RD$1,000')]
         option_html = ''.join(f'<option value="{price}" {"selected" if amount == price else ""}>{label}</option>' for price, label in options)
-        checkbox = ('<input type="hidden" name="telecable_present" value="1">'
-                    '<label style="display:block;margin-top:12px">Telecable adicional'
-                    f'<select name="telecable_amount" style="display:block;margin-top:6px">{option_html}</select></label>'
-                    '<small class="muted">Se suma cada mes a la misma factura del internet.</small>')
-        return html.replace('Perfiles comerciales nuevos con precio del catálogo de planes.</small>',
-                            'Perfiles comerciales nuevos con precio del catálogo de planes.</small>' + checkbox, 1)
+        telecable_field = (
+            '<div class="full" style="padding:12px;border:1px solid #29425b;border-radius:10px;background:#0b1725">'
+            '<input type="hidden" name="telecable_present" value="1">'
+            '<label>Telecable adicional'
+            f'<select name="telecable_amount" style="display:block;margin-top:6px">{option_html}</select></label>'
+            '<small class="muted">Se suma cada mes a la misma factura del internet.</small></div>'
+        )
+        if row is None:
+            html = html.replace(
+                '<select id="if-profile-select" name="mikrotik_profile">',
+                '<select id="if-profile-select" name="mikrotik_profile" required>',
+                1,
+            )
+        line_pattern = re.compile(
+            r'(<div><label>Línea / PBR<select name="pbr_line">.*?</select></label></div>)', re.S
+        )
+        if line_pattern.search(html):
+            html = line_pattern.sub(lambda match: match.group(1) + telecable_field, html, count=1)
+        else:
+            html = html.replace(
+                'Perfiles comerciales nuevos con precio del catálogo de planes.</small>',
+                'Perfiles comerciales nuevos con precio del catálogo de planes.</small>' + telecable_field,
+                1,
+            )
+        return html
     form._interflash_profiles_patched = True
     pbr_client.customer_form = form
 

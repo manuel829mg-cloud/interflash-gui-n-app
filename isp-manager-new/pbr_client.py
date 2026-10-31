@@ -222,6 +222,25 @@ def customer_new_pbr():
     if request.method == 'POST':
         try:
             x = _post_values()
+            x['zone'] = str(x.get('zone') or '').strip()
+            if not x['zone']:
+                raise ValueError('Selecciona una zona antes de guardar el cliente.')
+            if not x.get('plan_id'):
+                raise ValueError('Selecciona un plan de internet antes de guardar el cliente.')
+            try:
+                x['plan_id'] = int(x['plan_id'])
+            except (TypeError, ValueError):
+                raise ValueError('Selecciona un plan de internet válido.')
+            check = base.db()
+            try:
+                zone_ok = check.execute('SELECT 1 FROM zones WHERE name=? AND active=1 LIMIT 1', (x['zone'],)).fetchone()
+                plan_ok = check.execute('SELECT 1 FROM plans WHERE id=? AND active=1 LIMIT 1', (x['plan_id'],)).fetchone()
+            finally:
+                check.close()
+            if not zone_ok:
+                raise ValueError('Selecciona una zona activa de la lista.')
+            if not plan_ok:
+                raise ValueError('Selecciona un plan activo de la lista.')
         except ValueError as error:
             return base.shell('Nuevo cliente', f'<div class="notice" role="alert">{esc(error)}</div>' + customer_form(request.form), 'customers'), 400
         c = base.db()

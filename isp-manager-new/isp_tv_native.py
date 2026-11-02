@@ -550,8 +550,8 @@ def setup(app):
             signature = hmac.new(host.PASSWORD.encode(), digest.encode(), hashlib.sha256).hexdigest()
             payload['manual_url'] = ('https://interflash-isp-manager.up.railway.app/api/tv-native/manual/'
                                      + digest + '/' + signature + '.m3u')
-            payload['manual_revision'] = config['revision']
-        payload.update(revision=config['revision'] + (2 if saved_source.startswith('m3ufile:') else 0), name='Inter Flash TV')
+            payload['manual_revision'] = config['revision'] + 1
+        payload.update(revision=config['revision'] + 1 + (2 if saved_source.startswith('m3ufile:') else 0), name='Inter Flash TV')
         response = jsonify(payload)
         response.headers['Cache-Control'] = 'no-store'
         response.headers['Referrer-Policy'] = 'no-referrer'
@@ -577,7 +577,7 @@ def setup(app):
         for item in channels:
             lines.extend(['#EXTINF:-1 tvg-chno="'+str(item['number'])+'" group-title="Canales Dominicanos",'+item['name'],
                           host.dec(item['url_enc'])])
-        response = app.make_response(gzip.compress(('\\n'.join(lines) + '\\n').encode('utf-8'), compresslevel=6))
+        response = app.make_response(gzip.compress(('\n'.join(lines) + '\n').encode('utf-8'), compresslevel=6))
         response.headers['Content-Type'] = 'application/vnd.apple.mpegurl; charset=utf-8'
         response.headers['Content-Encoding'] = 'gzip'
         response.headers['Cache-Control'] = 'no-store'

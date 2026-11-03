@@ -41,6 +41,9 @@ def setup(app):
         CREATE TABLE IF NOT EXISTS tv_native_m3u_previews (
           id TEXT PRIMARY KEY, content_enc TEXT NOT NULL, target_file_id TEXT NOT NULL DEFAULT '',
           created INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS tv_native_epg_settings (
+          id INTEGER PRIMARY KEY CHECK(id=1), name_enc TEXT NOT NULL,
+          url_enc TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 1);
         CREATE TABLE IF NOT EXISTS tv_monthly_accounts (
           token_hash TEXT PRIMARY KEY, paid_until TEXT NOT NULL,
           created INTEGER NOT NULL);
@@ -58,6 +61,11 @@ def setup(app):
         if initial:
             c.execute('INSERT OR IGNORE INTO tv_native_settings(id,source_enc,revision) VALUES(1,?,1)',
                       (host.enc(initial),))
+        default_epg = os.environ.get(
+            'TV_DEFAULT_EPG_URL',
+            'https://iptv-org.github.io/epg/guides/do/gatotv.com.epg.xml')
+        c.execute('''INSERT OR IGNORE INTO tv_native_epg_settings(id,name_enc,url_enc,revision)
+          VALUES(1,?,?,1)''', (host.enc('Guía Dominicana'), host.enc(default_epg)))
         c.execute('DELETE FROM tv_native_m3u_previews WHERE created<?', (int(time.time())-172800,))
         c.commit()
         try:
@@ -92,6 +100,26 @@ def setup(app):
         if username and password:
             return dict(kind='xtream', server=base, username=username, password=password)
         return dict(kind='m3u', url=raw)
+
+    def epg_url_value(raw):
+        raw = (raw or '').strip()
+        if not raw:
+            return ''
+        parsed = urlsplit(raw)
+        if parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username or parsed.password or len(raw) > 2048 or any(ch.isspace() or ch in ('\"', "'", '\r', '\n') for ch in raw):
+            raise ValueError('El enlace XMLTV debe ser una URL http:// o https:// válida.')
+        return raw
+
+    def with_epg_header(content, url):
+        if not url:
+            return content
+        lines = content.splitlines()
+        if lines and lines[0].strip().startswith('#EXTM3U'):
+            header = re.sub(r'\s+(?:url-tvg|x-tvg-url)="[^"]*"', '', lines[0], flags=re.IGNORECASE)
+            lines[0] = header.rstrip() + ' url-tvg="' + url + '"'
+        else:
+            lines.insert(0, '#EXTM3U url-tvg="' + url + '"')
+        return '\n'.join(lines).rstrip() + '\n'
 
     def playlist_entries(content):
         preamble, entries, current = [], [], None
@@ -134,7 +162,23 @@ def setup(app):
                 note = 'Contraseña incorrecta.'
             elif int(time.time()) - session.get('tv_verified_at', 0) < 1800:
                 with db() as c:
-                    if action == 'save':
+                    if action == 'save_epg':
+                        name = request.form.get('epg_name', '').strip()
+                        raw = request.form.get('epg_url', '').strip()
+                        try:
+                            if not name or len(name) > 80 or any(ch in name for ch in ('\n', '\r', '\"')):
+                                raise ValueError('Escribe un nombre válido para la guía.')
+                            raw = epg_url_value(raw)
+                            c.execute('''INSERT INTO tv_native_epg_settings(id,name_enc,url_enc,revision)
+                              VALUES(1,?,?,1) ON CONFLICT(id) DO UPDATE SET
+                              name_enc=excluded.name_enc,url_enc=excluded.url_enc,revision=revision+1''',
+                                      (host.enc(name), host.enc(raw)))
+                            c.execute('UPDATE tv_native_settings SET revision=revision+1 WHERE id=1')
+                            note = ('Guía guardada. Las apps vinculadas recibirán el enlace al sincronizar.'
+                                    if raw else 'Guía desactivada para las próximas sincronizaciones.')
+                        except ValueError as ex:
+                            note = str(ex)
+                    elif action == 'save':
                         raw = request.form.get('playlist', '').strip()
                         try:
                             source_config(raw)
@@ -383,6 +427,7 @@ def setup(app):
             return host.shell('Inter Flash TV', body, 'inter_tv')
         with db() as c:
             config = c.execute('SELECT revision FROM tv_native_settings WHERE id=1').fetchone()
+            epg_row = c.execute('SELECT name_enc,url_enc FROM tv_native_epg_settings WHERE id=1').fetchone()
             devices = c.execute('SELECT * FROM tv_native_devices WHERE approved IN (1,-1) ORDER BY seen DESC').fetchall()
             tv_dues = {r['token_hash']: r['paid_until'] for r in c.execute('SELECT token_hash,paid_until FROM tv_monthly_accounts').fetchall()}
             tv_trials = {r['token_hash']: r['expires_at'] for r in c.execute('SELECT token_hash,expires_at FROM tv_trial_uses').fetchall()}
@@ -400,6 +445,14 @@ def setup(app):
             '<form method="post" style="display:inline;margin-left:8px"><input type="hidden" name="csrf" value="'+token+'">'+
             '<input type="hidden" name="action" value="manual_delete"><input type="hidden" name="channel_id" value="'+host.e(x['id'])+'">'+
             '<button class="btn small" type="submit">Eliminar</button></form></li>' for x in manual_channels)
+        epg_name = host.dec(epg_row['name_enc']) if epg_row else 'Guía Dominicana'
+        epg_url = host.dec(epg_row['url_enc']) if epg_row else ''
+        epg_panel = ('<div class="panel"><h2>Guía de programación (EPG)</h2><p>Guarda aquí la fuente XMLTV para que quede configurada en el panel y llegue a las apps vinculadas.</p>'+
+            '<form method="post"><input type="hidden" name="csrf" value="'+token+'"><input type="hidden" name="action" value="save_epg">'+
+            '<div class="field"><label>Nombre</label><input name="epg_name" maxlength="80" value="'+host.e(epg_name)+'" required></div>'+
+            '<div class="field"><label>URL XMLTV</label><input name="epg_url" type="url" maxlength="2048" value="'+host.e(epg_url)+'" placeholder="https://.../epg.xml"></div>'+
+            '<p class="muted">Para desactivarla, borra el enlace y guarda. La programación aparece cuando coinciden los identificadores de los canales.</p>'+
+            '<button class="btn green">Guardar guía</button></form></div>')
         manual_panel = ('<div class="panel"><h2>Agregar canal manualmente</h2><p>Los canales manuales se añaden a la lista M3U subida, sin reemplazarla.</p>'+
             '<form method="post"><input type="hidden" name="csrf" value="'+token+'"><input type="hidden" name="action" value="manual_add">'+
             '<div class="field"><label>Nombre</label><input name="channel_name" maxlength="100" required></div>'+
@@ -449,7 +502,7 @@ def setup(app):
                 selection_panel = '<div class="panel"><h2>Elige qué dejar en tu lista</h2><p>Encontré '+str(len(items))+' canales o títulos. Los que queden marcados se conservarán; los demás se quitarán.</p><input id="tv-search" type="search" placeholder="Buscar por nombre o categoría" style="width:100%;padding:10px;margin:8px 0"><div style="display:flex;gap:8px;margin-bottom:10px"><button class="btn small" type="button" onclick="document.querySelectorAll(\'.tv-channel-row input\').forEach(x=>x.checked=true)">Marcar todos</button><button class="btn small" type="button" onclick="document.querySelectorAll(\'.tv-channel-row input\').forEach(x=>x.checked=false)">Desmarcar todos</button></div><form method="post" id="tv-select-form"><input type="hidden" name="csrf" value="'+token+'"><input type="hidden" name="action" value="save_m3u_selection"><input type="hidden" name="preview_id" value="'+host.e(preview_id)+'"><div style="max-height:55vh;overflow:auto;border:1px solid #354b64;border-radius:8px;padding:8px">'+''.join(channel_rows)+'</div><button class="btn green" style="margin-top:12px">Guardar selección</button></form><script>document.getElementById(\'tv-search\').addEventListener(\'input\',function(){const q=this.value.toLowerCase();document.querySelectorAll(\'.tv-channel-row\').forEach(x=>x.style.display=x.dataset.search.includes(q)?\'grid\':\'none\')})</script><style>.tv-channel-row{display:grid;grid-template-columns:24px 1fr auto;align-items:center;gap:8px;padding:8px;border-bottom:1px solid #26394d}.tv-channel-row small{opacity:.7}.tv-channel-row input{width:18px;height:18px}</style></div>'
             else:
                 session.pop('tv_preview_id', None)
-        body = head + message + manual_panel + selection_panel + '<div class="panel"><h2>Lista de canales, películas y series</h2><p>' + (
+        body = head + message + epg_panel + manual_panel + selection_panel + '<div class="panel"><h2>Lista de canales, películas y series</h2><p>' + (
             'Lista configurada · versión '+str(config['revision']) if config else 'Todavía no hay una lista guardada.') + '''</p>
             <form method="post"><input type="hidden" name="csrf" value="'''+token+'''">
             <input type="hidden" name="action" value="save"><div class="field"><label>Enlace M3U del proveedor</label>
@@ -536,11 +589,21 @@ def setup(app):
             return jsonify(error='No playlist configured'), 409
         try:
             saved_source = host.dec(config['source_enc'])
+            with db() as c:
+                epg_row = c.execute('SELECT name_enc,url_enc FROM tv_native_epg_settings WHERE id=1').fetchone()
+            if epg_row:
+                epg_url = host.dec(epg_row['url_enc'])
+                if epg_url:
+                    payload = {'epg_name': host.dec(epg_row['name_enc']), 'epg_url': epg_url}
+                else:
+                    payload = {}
+            else:
+                payload = {}
             if saved_source.startswith('m3ufile:'):
                 _, file_id, access_key = saved_source.split(':', 2)
-                payload = dict(kind='m3u', url='https://interflash-isp-manager.up.railway.app/api/tv-native/playlist/' + file_id + '/' + access_key + '.m3u')
+                payload.update(kind='m3u', url='https://interflash-isp-manager.up.railway.app/api/tv-native/playlist/' + file_id + '/' + access_key + '.m3u')
             else:
-                payload = source_config(saved_source)
+                payload.update(source_config(saved_source))
         except ValueError:
             return jsonify(error='Invalid stored source'), 503
         # Separate manual-channel source works alongside Xtream, external M3U and file M3U.
@@ -573,7 +636,10 @@ def setup(app):
             if (subscription and subscription['paid_until'] <= tv_today().isoformat()) or (not subscription and trial and trial['expires_at'] <= int(time.time())):
                 return 'Suscripcion vencida', 403
             channels = c.execute('SELECT number,name,url_enc FROM tv_manual_channels ORDER BY number,name').fetchall()
-        lines = ['#EXTM3U']
+        with db() as c:
+            epg_row = c.execute('SELECT url_enc FROM tv_native_epg_settings WHERE id=1').fetchone()
+        epg_url = host.dec(epg_row['url_enc']) if epg_row else ''
+        lines = ['#EXTM3U url-tvg="' + epg_url + '"' if epg_url else '#EXTM3U']
         for item in channels:
             lines.extend(['#EXTINF:-1 tvg-chno="'+str(item['number'])+'" group-title="Canales Dominicanos",'+item['name'],
                           host.dec(item['url_enc'])])
@@ -594,6 +660,9 @@ def setup(app):
             content = host.dec(row['content_enc'])
             with db() as c:
                 additions = c.execute('SELECT number,name,url_enc FROM tv_manual_channels ORDER BY number,name').fetchall()
+                epg_row = c.execute('SELECT url_enc FROM tv_native_epg_settings WHERE id=1').fetchone()
+            epg_url = host.dec(epg_row['url_enc']) if epg_row else ''
+            content = with_epg_header(content, epg_url)
             if additions:
                 extra = []
                 for item in additions:

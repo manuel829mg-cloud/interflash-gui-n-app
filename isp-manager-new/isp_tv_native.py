@@ -412,6 +412,15 @@ def setup(app):
                     elif action == 'reactivate':
                         c.execute('UPDATE tv_native_devices SET approved=1 WHERE code=? AND approved=-1', (request.form.get('code', ''),))
                         note = 'Televisor reactivado. Abre la app para sincronizar los canales.'
+                    elif action == 'delete_device':
+                        code = request.form.get('code', '').strip().upper()
+                        device = c.execute('SELECT token_hash FROM tv_native_devices WHERE code=?', (code,)).fetchone()
+                        if device:
+                            c.execute('DELETE FROM tv_monthly_accounts WHERE token_hash=?', (device['token_hash'],))
+                            c.execute('DELETE FROM tv_native_devices WHERE token_hash=?', (device['token_hash'],))
+                            note = 'Televisor eliminado y suscripción activa retirada. El historial de pagos se conserva.'
+                        else:
+                            note = 'No encontré ese televisor.'
                     c.commit()
             else:
                 return redirect('/inter-tv')
@@ -469,7 +478,10 @@ def setup(app):
              '<form method="post"><input type="hidden" name="csrf" value="'+token+'"><input type="hidden" name="action" value="tv_day_trial"><input type="hidden" name="code" value="'+host.e(d['code'])+'"><button class="btn small" type="submit">Prueba de 1 día</button></form></td><td>'+
             '<form method="post"><input type="hidden" name="csrf" value="'+token+'">'+
             '<input type="hidden" name="action" value="'+('unlink' if d['approved']==1 else 'reactivate')+'"><input type="hidden" name="code" value="'+host.e(d['code'])+'">'+
-            '<button class="btn small">'+('Desvincular' if d['approved']==1 else 'Reactivar')+'</button></form></td></tr>'
+            '<button class="btn small">'+('Desvincular' if d['approved']==1 else 'Reactivar')+'</button></form>'+
+            '<form method="post" onsubmit="return confirm(\'¿Eliminar este televisor y retirar su suscripción activa? El historial de pagos se conservará.\')"><input type="hidden" name="csrf" value="'+token+'">'+
+            '<input type="hidden" name="action" value="delete_device"><input type="hidden" name="code" value="'+host.e(d['code'])+'">'+
+            '<button class="btn small" type="submit">Eliminar</button></form></td></tr>'
             for d in devices)
         preview_id = session.get('tv_preview_id', '')
         if not preview_id:

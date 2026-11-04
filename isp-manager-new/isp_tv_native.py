@@ -47,6 +47,8 @@ MANUAL_LOGOS = {
 }
 
 MANUAL_EPG_IDS = {
+    "rnn dos": "RNN27.do",
+    "rnn": "RNN27.do",
     "supercanal": "SuperCanal33.do",
     "super canal": "SuperCanal33.do",
     "digital 15": "Canal 15 (Digital Quince Telemicro) (República Dominicana).do",
@@ -688,8 +690,8 @@ def setup(app):
             signature = hmac.new(host.PASSWORD.encode(), digest.encode(), hashlib.sha256).hexdigest()
             payload['manual_url'] = ('https://interflash-isp-manager.up.railway.app/api/tv-native/manual/'
                                      + digest + '/' + signature + '.m3u')
-            payload['manual_revision'] = config['revision'] + 4
-        payload.update(revision=config['revision'] + 4 + (2 if saved_source.startswith('m3ufile:') else 0), name='Inter Flash TV')
+            payload['manual_revision'] = config['revision'] + 5
+        payload.update(revision=config['revision'] + 5 + (2 if saved_source.startswith('m3ufile:') else 0), name='Inter Flash TV')
         response = jsonify(payload)
         response.headers['Cache-Control'] = 'no-store'
         response.headers['Referrer-Policy'] = 'no-referrer'
@@ -795,6 +797,31 @@ def setup(app):
                     'stop': stop.strftime('%Y%m%d%H%M%S %z')})
                 ET.SubElement(programme, 'title', {'lang': 'es'}).text = title
                 ET.SubElement(programme, 'url').text = 'https://americatvlistings.com/es/do/super-canal-33'
+        # RNN 27 identity confirmed by the owner; dated published listings only.
+        channel = ET.SubElement(root, 'channel', {'id': 'RNN27.do'})
+        ET.SubElement(channel, 'display-name').text = 'RNN DOS'
+        ET.SubElement(channel, 'display-name').text = 'RNN 27'
+        rnn_rows = [["00:00","Documental DW"],["01:00","En 3 puntos"],["02:00","Entre líderes"],["03:00","De entero crédito"],["04:00","Informate"],["05:00","Noticias RNN - 2da. emisión"],["06:00","Ahora matinal"],["07:00","Infractal"],["08:00","Argentina: Los niños robados en la dictadura militar"],["09:00","Entre líderes"],["10:00","Finjus"],["11:00","Lo ideal de la hora"],["12:00","Noticias RNN - 1era Emisión"],["12:45","Después de la noticia"],["13:30","Acción inmediata"],["14:00","Presión deportiva"],["15:00","Agropecuaria siglo XXI"],["16:00","Dinámica económica"],["17:00","¡Aquí estoy!"],["18:00","Entre lectores"],["19:00","De entero crédito"],["20:00","Noticias RNN - 2da. emisión"],["21:00","En 3 puntos"],["22:00","Después de la noticia"],["22:30","Noticias RNN - 2da. emisión"],["23:30","Presión deportiva"]]
+        rnn_changes = {'04:00': 'Reseñas', '07:00': 'Dinámica económica',
+                       '08:00': 'La epoca de la administración militar en Israel',
+                       '10:00': 'Contexto', '15:00': 'Crónicas de la Tierra',
+                       '16:00': 'Camilo, Danny Ocean & Karol G - Tiny Desk Concert',
+                       '18:00': 'La colmena del arte'}
+        rnn_entries = []
+        for day in ('2026-11-04', '2026-11-05'):
+            for clock, title in rnn_rows:
+                if day == '2026-11-05':
+                    title = rnn_changes.get(clock, title)
+                rnn_entries.append((datetime.fromisoformat(day + 'T' + clock).replace(tzinfo=zone), title))
+        # Adjacent start times provide ends; omit the final entry without a known end.
+        for (start, title), (stop, _) in zip(rnn_entries, rnn_entries[1:]):
+            if stop <= now:
+                continue
+            programme = ET.SubElement(root, 'programme', {
+                'channel': 'RNN27.do', 'start': start.strftime('%Y%m%d%H%M%S %z'),
+                'stop': stop.strftime('%Y%m%d%H%M%S %z')})
+            ET.SubElement(programme, 'title', {'lang': 'es'}).text = title
+            ET.SubElement(programme, 'url').text = 'https://americatvlistings.com/es/do/rnn-canal-27'
         response = app.make_response(ET.tostring(root, encoding='utf-8', xml_declaration=True))
         response.headers['Content-Type'] = 'application/xml; charset=utf-8'
         response.headers['Cache-Control'] = 'public, max-age=300'

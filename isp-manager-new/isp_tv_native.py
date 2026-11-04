@@ -46,14 +46,27 @@ MANUAL_LOGOS = {
     "teleuniverso": "https://i.imgur.com/gQev8ST.png"
 }
 
+MANUAL_EPG_IDS = {
+    "digital 15": "Canal 15 (Digital Quince Telemicro) (República Dominicana).do",
+    "teleuniverso 29": "Canal 29 de TeleUniverso (República Dominicana).do",
+    "telemicro canal 5": "Canal 5 de República Dominicana (Telemicro).do",
+    "antena 7": "Canal 7 de Antena Latina (República Dominicana).do",
+    "color vision 9": "Canal 9 de Color Visión (República Dominicana).do",
+    "telecentro 13": "Canal Telecentro (13 de República Dominicana).do",
+    "telesistema 11": "Canal Telesistema 11 (República Dominicana).do",
+    "teleunion": "Canal Teleunion (República Dominicana).do"
+}
+
 def manual_channel_info(item):
     name = str(item['name'])
     normalized = ''.join(c for c in unicodedata.normalize('NFD', name.lower())
                          if not unicodedata.combining(c))
     normalized = re.sub(r'^\s*\d+[.\s—-]+', '', normalized).strip()
     logo = MANUAL_LOGOS.get(normalized)
+    epg_id = MANUAL_EPG_IDS.get(normalized)
+    epg_attr = ' tvg-id="' + epg_id + '"' if epg_id else ''
     logo_attr = ' tvg-logo="' + logo + '"' if logo else ''
-    return ('#EXTINF:-1 tvg-chno="' + str(item['number']) + '"' + logo_attr
+    return ('#EXTINF:-1 tvg-chno="' + str(item['number']) + '"' + logo_attr + epg_attr
             + ' group-title="Canales Dominicanos",' + name)
 
 def setup(app):
@@ -105,9 +118,15 @@ def setup(app):
                       (host.enc(initial),))
         default_epg = os.environ.get(
             'TV_DEFAULT_EPG_URL',
-            'https://iptv-org.github.io/epg/guides/do/gatotv.com.epg.xml')
+            'https://www.open-epg.com/files/dominican1.xml')
         c.execute('''INSERT OR IGNORE INTO tv_native_epg_settings(id,name_enc,url_enc,revision)
           VALUES(1,?,?,1)''', (host.enc('Guía Dominicana'), host.enc(default_epg)))
+        # Repair only the retired built-in URL; preserve custom or disabled guides.
+        epg_current = c.execute('SELECT url_enc FROM tv_native_epg_settings WHERE id=1').fetchone()
+        if epg_current and host.dec(epg_current['url_enc']) == 'https://iptv-org.github.io/epg/guides/do/gatotv.com.epg.xml':
+            c.execute('UPDATE tv_native_epg_settings SET url_enc=?, revision=revision+1 WHERE id=1',
+                      (host.enc(default_epg),))
+            c.execute('UPDATE tv_native_settings SET revision=revision+1 WHERE id=1')
         c.execute('DELETE FROM tv_native_m3u_previews WHERE created<?', (int(time.time())-172800,))
         c.commit()
         try:
@@ -667,8 +686,8 @@ def setup(app):
             signature = hmac.new(host.PASSWORD.encode(), digest.encode(), hashlib.sha256).hexdigest()
             payload['manual_url'] = ('https://interflash-isp-manager.up.railway.app/api/tv-native/manual/'
                                      + digest + '/' + signature + '.m3u')
-            payload['manual_revision'] = config['revision'] + 2
-        payload.update(revision=config['revision'] + 2 + (2 if saved_source.startswith('m3ufile:') else 0), name='Inter Flash TV')
+            payload['manual_revision'] = config['revision'] + 3
+        payload.update(revision=config['revision'] + 3 + (2 if saved_source.startswith('m3ufile:') else 0), name='Inter Flash TV')
         response = jsonify(payload)
         response.headers['Cache-Control'] = 'no-store'
         response.headers['Referrer-Policy'] = 'no-referrer'

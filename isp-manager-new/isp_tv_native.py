@@ -10,9 +10,51 @@ import re
 import secrets
 import sqlite3
 import time
+import unicodedata
 from contextlib import contextmanager
 from urllib.parse import urlsplit, parse_qs
 from flask import request, session, redirect, jsonify
+
+# Logos for the manual Dominican catalog; stream URLs and provider entries stay intact.
+MANUAL_LOGOS = {
+    "antena 21": "https://i.imgur.com/QE0XWLh.png",
+    "antena 7": "https://i.imgur.com/zKWFgeQ.png",
+    "rtvd 17": "https://i.ibb.co/2YvKhjW4/Quisqueya-17-AZUL.png",
+    "canal 17 rtvd": "https://i.ibb.co/2YvKhjW4/Quisqueya-17-AZUL.png",
+    "canal 4 rd": "https://i.imgur.com/3AqCAji.png",
+    "cinevision 19": "https://i.imgur.com/mJN2XNm.png",
+    "cinevision canal 19": "https://i.imgur.com/mJN2XNm.png",
+    "rnn dos": "https://i.imgur.com/12Z9qPw.png",
+    "rnn": "https://i.imgur.com/12Z9qPw.png",
+    "supercanal": "https://i.imgur.com/AZBamNi.png",
+    "super canal": "https://i.imgur.com/AZBamNi.png",
+    "telemedios 8": "https://i.imgur.com/xhEAw7z.png",
+    "telemedios canal 8": "https://i.imgur.com/xhEAw7z.png",
+    "telesistema 11": "https://i.imgur.com/ZzeZKCu.png",
+    "teleunion": "https://i.imgur.com/vTfxkjW.png",
+    "vtv 32": "https://i.imgur.com/qjm4B0J.png",
+    "vtv canal 32": "https://i.imgur.com/qjm4B0J.png",
+    "color vision 9": "https://i.imgur.com/rkgWToA.jpg",
+    "color vision": "https://i.imgur.com/rkgWToA.jpg",
+    "digital 15": "https://i.imgur.com/v3mkmZa.png",
+    "telecentro 13": "https://i.imgur.com/F17zNXh.png",
+    "telecentro": "https://i.imgur.com/F17zNXh.png",
+    "telemicro canal 5": "https://i.imgur.com/WhgySAk.png",
+    "telemicro 5": "https://i.imgur.com/WhgySAk.png",
+    "telemicro": "https://i.imgur.com/WhgySAk.png",
+    "teleuniverso 29": "https://i.imgur.com/gQev8ST.png",
+    "teleuniverso": "https://i.imgur.com/gQev8ST.png"
+}
+
+def manual_channel_info(item):
+    name = str(item['name'])
+    normalized = ''.join(c for c in unicodedata.normalize('NFD', name.lower())
+                         if not unicodedata.combining(c))
+    normalized = re.sub(r'^\s*\d+[.\s—-]+', '', normalized).strip()
+    logo = MANUAL_LOGOS.get(normalized)
+    logo_attr = ' tvg-logo="' + logo + '"' if logo else ''
+    return ('#EXTINF:-1 tvg-chno="' + str(item['number']) + '"' + logo_attr
+            + ' group-title="Canales Dominicanos",' + name)
 
 def setup(app):
     if app.extensions.get('inter_tv_native'):
@@ -625,8 +667,8 @@ def setup(app):
             signature = hmac.new(host.PASSWORD.encode(), digest.encode(), hashlib.sha256).hexdigest()
             payload['manual_url'] = ('https://interflash-isp-manager.up.railway.app/api/tv-native/manual/'
                                      + digest + '/' + signature + '.m3u')
-            payload['manual_revision'] = config['revision'] + 1
-        payload.update(revision=config['revision'] + 1 + (2 if saved_source.startswith('m3ufile:') else 0), name='Inter Flash TV')
+            payload['manual_revision'] = config['revision'] + 2
+        payload.update(revision=config['revision'] + 2 + (2 if saved_source.startswith('m3ufile:') else 0), name='Inter Flash TV')
         response = jsonify(payload)
         response.headers['Cache-Control'] = 'no-store'
         response.headers['Referrer-Policy'] = 'no-referrer'
@@ -653,7 +695,7 @@ def setup(app):
         epg_url = host.dec(epg_row['url_enc']) if epg_row else ''
         lines = ['#EXTM3U url-tvg="' + epg_url + '"' if epg_url else '#EXTM3U']
         for item in channels:
-            lines.extend(['#EXTINF:-1 tvg-chno="'+str(item['number'])+'" group-title="Canales Dominicanos",'+item['name'],
+            lines.extend([manual_channel_info(item),
                           host.dec(item['url_enc'])])
         response = app.make_response(gzip.compress(('\n'.join(lines) + '\n').encode('utf-8'), compresslevel=6))
         response.headers['Content-Type'] = 'application/vnd.apple.mpegurl; charset=utf-8'
@@ -678,7 +720,7 @@ def setup(app):
             if additions:
                 extra = []
                 for item in additions:
-                    extra.extend(['#EXTINF:-1 tvg-chno="'+str(item['number'])+'" group-title="Canales Dominicanos",'+item['name'], host.dec(item['url_enc'])])
+                    extra.extend([manual_channel_info(item), host.dec(item['url_enc'])])
                 # Place this category first in the delivered M3U, without changing the saved original.
                 existing_lines = content.splitlines()
                 if existing_lines and existing_lines[0].strip().startswith('#EXTM3U'):

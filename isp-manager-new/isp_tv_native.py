@@ -47,6 +47,8 @@ MANUAL_LOGOS = {
 }
 
 MANUAL_EPG_IDS = {
+    "supercanal": "SuperCanal33.do",
+    "super canal": "SuperCanal33.do",
     "digital 15": "Canal 15 (Digital Quince Telemicro) (República Dominicana).do",
     "teleuniverso 29": "Canal 29 de TeleUniverso (República Dominicana).do",
     "telemicro canal 5": "Canal 5 de República Dominicana (Telemicro).do",
@@ -686,8 +688,8 @@ def setup(app):
             signature = hmac.new(host.PASSWORD.encode(), digest.encode(), hashlib.sha256).hexdigest()
             payload['manual_url'] = ('https://interflash-isp-manager.up.railway.app/api/tv-native/manual/'
                                      + digest + '/' + signature + '.m3u')
-            payload['manual_revision'] = config['revision'] + 3
-        payload.update(revision=config['revision'] + 3 + (2 if saved_source.startswith('m3ufile:') else 0), name='Inter Flash TV')
+            payload['manual_revision'] = config['revision'] + 4
+        payload.update(revision=config['revision'] + 4 + (2 if saved_source.startswith('m3ufile:') else 0), name='Inter Flash TV')
         response = jsonify(payload)
         response.headers['Cache-Control'] = 'no-store'
         response.headers['Referrer-Policy'] = 'no-referrer'
@@ -753,4 +755,47 @@ def setup(app):
         response.headers['Content-Encoding'] = 'gzip'
         response.headers['Cache-Control'] = 'no-store'
         response.headers['Referrer-Policy'] = 'no-referrer'
+        return response
+
+    @app.get('/api/tv-native/epg-extra.xml')
+    def tv_native_extra_epg():
+        # Date-specific published listings. Never repeat expired schedules on later dates.
+        # Source: https://americatvlistings.com/es/do/super-canal-33
+        from datetime import datetime, timedelta
+        import xml.etree.ElementTree as ET
+        root = ET.Element('tv', {'generator-info-name': 'Inter Flash confirmed schedules'})
+        channel = ET.SubElement(root, 'channel', {'id': 'SuperCanal33.do'})
+        ET.SubElement(channel, 'display-name').text = 'Supercanal'
+        rows = [
+            ('01:00', 'Box Play List'), ('04:00', 'Especial - NewsMax'),
+            ('06:00', 'Abriendo la mañana'), ('08:00', 'Súper deportes'),
+            ('09:00', 'Newsfront'), ('10:00', 'Tu país al día'),
+            ('11:00', 'El súper poder'), ('13:00', 'Super noticias - 1ra emisión'),
+            ('13:30', 'National Desk'), ('14:00', 'Jhon Berry, en otra dimensión'),
+            ('15:00', 'Exprimidor'), ('18:00', 'Pulso político'),
+            ('19:00', 'David Harris Jr. The Pulse'),
+            ('19:55', 'Cinco minutos millonarios de Leidsa'),
+            ('20:00', 'Super noticias - 2da emisión'), ('21:00', 'Entre debates TV'),
+            ('22:00', 'Ed Henry: The Briefing'), ('23:00', 'Superpoder')]
+        zone = ZoneInfo('America/Santo_Domingo')
+        now = datetime.now(zone)
+        for day in ('2026-11-04', '2026-11-05'):
+            entries = [(datetime.fromisoformat(day + 'T' + clock).replace(tzinfo=zone), title)
+                       for clock, title in rows]
+            # The published page explicitly carries the previous night's 23:00 show to 01:00.
+            entries.insert(0, (datetime.fromisoformat(day + 'T00:00').replace(tzinfo=zone)
+                               - timedelta(hours=1), 'Superpoder'))
+            for (start, title), (stop, _) in zip(entries, entries[1:]):
+                if stop <= now:
+                    continue
+                if day == '2026-11-05' and start.hour == 11:
+                    title = 'Superpoder'
+                programme = ET.SubElement(root, 'programme', {
+                    'channel': 'SuperCanal33.do', 'start': start.strftime('%Y%m%d%H%M%S %z'),
+                    'stop': stop.strftime('%Y%m%d%H%M%S %z')})
+                ET.SubElement(programme, 'title', {'lang': 'es'}).text = title
+                ET.SubElement(programme, 'url').text = 'https://americatvlistings.com/es/do/super-canal-33'
+        response = app.make_response(ET.tostring(root, encoding='utf-8', xml_declaration=True))
+        response.headers['Content-Type'] = 'application/xml; charset=utf-8'
+        response.headers['Cache-Control'] = 'public, max-age=300'
         return response

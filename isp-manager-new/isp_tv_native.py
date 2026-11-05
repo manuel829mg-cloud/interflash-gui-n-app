@@ -511,7 +511,7 @@ def setup(app):
         with db() as c:
             manual_channels = c.execute('SELECT id,number,name,url_enc FROM tv_manual_channels ORDER BY number,name').fetchall()
         manual_rows = ''.join(
-            '<li>'+host.e(x['number'])+' — '+host.e(x['name'])+
+            '<li>'+host.e(x['number'])+' — '+host.e(x['name'])+tv_channel_health.badge(x['name'], host.dec(x['url_enc']))+
             '<details style="display:inline-block;margin-left:8px"><summary class="btn small" style="cursor:pointer">Editar enlace</summary>'+
             '<form method="post" style="display:grid;gap:8px;margin:8px 0;padding:10px;border:1px solid #354b64;border-radius:8px">'+
             '<input type="hidden" name="csrf" value="'+token+'">'+
@@ -578,7 +578,9 @@ def setup(app):
                 for i, item in enumerate(items):
                     name, group = playlist_label(item)
                     search = (name + ' ' + group).lower()
-                    channel_rows.append('<label class="tv-channel-row" data-search="'+host.e(search)+'"><input type="checkbox" name="keep" value="'+str(i)+'" checked><span>'+host.e(name)+'</span><small>'+host.e(group)+'</small></label>')
+                    channel_url = next((line.strip() for line in item[1:] if line.strip() and not line.startswith('#')), '')
+                    health_badge = tv_channel_health.badge(name, channel_url, group)
+                    channel_rows.append('<label class="tv-channel-row" data-search="'+host.e(search)+'"><input type="checkbox" name="keep" value="'+str(i)+'" checked><span>'+host.e(name)+health_badge+'</span><small>'+host.e(group)+'</small></label>')
                 selection_panel = '<div class="panel"><h2>Elige qué dejar en tu lista</h2><p>Encontré '+str(len(items))+' canales o títulos. Los que queden marcados se conservarán; los demás se quitarán.</p><input id="tv-search" type="search" placeholder="Buscar por nombre o categoría" style="width:100%;padding:10px;margin:8px 0"><div style="display:flex;gap:8px;margin-bottom:10px"><button class="btn small" type="button" onclick="document.querySelectorAll(\'.tv-channel-row input\').forEach(x=>x.checked=true)">Marcar todos</button><button class="btn small" type="button" onclick="document.querySelectorAll(\'.tv-channel-row input\').forEach(x=>x.checked=false)">Desmarcar todos</button></div><form method="post" id="tv-select-form"><input type="hidden" name="csrf" value="'+token+'"><input type="hidden" name="action" value="save_m3u_selection"><input type="hidden" name="preview_id" value="'+host.e(preview_id)+'"><div style="max-height:55vh;overflow:auto;border:1px solid #354b64;border-radius:8px;padding:8px">'+''.join(channel_rows)+'</div><button class="btn green" style="margin-top:12px">Guardar selección</button></form><script>document.getElementById(\'tv-search\').addEventListener(\'input\',function(){const q=this.value.toLowerCase();document.querySelectorAll(\'.tv-channel-row\').forEach(x=>x.style.display=x.dataset.search.includes(q)?\'grid\':\'none\')})</script><style>.tv-channel-row{display:grid;grid-template-columns:24px 1fr auto;align-items:center;gap:8px;padding:8px;border-bottom:1px solid #26394d}.tv-channel-row small{opacity:.7}.tv-channel-row input{width:18px;height:18px}</style></div>'
             else:
                 session.pop('tv_preview_id', None)

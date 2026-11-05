@@ -14,6 +14,10 @@ import androidx.media3.common.MediaItem;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
 import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.exoplayer.DefaultLoadControl;
+import androidx.media3.exoplayer.LoadControl;
+import android.os.Handler;
+import android.os.Looper;
 import androidx.media3.ui.PlayerView;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -26,6 +30,17 @@ import java.nio.charset.StandardCharsets;
 /** Prototype Android TV client. Requires an authorized subscriber device token. */
 public final class MainActivity extends Activity {
     private ExoPlayer player;
+    private final Handler retryHandler = new Handler(Looper.getMainLooper());
+    private int retryCount = 0;
+    private static final int MAX_RETRIES = 3;
+    private String activeStreamUrl = "";
+    private String activeChannelName = "";
+    private final Runnable retryPlayback = () -> {
+        if (player != null && !activeStreamUrl.isEmpty()) {
+            player.prepare();
+            player.play();
+        }
+    };
     private LinearLayout root;
     private TextView status;
     private PlayerView video;
@@ -110,6 +125,7 @@ public final class MainActivity extends Activity {
 
     private void showChannels(JSONArray channels) {
         status.setText(channels.length() + " canales disponibles");
+        retryHandler.removeCallbacks(retryPlayback);
         if (player != null) { player.release(); player = null; }
         if (video != null) { video.setPlayer(null); root.removeView(video); video = null; }
         while (root.getChildCount() > 5) root.removeViewAt(root.getChildCount() - 1);
@@ -127,12 +143,35 @@ public final class MainActivity extends Activity {
 
     private void playAuthorizedStream(String url, String name) {
         if (!url.startsWith("https://")) { status.setText("Canal sin enlace HTTPS válido."); return; }
+        retryHandler.removeCallbacks(retryPlayback);
+        retryCount = 0;
+        activeStreamUrl = url;
+        activeChannelName = name;
         if (player != null) player.release();
         if (video != null) { video.setPlayer(null); root.removeView(video); }
-        player = new ExoPlayer.Builder(this).build();
+        LoadControl loadControl = new DefaultLoadControl.Builder()
+            .setBufferDurationsMs(12000, 30000, 1500, 3000)
+            .build();
+        player = new ExoPlayer.Builder(this).setLoadControl(loadControl).build();
         player.addListener(new Player.Listener() {
             @Override public void onPlayerError(PlaybackException error) {
-                status.setText("No se puede reproducir este canal. Revisa la señal autorizada.");
+                retryHandler.removeCallbacks(retryPlayback);
+                if (retryCount < MAX_RETRIES && player != null) {
+                    retryCount++;
+                    status.setText("Recuperando señal de " + activeChannelName + " (" + retryCount + "/3)...");
+                    retryHandler.postDelayed(retryPlayback, Math.min(8000, 1000L << retryCount));
+                } else {
+                    status.setText("No se puede reproducir este canal. Revisa la señal autorizada.");
+                }
+            }
+        });
+        player.addListener(new Player.Listener() {
+            @Override public void onPlaybackStateChanged(int state) {
+                if (state == Player.STATE_READY) {
+                    retryHandler.removeCallbacks(retryPlayback);
+                    retryCount = 0;
+                    status.setText("Reproduciendo: " + activeChannelName);
+                }
             }
         });
         video = new PlayerView(this);
@@ -150,6 +189,8 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onStop() {
         super.onStop();
+        retryHandler.removeCallbacks(retryPlayback);
+        activeStreamUrl = "";
         if (player != null) { player.release(); player = null; }
         if (video != null) video.setPlayer(null);
     }

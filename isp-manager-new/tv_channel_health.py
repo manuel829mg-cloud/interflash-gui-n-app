@@ -162,7 +162,7 @@ def setup(app, host, db, entries, label):
             return jsonify(error='authentication required'), 401
         with db() as c:
             schema(c)
-            rows = [dict(r) for r in c.execute('SELECT name,state,checked,changed FROM tv_channel_health ORDER BY name')]
+            rows = [dict(r) for r in c.execute('SELECT id,name,state,checked,changed FROM tv_channel_health ORDER BY name')]
         # A stale result must never look like a current working signal.
         for row in rows:
             if int(time.time())-row['checked'] > 900:
@@ -189,7 +189,13 @@ def setup(app, host, db, entries, label):
                 threading.Thread(target=worker, daemon=True, name='tv-channel-health').start()
 
 
-PANEL = '''<div class="panel"><h2>Estado de Canales Dominicanos</h2>
-<p>Comprobación automática cada 5 minutos. La X roja requiere dos fallos consecutivos. Una señal detectada no garantiza reproducción sin cortes en cada televisor.</p>
-<div id="tv-health-alert" role="status" aria-live="polite"></div><div id="tv-health-list">Pendiente de comprobación…</div>
-<script>(function(){async function refresh(){try{const r=await fetch('/inter-tv/channel-health',{cache:'no-store'});if(!r.ok)throw Error();const d=await r.json();const list=document.getElementById('tv-health-list');list.replaceChildren();let down=0;for(const c of d.channels){const row=document.createElement('p');const labels={ok:'✅ Señal detectada',down:'❌ No responde',checking:'⏳ Confirmando fallo',unknown:'⚪ No comprobado'};if(c.state==='down')down++;row.textContent=c.name+' — '+(labels[c.state]||labels.unknown)+' · '+new Date(c.checked*1000).toLocaleString('es-DO',{timeZone:'America/Santo_Domingo'});list.appendChild(row);}if(!d.channels.length)list.textContent='Todavía no hay resultados. Esperando la primera revisión de la lista dominicana.';document.getElementById('tv-health-alert').textContent=down?'⚠ '+down+' canal(es) dominicanos no responden. Revisa la lista de abajo.':'';}catch(e){document.getElementById('tv-health-alert').textContent='No se pudo actualizar el estado; los resultados anteriores pueden estar desactualizados.';}}refresh();setInterval(refresh,30000);})();</script></div>'''
+def badge(name, url, group='Canales Dominicanos'):
+    import html
+    normalized = ''.join(c for c in unicodedata.normalize('NFD', group.lower()) if not unicodedata.combining(c))
+    if 'dominican' not in normalized:
+        return ''
+    key = hashlib.sha256((name+'\\0'+url).encode()).hexdigest()
+    return '<span class="tv-health-badge" data-health-id="'+html.escape(key)+'" style="font-size:12px;display:inline-block;margin-left:8px" aria-live="polite">⚪ Pendiente de revisión</span>'
+
+PANEL = '''<div id="tv-health-alert" role="status" aria-live="polite"></div>
+<script>(function(){async function refresh(){try{const r=await fetch('/inter-tv/channel-health',{cache:'no-store'});if(!r.ok)throw Error();const d=await r.json();const byId=new Map(d.channels.map(c=>[c.id,c]));const labels={ok:'✅ Señal detectada',down:'❌ No responde',checking:'⏳ Confirmando fallo',unknown:'⚪ No comprobado'};document.querySelectorAll('.tv-health-badge').forEach(el=>{const c=byId.get(el.dataset.healthId);el.textContent=c?(labels[c.state]||labels.unknown)+' · '+new Date(c.checked*1000).toLocaleString('es-DO',{timeZone:'America/Santo_Domingo'}):'⚪ Pendiente de revisión';});const down=d.channels.filter(c=>c.state==='down');document.getElementById('tv-health-alert').textContent=down.length?'⚠ No responden: '+down.map(c=>c.name).join(', '):'';}catch(e){document.querySelectorAll('.tv-health-badge').forEach(el=>el.textContent='⚪ No se pudo actualizar el estado');}}if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',refresh);}else{refresh();}setInterval(refresh,30000);})();</script>'''

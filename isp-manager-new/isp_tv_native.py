@@ -210,6 +210,9 @@ def setup(app):
         group = re.search(r'group-title="([^"]*)"', info)
         return name, (group.group(1).strip() if group else '')
 
+    import tv_channel_health
+    tv_channel_health.setup(app, host, db, playlist_entries, playlist_label)
+
     def tv_page():
         # Keep the existing Inter Flash administrator login, without a second TV password prompt.
         if not host.auth():
@@ -579,7 +582,7 @@ def setup(app):
                 selection_panel = '<div class="panel"><h2>Elige qué dejar en tu lista</h2><p>Encontré '+str(len(items))+' canales o títulos. Los que queden marcados se conservarán; los demás se quitarán.</p><input id="tv-search" type="search" placeholder="Buscar por nombre o categoría" style="width:100%;padding:10px;margin:8px 0"><div style="display:flex;gap:8px;margin-bottom:10px"><button class="btn small" type="button" onclick="document.querySelectorAll(\'.tv-channel-row input\').forEach(x=>x.checked=true)">Marcar todos</button><button class="btn small" type="button" onclick="document.querySelectorAll(\'.tv-channel-row input\').forEach(x=>x.checked=false)">Desmarcar todos</button></div><form method="post" id="tv-select-form"><input type="hidden" name="csrf" value="'+token+'"><input type="hidden" name="action" value="save_m3u_selection"><input type="hidden" name="preview_id" value="'+host.e(preview_id)+'"><div style="max-height:55vh;overflow:auto;border:1px solid #354b64;border-radius:8px;padding:8px">'+''.join(channel_rows)+'</div><button class="btn green" style="margin-top:12px">Guardar selección</button></form><script>document.getElementById(\'tv-search\').addEventListener(\'input\',function(){const q=this.value.toLowerCase();document.querySelectorAll(\'.tv-channel-row\').forEach(x=>x.style.display=x.dataset.search.includes(q)?\'grid\':\'none\')})</script><style>.tv-channel-row{display:grid;grid-template-columns:24px 1fr auto;align-items:center;gap:8px;padding:8px;border-bottom:1px solid #26394d}.tv-channel-row small{opacity:.7}.tv-channel-row input{width:18px;height:18px}</style></div>'
             else:
                 session.pop('tv_preview_id', None)
-        body = head + message + epg_panel + manual_panel + selection_panel + '<div class="panel"><h2>Lista de canales, películas y series</h2><p>' + (
+        body = head + message + tv_channel_health.PANEL + epg_panel + manual_panel + selection_panel + '<div class="panel"><h2>Lista de canales, películas y series</h2><p>' + (
             'Lista configurada · versión '+str(config['revision']) if config else 'Todavía no hay una lista guardada.') + '''</p>
             <form method="post"><input type="hidden" name="csrf" value="'''+token+'''">
             <input type="hidden" name="action" value="save"><div class="field"><label>Enlace M3U del proveedor</label>

@@ -194,7 +194,7 @@ def badge(name, url, group='Canales Dominicanos'):
     normalized = ''.join(c for c in unicodedata.normalize('NFD', group.lower()) if not unicodedata.combining(c))
     if 'dominican' not in normalized:
         return ''
-    key = hashlib.sha256((name+'\\0'+url).encode()).hexdigest()
+    key = hashlib.sha256((name+chr(0)+url).encode()).hexdigest()
     return '<span class="tv-health-badge" data-health-id="'+html.escape(key)+'" style="font-size:12px;display:inline-block;margin-left:8px" aria-live="polite">⚪ Pendiente de revisión</span>'
 
 PANEL = '''<div id="tv-health-alert" role="status" aria-live="polite"></div>

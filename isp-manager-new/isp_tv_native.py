@@ -213,6 +213,10 @@ def setup(app):
     import tv_channel_health
     tv_channel_health.setup(app, host, db, playlist_entries, playlist_label)
 
+    import tv_folder_selection
+    apply_folder_selection = tv_folder_selection.setup(
+        app, host, db, playlist_entries, playlist_label, csrf, valid_csrf, tv_today)
+
     def tv_page():
         # Keep the existing Inter Flash administrator login, without a second TV password prompt.
         if not host.auth():
@@ -613,6 +617,7 @@ def setup(app):
             <p class="muted">Con la app actualizada, Desvincular detiene los canales de este televisor al recibir el aviso. Reactivar permite volver a sincronizarlos. Los enlaces directos del proveedor no se cancelan.</p></div>
             <div class="panel"><a class="btn blue" href="https://github.com/manuel829mg-cloud/InterFlashTV/releases/download/native-v9-panel-test/InterFlashTV-native-v9.apk">Descargar app nativa v9</a> <a class="btn" href="https://inter-tv-prueba-production.up.railway.app/" target="_blank" rel="noopener">Abrir reproductor web</a>
             <p class="muted">Instala la app nativa v9 para vincularla. Si Android informa un conflicto de firma, desinstala la versión de prueba anterior; se borrarán sus ajustes locales.</p></div>'''
+        body = body.replace(head, head + '<div class="panel"><a class="btn blue" href="/inter-tv/folders">Elegir carpetas de la lista</a><p>Mostrar todas las carpetas del proveedor y elegir cuáles aparecen en la aplicación.</p></div>', 1)
         response = app.make_response(host.shell('Inter Flash TV', body, 'inter_tv'))
         response.headers['Cache-Control'] = 'no-store'
         response.headers['Referrer-Policy'] = 'no-referrer'
@@ -697,6 +702,7 @@ def setup(app):
                                      + digest + '/' + signature + '.m3u')
             payload['manual_revision'] = config['revision'] + 5
         payload.update(revision=config['revision'] + 5 + (2 if saved_source.startswith('m3ufile:') else 0), name='Inter Flash TV')
+        payload = apply_folder_selection(payload, digest)
         response = jsonify(payload)
         response.headers['Cache-Control'] = 'no-store'
         response.headers['Referrer-Policy'] = 'no-referrer'

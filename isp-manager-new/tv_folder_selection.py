@@ -3,6 +3,8 @@ import gzip
 import hashlib
 import hmac
 import json
+import re
+import unicodedata
 import time
 from collections import Counter
 from urllib.request import Request, urlopen
@@ -29,8 +31,37 @@ def setup(app, host, db, entries, label, csrf, valid_csrf, today):
     def group(item):
         return label(item)[1] or 'Sin carpeta'
 
+    def category_key(name):
+        value = unicodedata.normalize('NFKD', name.casefold())
+        return ' '.join(''.join(ch if ch.isalnum() else ' ' for ch in value
+                                if not unicodedata.combining(ch)).split())
+
+    def merged_items(content):
+        preamble, items = entries(content)
+        names = [group(item) for item in items]
+        # Keep the exact Dominican folder name already supplied by this provider.
+        target = next((name for name in names
+                       if 'dominican' in category_key(name)
+                       and not any(word in category_key(name) for word in ('deporte', 'lidom'))),
+                      'Canales Dominicanos')
+        result = []
+        for item in items:
+            if category_key(group(item)) in ('cultural', 'culturales'):
+                item = list(item)
+                item[0] = re.sub(r'group-title="[^"]*"',
+                                 lambda _: 'group-title="'+target+'"', item[0])
+            result.append(item)
+        return preamble, result, target
+
+    def selected_groups(row, content):
+        if row['selected_json'] is None:
+            return set(counts(content))
+        target = merged_items(content)[2]
+        return {target if category_key(name) in ('cultural', 'culturales') else name
+                for name in json.loads(row['selected_json'])}
+
     def counts(content):
-        return Counter(group(item) for item in entries(content)[1])
+        return Counter(group(item) for item in merged_items(content)[1])
 
     def download(raw, c):
         if raw.startswith('m3ufile:'):
@@ -72,7 +103,7 @@ def setup(app, host, db, entries, label, csrf, valid_csrf, today):
                         selected = None
                         if row and row['selected_json'] is not None:
                             # Newly discovered groups start hidden once a selection exists.
-                            selected = [x for x in json.loads(row['selected_json']) if x in groups]
+                            selected = [x for x in selected_groups(row, content) if x in groups]
                         c.execute('''INSERT INTO tv_folder_catalog VALUES(?,?,?,?)
                             ON CONFLICT(source_id) DO UPDATE SET content_enc=excluded.content_enc,
                             selected_json=excluded.selected_json,updated=excluded.updated''',
@@ -102,7 +133,7 @@ def setup(app, host, db, entries, label, csrf, valid_csrf, today):
             body += '<div class="panel"><p>Elige qué carpetas de la lista del proveedor aparecen en la aplicación. Las desmarcadas se conservan aquí para reactivarlas. Los canales añadidos manualmente se gestionan por separado.</p><form method="post">'+hidden+'<input type="hidden" name="action" value="refresh"><button class="btn blue">Cargar / actualizar todas las carpetas</button></form></div>'
             if row:
                 groups = counts(host.dec(row['content_enc']))
-                selected = set(groups) if row['selected_json'] is None else set(json.loads(row['selected_json']))
+                selected = selected_groups(row, host.dec(row['content_enc']))
                 body += '<div class="panel"><h2>'+str(len(groups))+' carpetas · '+str(sum(groups.values()))+' entradas</h2><input id="folder-search" type="search" placeholder="Buscar carpeta" style="width:100%;padding:10px"><p><button type="button" class="btn small" onclick="markFolders(true)">Marcar todas</button> <button type="button" class="btn small" onclick="markFolders(false)">Desmarcar todas</button></p><form method="post">'+hidden+'<input type="hidden" name="action" value="save"><input type="hidden" name="catalog_version" value="'+str(row['updated'])+'"><div style="max-height:60vh;overflow:auto">'
                 for name, total in sorted(groups.items(), key=lambda x: x[0].casefold()):
                     checked = ' checked' if name in selected else ''
@@ -124,7 +155,8 @@ def setup(app, host, db, entries, label, csrf, valid_csrf, today):
             sig = hmac.new(host.PASSWORD.encode(), ('folders:'+digest+':'+sid).encode(), hashlib.sha256).hexdigest()
             for key in ('server', 'username', 'password', 'url'):
                 payload.pop(key, None)
-            payload.update(kind='m3u', url=request.url_root.rstrip('/')+'/api/tv-native/folders/'+digest+'/'+sid+'/'+sig+'.m3u')
+            payload.update(kind='m3u', url=request.url_root.rstrip('/')+'/api/tv-native/folders/'+digest+'/'+sid+'/'+sig+'.m3u?v=2')
+            payload['revision'] = payload.get('revision', 0) + 1
         return payload
 
     @app.get('/api/tv-native/folders/<digest>/<sid>/<signature>.m3u')
@@ -145,8 +177,8 @@ def setup(app, host, db, entries, label, csrf, valid_csrf, today):
             if not row or row['selected_json'] is None:
                 return 'Lista no disponible; sincroniza la aplicación.', 409
             content = host.dec(row['content_enc'])
-            selected = set(json.loads(row['selected_json']))
-        preamble, items = entries(content)
+            selected = selected_groups(row, content)
+        preamble, items, _ = merged_items(content)
         lines = preamble or ['#EXTM3U']
         for item in items:
             if group(item) in selected:

@@ -215,7 +215,7 @@ def setup(app):
 
     import tv_folder_selection
     apply_folder_selection = tv_folder_selection.setup(
-        app, host, db, playlist_entries, playlist_label, csrf, valid_csrf, tv_today)
+        app, host, db, playlist_entries, playlist_label, csrf, valid_csrf, tv_today, manual_channel_info)
 
     def tv_page():
         # Keep the existing Inter Flash administrator login, without a second TV password prompt.

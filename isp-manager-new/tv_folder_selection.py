@@ -13,7 +13,7 @@ from flask import request, redirect
 MAX_BYTES = 32 * 1024 * 1024
 
 
-def setup(app, host, db, entries, label, csrf, valid_csrf, today):
+def setup(app, host, db, entries, label, csrf, valid_csrf, today, manual_info):
     def schema(c):
         c.execute('''CREATE TABLE IF NOT EXISTS tv_folder_catalog (
             source_id TEXT PRIMARY KEY, content_enc TEXT NOT NULL,
@@ -149,10 +149,10 @@ def setup(app, host, db, entries, label, csrf, valid_csrf, today):
             c.commit()
         if row and row['selected_json'] is not None:
             sig = hmac.new(host.PASSWORD.encode(), ('folders:'+digest+':'+sid).encode(), hashlib.sha256).hexdigest()
-            for key in ('server', 'username', 'password', 'url'):
+            for key in ('server', 'username', 'password', 'url', 'manual_url', 'manual_revision'):
                 payload.pop(key, None)
-            payload.update(kind='m3u', url=request.url_root.rstrip('/')+'/api/tv-native/folders/'+digest+'/'+sid+'/'+sig+'.m3u?v=3')
-            payload['revision'] = payload.get('revision', 0) + 2
+            payload.update(kind='m3u', url=request.url_root.rstrip('/')+'/api/tv-native/folders/'+digest+'/'+sid+'/'+sig+'.m3u?v=4')
+            payload['revision'] = payload.get('revision', 0) + 3
         return payload
 
     @app.get('/api/tv-native/folders/<digest>/<sid>/<signature>.m3u')
@@ -174,8 +174,16 @@ def setup(app, host, db, entries, label, csrf, valid_csrf, today):
                 return 'Lista no disponible; sincroniza la aplicación.', 409
             content = host.dec(row['content_enc'])
             selected = selected_groups(row, content)
+            manual = c.execute('SELECT number,name,url_enc FROM tv_manual_channels ORDER BY number,name').fetchall()
+            epg = c.execute('SELECT url_enc FROM tv_native_epg_settings WHERE id=1').fetchone()
         preamble, items, _ = merged_items(content)
         lines = preamble or ['#EXTM3U']
+        if epg and host.dec(epg['url_enc']):
+            header = re.sub(r'\s+(?:url-tvg|x-tvg-url)="[^"]*"', '', lines[0], flags=re.IGNORECASE)
+            lines[0] = header + ' url-tvg="' + host.dec(epg['url_enc']) + '"'
+        # Deliver manual and provider channels in one playlist so the app groups them together.
+        for channel in manual:
+            lines.extend([manual_info(channel), host.dec(channel['url_enc'])])
         for item in items:
             if group(item) in selected:
                 lines.extend(item)

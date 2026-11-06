@@ -38,12 +38,8 @@ def setup(app, host, db, entries, label, csrf, valid_csrf, today):
 
     def merged_items(content):
         preamble, items = entries(content)
-        names = [group(item) for item in items]
-        # Keep the exact Dominican folder name already supplied by this provider.
-        target = next((name for name in names
-                       if 'dominican' in category_key(name)
-                       and not any(word in category_key(name) for word in ('deporte', 'lidom'))),
-                      'Canales Dominicanos')
+        # Share the existing manual-channel category, not the provider's RD category.
+        target = 'Canales Dominicanos'
         result = []
         for item in items:
             if category_key(group(item)) in ('cultural', 'culturales'):
@@ -155,8 +151,8 @@ def setup(app, host, db, entries, label, csrf, valid_csrf, today):
             sig = hmac.new(host.PASSWORD.encode(), ('folders:'+digest+':'+sid).encode(), hashlib.sha256).hexdigest()
             for key in ('server', 'username', 'password', 'url'):
                 payload.pop(key, None)
-            payload.update(kind='m3u', url=request.url_root.rstrip('/')+'/api/tv-native/folders/'+digest+'/'+sid+'/'+sig+'.m3u?v=2')
-            payload['revision'] = payload.get('revision', 0) + 1
+            payload.update(kind='m3u', url=request.url_root.rstrip('/')+'/api/tv-native/folders/'+digest+'/'+sid+'/'+sig+'.m3u?v=3')
+            payload['revision'] = payload.get('revision', 0) + 2
         return payload
 
     @app.get('/api/tv-native/folders/<digest>/<sid>/<signature>.m3u')

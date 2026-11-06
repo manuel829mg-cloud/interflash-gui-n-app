@@ -165,8 +165,8 @@ def setup(app, host, db, entries, label, csrf, valid_csrf, today, manual_info):
             sig = hmac.new(host.PASSWORD.encode(), ('folders:'+digest+':'+sid).encode(), hashlib.sha256).hexdigest()
             for key in ('server', 'username', 'password', 'url', 'manual_url', 'manual_revision'):
                 payload.pop(key, None)
-            payload.update(kind='m3u', url=request.url_root.rstrip('/')+'/api/tv-native/folders/'+digest+'/'+sid+'/'+sig+'.m3u?v=7')
-            payload['revision'] = payload.get('revision', 0) + 6
+            payload.update(kind='m3u', url=request.url_root.rstrip('/')+'/api/tv-native/folders/'+digest+'/'+sid+'/'+sig+'.m3u?v=8')
+            payload['revision'] = payload.get('revision', 0) + 7
         return payload
 
     @app.get('/api/tv-native/folders/<digest>/<sid>/<signature>.m3u')
@@ -195,12 +195,18 @@ def setup(app, host, db, entries, label, csrf, valid_csrf, today, manual_info):
         if epg and host.dec(epg['url_enc']):
             header = re.sub(r'\s+(?:url-tvg|x-tvg-url)="[^"]*"', '', lines[0], flags=re.IGNORECASE)
             lines[0] = header + ' url-tvg="' + host.dec(epg['url_enc']) + '"'
-        # Deliver manual and provider channels in one playlist so the app groups them together.
-        for channel in manual:
-            lines.extend([manual_info(channel), host.dec(channel['url_enc'])])
+        # Keep the combined folder first, with its actual channel numbers ascending.
+        combined = [[manual_info(channel), host.dec(channel['url_enc'])] for channel in manual]
+        other = []
         for item in items:
             if group(item) in selected:
-                lines.extend(item)
+                (combined if group(item) == 'Canales Dominicanos' else other).append(item)
+        def channel_number(item):
+            match = re.search(r'tvg-chno="([0-9]+)"', item[0])
+            return int(match.group(1)) if match else 1000000
+        combined.sort(key=channel_number)
+        for item in combined + other:
+            lines.extend(item)
         response = app.make_response(gzip.compress(('\n'.join(lines)+'\n').encode(), compresslevel=6))
         response.headers.update({'Content-Type': 'application/vnd.apple.mpegurl; charset=utf-8', 'Content-Encoding': 'gzip', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer'})
         return response

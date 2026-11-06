@@ -42,14 +42,20 @@ def setup(app, host, db, entries, label, csrf, valid_csrf, today, manual_info):
         target = 'Canales Dominicanos'
         result = []
         cultural_number = 50
+        children_number = 98
         for item in items:
-            if category_key(group(item)) in ('cultural', 'culturales'):
+            original_group = category_key(group(item))
+            if original_group in ('cultural', 'culturales', 'infantiles'):
                 item = list(item)
                 item[0] = re.sub(r'group-title="[^"]*"',
                                  lambda _: 'group-title="'+target+'"', item[0])
                 item[0] = re.sub(r'\s+tvg-chno="[^"]*"', '', item[0])
-                item[0] = item[0].replace('#EXTINF:-1', '#EXTINF:-1 tvg-chno="'+str(cultural_number)+'"', 1)
-                cultural_number += 1
+                number = children_number if original_group == 'infantiles' else cultural_number
+                item[0] = item[0].replace('#EXTINF:-1', '#EXTINF:-1 tvg-chno="'+str(number)+'"', 1)
+                if original_group == 'infantiles':
+                    children_number += 1
+                else:
+                    cultural_number += 1
             result.append(item)
         return preamble, result, target
 
@@ -57,7 +63,7 @@ def setup(app, host, db, entries, label, csrf, valid_csrf, today, manual_info):
         if row['selected_json'] is None:
             return set(counts(content))
         target = merged_items(content)[2]
-        return {target if category_key(name) in ('cultural', 'culturales') else name
+        return {target if category_key(name) in ('cultural', 'culturales', 'infantiles') else name
                 for name in json.loads(row['selected_json'])}
 
     def counts(content):
@@ -155,8 +161,8 @@ def setup(app, host, db, entries, label, csrf, valid_csrf, today, manual_info):
             sig = hmac.new(host.PASSWORD.encode(), ('folders:'+digest+':'+sid).encode(), hashlib.sha256).hexdigest()
             for key in ('server', 'username', 'password', 'url', 'manual_url', 'manual_revision'):
                 payload.pop(key, None)
-            payload.update(kind='m3u', url=request.url_root.rstrip('/')+'/api/tv-native/folders/'+digest+'/'+sid+'/'+sig+'.m3u?v=5')
-            payload['revision'] = payload.get('revision', 0) + 4
+            payload.update(kind='m3u', url=request.url_root.rstrip('/')+'/api/tv-native/folders/'+digest+'/'+sid+'/'+sig+'.m3u?v=6')
+            payload['revision'] = payload.get('revision', 0) + 5
         return payload
 
     @app.get('/api/tv-native/folders/<digest>/<sid>/<signature>.m3u')

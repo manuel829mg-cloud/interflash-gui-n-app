@@ -41,11 +41,15 @@ def setup(app, host, db, entries, label, csrf, valid_csrf, today, manual_info):
         # Share the existing manual-channel category, not the provider's RD category.
         target = 'Canales Dominicanos'
         result = []
+        cultural_number = 50
         for item in items:
             if category_key(group(item)) in ('cultural', 'culturales'):
                 item = list(item)
                 item[0] = re.sub(r'group-title="[^"]*"',
                                  lambda _: 'group-title="'+target+'"', item[0])
+                item[0] = re.sub(r'\s+tvg-chno="[^"]*"', '', item[0])
+                item[0] = item[0].replace('#EXTINF:-1', '#EXTINF:-1 tvg-chno="'+str(cultural_number)+'"', 1)
+                cultural_number += 1
             result.append(item)
         return preamble, result, target
 
@@ -151,8 +155,8 @@ def setup(app, host, db, entries, label, csrf, valid_csrf, today, manual_info):
             sig = hmac.new(host.PASSWORD.encode(), ('folders:'+digest+':'+sid).encode(), hashlib.sha256).hexdigest()
             for key in ('server', 'username', 'password', 'url', 'manual_url', 'manual_revision'):
                 payload.pop(key, None)
-            payload.update(kind='m3u', url=request.url_root.rstrip('/')+'/api/tv-native/folders/'+digest+'/'+sid+'/'+sig+'.m3u?v=4')
-            payload['revision'] = payload.get('revision', 0) + 3
+            payload.update(kind='m3u', url=request.url_root.rstrip('/')+'/api/tv-native/folders/'+digest+'/'+sid+'/'+sig+'.m3u?v=5')
+            payload['revision'] = payload.get('revision', 0) + 4
         return payload
 
     @app.get('/api/tv-native/folders/<digest>/<sid>/<signature>.m3u')

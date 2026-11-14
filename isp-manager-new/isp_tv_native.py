@@ -340,7 +340,7 @@ def setup(app):
                                 raise ValueError('Selecciona Películas o Series.')
                             if raw:
                                 parsed = urlsplit(raw)
-                                if parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username or parsed.password or len(raw) > 8192 or any(ch.isspace() or ch in ('"', "'", '\\r', '\\n') for ch in raw):
+                                if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password or len(raw) > 8192 or any(ch.isspace() or ch in ('"', "'") for ch in raw):
                                     raise ValueError('El enlace del catálogo debe ser una URL HTTP o HTTPS válida.')
                                 c.execute('''INSERT INTO tv_native_vod_sources(media_type,url_enc,updated)
                                   VALUES(?,?,?) ON CONFLICT(media_type) DO UPDATE SET

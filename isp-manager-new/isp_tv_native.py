@@ -94,6 +94,9 @@ def setup(app):
         CREATE TABLE IF NOT EXISTS tv_native_settings (
           id INTEGER PRIMARY KEY CHECK(id=1), source_enc TEXT NOT NULL,
           revision INTEGER NOT NULL DEFAULT 1);
+        CREATE TABLE IF NOT EXISTS tv_native_vod_sources (
+          media_type TEXT PRIMARY KEY CHECK(media_type IN ('movie','series')),
+          url_enc TEXT NOT NULL, updated INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS tv_native_m3u_files (
           id TEXT PRIMARY KEY, content_enc TEXT NOT NULL, access_hash TEXT NOT NULL,
           created INTEGER NOT NULL);
@@ -329,6 +332,27 @@ def setup(app):
                                     note = 'Encontré ' + str(len(items)) + ' canales o títulos. Elige cuáles quieres conservar y guarda la selección.'
                                 except (UnicodeDecodeError, ValueError) as ex:
                                     note = str(ex) or 'No se pudo leer el archivo. Usa formato UTF-8.'
+                    elif action == 'save_vod_url':
+                        media_type = request.form.get('media_type', '')
+                        raw = request.form.get('vod_url', '').strip()
+                        try:
+                            if media_type not in ('movie', 'series'):
+                                raise ValueError('Selecciona Películas o Series.')
+                            if raw:
+                                parsed = urlsplit(raw)
+                                if parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username or parsed.password or len(raw) > 8192 or any(ch.isspace() or ch in ('"', "'", '\\r', '\\n') for ch in raw):
+                                    raise ValueError('El enlace del catálogo debe ser una URL HTTP o HTTPS válida.')
+                                c.execute('''INSERT INTO tv_native_vod_sources(media_type,url_enc,updated)
+                                  VALUES(?,?,?) ON CONFLICT(media_type) DO UPDATE SET
+                                  url_enc=excluded.url_enc,updated=excluded.updated''',
+                                          (media_type, host.enc(raw), int(time.time())))
+                                note = 'Enlace de catálogo guardado. Se sincronizará junto a los canales.'
+                            else:
+                                c.execute('DELETE FROM tv_native_vod_sources WHERE media_type=?', (media_type,))
+                                note = 'Enlace de catálogo eliminado.'
+                            c.execute('UPDATE tv_native_settings SET revision=revision+1 WHERE id=1')
+                        except ValueError as ex:
+                            note = str(ex)
                     elif action == 'append_vod_m3u':
                         # Add a separate VOD playlist without replacing working live TV channels.
                         media_type = request.form.get('media_type', '')
@@ -600,6 +624,11 @@ def setup(app):
             <input type="hidden" name="action" value="upload_m3u"><div class="field"><label>Archivo de canales (.m3u o .m3u8)</label>
             <input type="file" name="m3u_file" accept=".m3u,.m3u8,audio/x-mpegurl,application/vnd.apple.mpegurl" required></div>
             <button class="btn blue">Cargar archivo M3U</button></form></div>
+            <div class="panel"><h2>Catálogo VOD por enlace (M3U)</h2><p>Funciona con canales configurados por archivo, URL externa o Xtream. El catálogo se sincroniza aparte y no reemplaza los canales.</p>
+            <form method="post"><input type="hidden" name="csrf" value="'''+token+'''"><input type="hidden" name="action" value="save_vod_url">
+            <div class="field"><label>Contenido</label><select name="media_type" required><option value="movie">Películas</option><option value="series">Series</option></select></div>
+            <div class="field"><label>Enlace M3U del catálogo</label><input type="url" name="vod_url" autocomplete="off" placeholder="https://proveedor/lista-vod.m3u"></div>
+            <button class="btn blue">Guardar catálogo</button></form></div>
             <div class="panel"><h2>Añadir películas o series sin borrar canales</h2><p>Sube otra lista M3U con películas o episodios de series. Se agregarán a la lista de TV existente; no se reemplazarán los canales actuales.</p>
             <form method="post" enctype="multipart/form-data"><input type="hidden" name="csrf" value="'''+token+'''">
             <input type="hidden" name="action" value="append_vod_m3u">
@@ -693,6 +722,14 @@ def setup(app):
                 payload.update(source_config(saved_source))
         except ValueError:
             return jsonify(error='Invalid stored source'), 503
+        # Independent VOD M3U sources work with file, URL and Xtream live playlists.
+        with db() as c:
+            vod_rows = c.execute('SELECT media_type,url_enc FROM tv_native_vod_sources ORDER BY media_type').fetchall()
+        if vod_rows:
+            payload['vod_sources'] = [
+                {'type': row['media_type'], 'url': host.dec(row['url_enc'])}
+                for row in vod_rows
+            ]
         # Separate manual-channel source works alongside Xtream, external M3U and file M3U.
         with db() as c:
             manual_count = c.execute('SELECT COUNT(*) FROM tv_manual_channels').fetchone()[0]

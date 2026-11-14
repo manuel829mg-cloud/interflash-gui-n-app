@@ -124,7 +124,7 @@
     return out;
   }
   function groups(){
-    var map={};channels.forEach(function(c){if(c.type==='live'&&c.group)map[c.group]=true});
+    var map={};channels.forEach(function(c){if(c.type===activeTab&&c.group)map[c.group]=true});
     var values=Object.keys(map).sort(function(a,b){
       var ad=/dominican|dominicano/i.test(a),bd=/dominican|dominicano/i.test(b);
       return ad===bd?a.localeCompare(b,'es'):ad?-1:1
@@ -147,7 +147,7 @@
   function seriesItems(){
     var map={};
     channels.forEach(function(c,i){
-      if(c.type!=='series')return;
+      if(c.type!=='series'||(category.value&&c.group!==category.value))return;
       var key=c.seriesName||c.name;
       if(!map[key])map[key]={name:key,episodes:[],logo:c.logo};
       map[key].episodes.push({c:c,i:i});
@@ -239,10 +239,10 @@
   search.addEventListener('input',render);
   category.addEventListener('change',render);
   document.querySelectorAll('[data-tab]').forEach(function(b){b.addEventListener('click',function(){
-    activeTab=b.dataset.tab;selectedSeries='';selectedSeason='';if(activeTab!=='live')category.value='';
+    activeTab=b.dataset.tab;selectedSeries='';selectedSeason='';category.value='';rebuildCategories();
     document.querySelectorAll('[data-tab]').forEach(function(x){x.setAttribute('aria-pressed',x===b?'true':'false')});
     document.getElementById('sectionTitle').textContent=activeTab==='live'?'Canales':(activeTab==='movie'?'Películas':'Series');
-    category.style.display=activeTab==='live'?'':'none';
+    category.style.display='';
     search.placeholder=activeTab==='live'?'Buscar canal':(activeTab==='movie'?'Buscar película':'Buscar serie');
     render();
   })});

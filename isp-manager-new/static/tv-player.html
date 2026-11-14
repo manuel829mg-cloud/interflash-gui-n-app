@@ -116,7 +116,7 @@
         var typeMatch=line.match(/(?:^|\s)(?:tvg-)?type=["']([^"']*)["']/i);
         var rawType=typeMatch?typeMatch[1].toLowerCase():'live';
         var type=rawType==='movie'||rawType==='movies'?'movie':(rawType==='series'||rawType==='show'?'series':'live');
-        var se=name.match(/\bS(\d{1,2})\s*E(\d{1,3})\b/i);
+        var se=name.match(/\bS(?:eason\s*)?(\d{1,2})\s*[ ._-]*E(?:p(?:isode)?)?\s*(\d{1,3})\b/i)||name.match(/\b(\d{1,2})\s*x\s*(\d{1,3})\b/i)||name.match(/\bSeason\s*(\d{1,2})\s*[,._ -]*Episode\s*(\d{1,3})\b/i);
         var seriesName=se?name.slice(0,se.index).replace(/[ ._\-–:]+$/,'').trim():name;
         meta={name:name||'Canal sin nombre',logo:logoMatch?logoMatch[1]:'',group:groupMatch?groupMatch[1]:'Canales',type:type,seriesName:seriesName||name,season:se?String(parseInt(se[1],10)):'1',episode:se?parseInt(se[2],10):0};
       }else if(line.charAt(0)!=='#'&&meta){meta.url=line;out.push(meta);meta=null}

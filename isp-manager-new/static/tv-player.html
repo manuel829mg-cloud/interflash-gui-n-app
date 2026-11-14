@@ -13,6 +13,16 @@
 .brand{height:47px;display:flex;align-items:center;gap:10px;font-size:20px;font-weight:700;letter-spacing:.2px;flex:none}
 .brand-mark{width:30px;height:30px;border-radius:50%;background:#f5fbff;color:#10263a;display:grid;place-items:center;font-weight:900;font-size:12px}
 .tv-channels>h2{font-size:20px!important;margin:4px 0 8px!important}
+.media-tabs{display:flex;gap:5px;margin:0 0 8px;flex:none}
+.media-tabs button{flex:1;min-width:0;padding:8px 4px;border:1px solid #284760;border-radius:7px;background:#10263a;color:var(--text);font-size:13px}
+.media-tabs button[aria-pressed="true"]{background:#0d7184;border-color:#13b8cf}
+#seriesBack{display:none;margin:0 0 7px;padding:7px 9px;background:#10263a;color:var(--text);border:1px solid #284760;border-radius:6px;text-align:left}
+.media-row{display:flex;align-items:center;gap:9px;width:100%;padding:9px 7px;border:0;border-bottom:1px solid #19334b;background:transparent;color:var(--text);text-align:left}
+.media-row:focus{outline:2px solid var(--accent);background:var(--select)}
+.media-row .media-meta{display:block;color:var(--muted);font-size:12px;margin-top:3px}
+.season-tabs{display:flex;gap:5px;flex-wrap:wrap;padding:5px 0}
+.season-tabs button{padding:6px 9px;border:1px solid #284760;border-radius:6px;background:#10263a;color:var(--text)}
+.season-tabs button[aria-pressed="true"]{background:#0d7184}
 .filters{display:flex;gap:7px;flex:none}
 #category{min-width:0;max-width:43%;height:38px;padding:5px 8px;background:#10263a;color:var(--text);border:1px solid #26425b;border-radius:7px;font-size:14px}
 #categoryRemote{display:none}
@@ -47,7 +57,13 @@
 <div class="app">
   <aside class="tv-channels">
     <div class="brand"><span class="brand-mark">IF</span><span>Inter Flash TV</span></div>
-    <h2>Canales</h2>
+    <h2 id="sectionTitle">Canales</h2>
+    <div class="media-tabs" role="group" aria-label="Tipo de contenido">
+      <button type="button" data-tab="live" aria-pressed="true">TV en vivo</button>
+      <button type="button" data-tab="movie" aria-pressed="false">Películas</button>
+      <button type="button" data-tab="series" aria-pressed="false">Series</button>
+    </div>
+    <button id="seriesBack" type="button">← Todas las series</button>
     <div class="filters">
       <select id="category" aria-label="Categoría"><option value="">Todos</option></select>
       <span id="categoryRemote"></span>
@@ -77,7 +93,7 @@
 (function(){
   'use strict';
   var STORAGE='interflash_tv_player_playlist_v1';
-  var channels=[],active=-1,hls=null,toastTimer=null;
+  var channels=[],active=-1,hls=null,toastTimer=null,activeTab='live',selectedSeries='',selectedSeason='';
   var list=document.getElementById('channelList'),search=document.getElementById('searchChannel');
   var category=document.getElementById('category'),video=document.getElementById('player');
   var hint=document.getElementById('playerHint'),title=document.getElementById('nowTitle');
@@ -91,7 +107,12 @@
       if(line.indexOf('#EXTINF:')===0){
         var comma=line.lastIndexOf(','),name=comma>=0?line.slice(comma+1).trim():'Canal sin nombre';
         var logoMatch=line.match(/tvg-logo=["']([^"']*)["']/i),groupMatch=line.match(/group-title=["']([^"']*)["']/i);
-        meta={name:name||'Canal sin nombre',logo:logoMatch?logoMatch[1]:'',group:groupMatch?groupMatch[1]:'Canales'};
+        var typeMatch=line.match(/(?:^|\\s)(?:tvg-)?type=["']([^"']*)["']/i);
+        var rawType=typeMatch?typeMatch[1].toLowerCase():'live';
+        var type=rawType==='movie'||rawType==='movies'?'movie':(rawType==='series'||rawType==='show'?'series':'live');
+        var se=name.match(/\\bS(\\d{1,2})\\s*E(\\d{1,3})\\b/i);
+        var seriesName=se?name.slice(0,se.index).replace(/[ ._\\-–:]+$/,'').trim():name;
+        meta={name:name||'Canal sin nombre',logo:logoMatch?logoMatch[1]:'',group:groupMatch?groupMatch[1]:'Canales',type:type,seriesName:seriesName||name,season:se?String(parseInt(se[1],10)):'1',episode:se?parseInt(se[2],10):0};
       }else if(line.charAt(0)!=='#'&&meta){meta.url=line;out.push(meta);meta=null}
     });
     return out;
@@ -114,17 +135,51 @@
   function visibleChannels(){
     var q=search.value.trim().toLocaleLowerCase('es'),g=category.value;
     return channels.map(function(c,i){return {c:c,i:i}}).filter(function(x){
-      return (!g||x.c.group===g)&&(!q||x.c.name.toLocaleLowerCase('es').indexOf(q)>=0||x.c.group.toLocaleLowerCase('es').indexOf(q)>=0)
+      return x.c.type===activeTab&&(!g||x.c.group===g)&&(!q||x.c.name.toLocaleLowerCase('es').indexOf(q)>=0||x.c.group.toLocaleLowerCase('es').indexOf(q)>=0)
     });
   }
+  function seriesItems(){
+    var map={};
+    channels.forEach(function(c,i){
+      if(c.type!=='series')return;
+      var key=c.seriesName||c.name;
+      if(!map[key])map[key]={name:key,episodes:[],logo:c.logo};
+      map[key].episodes.push({c:c,i:i});
+    });
+    return Object.keys(map).sort(function(a,b){return a.localeCompare(b,'es')}).map(function(k){return map[k]});
+  }
+  function renderSeries(){
+    var back=document.getElementById('seriesBack');back.style.display=selectedSeries?'block':'none';
+    if(selectedSeries){
+      var show=seriesItems().find(function(x){return x.name===selectedSeries});
+      if(!show){selectedSeries='';selectedSeason='';renderSeries();return}
+      var seasons=Array.from(new Set(show.episodes.map(function(x){return x.c.season||'1'}))).sort(function(a,b){return Number(a)-Number(b)});
+      if(!selectedSeason||seasons.indexOf(selectedSeason)<0)selectedSeason=seasons[0];
+      var eps=show.episodes.filter(function(x){return (x.c.season||'1')===selectedSeason}).sort(function(a,b){return a.c.episode-b.c.episode});
+      list.innerHTML='<div class="season-tabs">'+seasons.map(function(n){return '<button type="button" data-season="'+esc(n)+'" aria-pressed="'+(n===selectedSeason)+'">Temporada '+esc(n)+'</button>'}).join('')+'</div>'+
+        eps.map(function(x){return '<button class="media-row" type="button" data-index="'+x.i+'"><span>▶</span><span>'+esc(x.c.name)+'<span class="media-meta">Episodio '+(x.c.episode||'')+'</span></span></button>'}).join('');
+      list.querySelectorAll('[data-season]').forEach(function(b){b.addEventListener('click',function(){selectedSeason=b.dataset.season;renderSeries()})});
+      list.querySelectorAll('[data-index]').forEach(function(b){b.addEventListener('click',function(){playChannel(Number(b.dataset.index))})});
+      document.getElementById('count').textContent=eps.length+' episodios · '+show.name;
+      return;
+    }
+    var shows=seriesItems(),q=search.value.trim().toLocaleLowerCase('es');
+    shows=shows.filter(function(x){return !q||x.name.toLocaleLowerCase('es').indexOf(q)>=0});
+    document.getElementById('count').textContent=shows.length+' series';
+    list.innerHTML=shows.length?shows.map(function(x){return '<button class="media-row" type="button" data-series="'+esc(x.name)+'">'+(x.logo?'<img width="42" height="54" style="object-fit:cover" src="'+esc(x.logo)+'" alt="">':'<span class="brand-mark">IF</span>')+'<span>'+esc(x.name)+'<span class="media-meta">'+x.episodes.length+' episodios</span></span><span>›</span></button>'}).join(''):'<div class="empty">No hay series en la lista del panel.</div>';
+    list.querySelectorAll('[data-series]').forEach(function(b){b.addEventListener('click',function(){selectedSeries=b.dataset.series;selectedSeason='';renderSeries()})});
+  }
   function render(){
-    var items=visibleChannels();
-    document.getElementById('count').textContent=channels.length?items.length+' de '+channels.length+' canales':'No hay canales en la lista del panel.';
-    if(!items.length){list.innerHTML='<div class="empty">No se encontraron canales.</div>';return}
+    if(activeTab==='series'){renderSeries();return}
+    selectedSeries='';selectedSeason='';
+    var items=visibleChannels(),label=activeTab==='movie'?'películas':'canales';
+    document.getElementById('seriesBack').style.display='none';
+    document.getElementById('count').textContent=items.length+' '+label;
+    if(!items.length){list.innerHTML='<div class="empty">'+(activeTab==='movie'?'No hay películas en la lista del panel.':'No se encontraron canales.')+'</div>';return}
     list.innerHTML=items.map(function(x){
       var c=x.c;
       return '<button type="button" role="option" aria-selected="'+(x.i===active)+'" class="'+(x.i===active?'active':'')+'" data-index="'+x.i+'" data-channel-name="'+esc(c.name)+'">'+
-        (c.logo?'<img src="'+esc(c.logo)+'" alt="" loading="lazy" onerror="this.style.visibility=\'hidden\'">':'<span class="brand-mark">TV</span>')+
+        (c.logo?'<img src="'+esc(c.logo)+'" alt="" loading="lazy" onerror="this.style.visibility=\'hidden\'">':'<span class="brand-mark">'+(activeTab==='movie'?'▶':'TV')+'</span>')+
         '<span class="channel-name">'+esc(c.name)+'</span></button>'
     }).join('');
     Array.from(list.querySelectorAll('button[data-index]')).forEach(function(b){
@@ -173,6 +228,15 @@
   window.importCustomM3U=importCustomM3U;
   search.addEventListener('input',render);
   category.addEventListener('change',render);
+  document.querySelectorAll('[data-tab]').forEach(function(b){b.addEventListener('click',function(){
+    activeTab=b.dataset.tab;selectedSeries='';selectedSeason='';
+    document.querySelectorAll('[data-tab]').forEach(function(x){x.setAttribute('aria-pressed',x===b?'true':'false')});
+    document.getElementById('sectionTitle').textContent=activeTab==='live'?'Canales':(activeTab==='movie'?'Películas':'Series');
+    category.style.display=activeTab==='live'?'':'none';
+    search.placeholder=activeTab==='live'?'Buscar canal':(activeTab==='movie'?'Buscar película':'Buscar serie');
+    render();
+  })});
+  document.getElementById('seriesBack').addEventListener('click',function(){selectedSeries='';selectedSeason='';renderSeries()});
   list.addEventListener('keydown',function(e){
     if(e.key==='ArrowDown'||e.key==='ArrowUp'){
       var items=visibleChannels();if(!items.length)return;
@@ -209,7 +273,7 @@
   video.addEventListener('error',function(){if(video.error)message('No se pudo abrir este canal.')});
   try{
     var saved=JSON.parse(localStorage.getItem(STORAGE)||'null');
-    if(saved&&Array.isArray(saved.channels)){channels=saved.channels;rebuildCategories();render();hint.textContent=channels.length?'Elige un canal para reproducirlo.':'El panel no tiene canales en la lista.'}
+    if(saved&&Array.isArray(saved.channels)){channels=saved.channels.map(function(c){c.type=c.type||'live';c.season=c.season||'1';c.episode=c.episode||0;c.seriesName=c.seriesName||c.name;return c});rebuildCategories();render();hint.textContent=channels.length?'Elige un canal para reproducirlo.':'El panel no tiene canales en la lista.'}
   }catch(_e){}
   render();
 })();

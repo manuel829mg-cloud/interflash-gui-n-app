@@ -118,7 +118,7 @@
     return out;
   }
   function groups(){
-    var map={};channels.forEach(function(c){if(c.group)map[c.group]=true});
+    var map={};channels.forEach(function(c){if(c.type==='live'&&c.group)map[c.group]=true});
     var values=Object.keys(map).sort(function(a,b){
       var ad=/dominican|dominicano/i.test(a),bd=/dominican|dominicano/i.test(b);
       return ad===bd?a.localeCompare(b,'es'):ad?-1:1
@@ -229,7 +229,7 @@
   search.addEventListener('input',render);
   category.addEventListener('change',render);
   document.querySelectorAll('[data-tab]').forEach(function(b){b.addEventListener('click',function(){
-    activeTab=b.dataset.tab;selectedSeries='';selectedSeason='';
+    activeTab=b.dataset.tab;selectedSeries='';selectedSeason='';if(activeTab!=='live')category.value='';
     document.querySelectorAll('[data-tab]').forEach(function(x){x.setAttribute('aria-pressed',x===b?'true':'false')});
     document.getElementById('sectionTitle').textContent=activeTab==='live'?'Canales':(activeTab==='movie'?'Películas':'Series');
     category.style.display=activeTab==='live'?'':'none';

@@ -17,6 +17,12 @@
 .media-tabs button{flex:1;min-width:0;padding:8px 4px;border:1px solid #284760;border-radius:7px;background:#10263a;color:var(--text);font-size:13px}
 .media-tabs button[aria-pressed="true"]{background:#0d7184;border-color:#13b8cf}
 #seriesBack{display:none;margin:0 0 7px;padding:7px 9px;background:#10263a;color:var(--text);border:1px solid #284760;border-radius:6px;text-align:left}
+.media-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(116px,1fr));gap:12px;padding:5px 2px 18px}
+.media-card{min-width:0;display:flex;flex-direction:column;gap:6px;padding:0 0 7px;border:1px solid transparent;border-radius:8px;background:#0a1927;color:var(--text);text-align:left;overflow:hidden}
+.media-card:focus,.media-card.active{outline:2px solid var(--accent);background:#102d43}
+.media-poster{width:100%;aspect-ratio:2/3;object-fit:cover;background:linear-gradient(145deg,#18344b,#071421);display:grid;place-items:center;color:#8da9c1;font-size:30px}
+.media-card .media-name{padding:0 7px;font-size:13px;font-weight:700;line-height:1.3;min-height:34px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.media-card .media-meta{padding:0 7px;color:var(--muted);font-size:11px}
 .media-row{display:flex;align-items:center;gap:9px;width:100%;padding:9px 7px;border:0;border-bottom:1px solid #19334b;background:transparent;color:var(--text);text-align:left}
 .media-row:focus{outline:2px solid var(--accent);background:var(--select)}
 .media-row .media-meta{display:block;color:var(--muted);font-size:12px;margin-top:3px}
@@ -49,7 +55,7 @@
 .toast{position:absolute;left:50%;bottom:84px;transform:translateX(-50%);padding:9px 14px;background:#12283a;border:1px solid #35506a;border-radius:7px;color:#fff;display:none}
 .videoFrame:fullscreen{background:#000}.videoFrame:fullscreen #player{width:100vw;height:100vh;object-fit:contain}
 .empty{color:#bdccda;text-align:center;padding:24px 12px;font-size:15px}
-@media(max-width:700px){.app{grid-template-columns:minmax(210px,36vw) 1fr}.tv-channels{padding:8px}.brand{font-size:16px}.nowbar{height:54px;padding:6px 9px}.controls button{padding:7px}.nowtext #nowTitle{font-size:14px}}
+@media(max-width:700px){.app{grid-template-columns:minmax(210px,36vw) 1fr}.tv-channels{padding:8px}.brand{font-size:16px}.nowbar{height:54px;padding:6px 9px}.controls button{padding:7px}.nowtext #nowTitle{font-size:14px}.media-grid{grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px}}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.7.4/dist/hls.min.js"></script>
 </head>
@@ -166,7 +172,7 @@
     var shows=seriesItems(),q=search.value.trim().toLocaleLowerCase('es');
     shows=shows.filter(function(x){return !q||x.name.toLocaleLowerCase('es').indexOf(q)>=0});
     document.getElementById('count').textContent=shows.length+' series';
-    list.innerHTML=shows.length?shows.map(function(x){return '<button class="media-row" type="button" data-series="'+esc(x.name)+'">'+(x.logo?'<img width="42" height="54" style="object-fit:cover" src="'+esc(x.logo)+'" alt="">':'<span class="brand-mark">IF</span>')+'<span>'+esc(x.name)+'<span class="media-meta">'+x.episodes.length+' episodios</span></span><span>›</span></button>'}).join(''):'<div class="empty">No hay series en la lista del panel.</div>';
+    list.innerHTML=shows.length?'<div class="media-grid">'+shows.map(function(x){return '<button class="media-card" type="button" data-series="'+esc(x.name)+'"><img class="media-poster" loading="lazy" src="'+esc(x.logo||'')+'" alt="" onerror="this.outerHTML=\'<div class=\\\'media-poster\\\'>▶</div>\'"><span class="media-name">'+esc(x.name)+'</span><span class="media-meta">'+x.episodes.length+' episodios</span></button>'}).join('')+'</div>':'<div class="empty">No hay series en la lista del panel.</div>';
     list.querySelectorAll('[data-series]').forEach(function(b){b.addEventListener('click',function(){selectedSeries=b.dataset.series;selectedSeason='';renderSeries()})});
   }
   function render(){
@@ -176,12 +182,16 @@
     document.getElementById('seriesBack').style.display='none';
     document.getElementById('count').textContent=items.length+' '+label;
     if(!items.length){list.innerHTML='<div class="empty">'+(activeTab==='movie'?'No hay películas en la lista del panel.':'No se encontraron canales.')+'</div>';return}
-    list.innerHTML=items.map(function(x){
-      var c=x.c;
-      return '<button type="button" role="option" aria-selected="'+(x.i===active)+'" class="'+(x.i===active?'active':'')+'" data-index="'+x.i+'" data-channel-name="'+esc(c.name)+'">'+
-        (c.logo?'<img src="'+esc(c.logo)+'" alt="" loading="lazy" onerror="this.style.visibility=\'hidden\'">':'<span class="brand-mark">'+(activeTab==='movie'?'▶':'TV')+'</span>')+
-        '<span class="channel-name">'+esc(c.name)+'</span></button>'
-    }).join('');
+    if(activeTab==='movie'){
+      list.innerHTML='<div class="media-grid">'+items.map(function(x){var c=x.c;return '<button class="media-card '+(x.i===active?'active':'')+'" type="button" data-index="'+x.i+'"><img class="media-poster" loading="lazy" src="'+esc(c.logo||'')+'" alt="" onerror="this.outerHTML=\'<div class=\\\'media-poster\\\'>▶</div>\'"><span class="media-name">'+esc(c.name)+'</span><span class="media-meta">'+esc(c.group||'Película')+'</span></button>'}).join('')+'</div>';
+    }else{
+      list.innerHTML=items.map(function(x){
+        var c=x.c;
+        return '<button type="button" role="option" aria-selected="'+(x.i===active)+'" class="'+(x.i===active?'active':'')+'" data-index="'+x.i+'" data-channel-name="'+esc(c.name)+'">'+
+          (c.logo?'<img src="'+esc(c.logo)+'" alt="" loading="lazy" onerror="this.style.visibility=\'hidden\'">':'<span class="brand-mark">TV</span>')+
+          '<span class="channel-name">'+esc(c.name)+'</span></button>'
+      }).join('');
+    }
     Array.from(list.querySelectorAll('button[data-index]')).forEach(function(b){
       b.addEventListener('click',function(){playChannel(Number(b.dataset.index))});
       b.addEventListener('focus',function(){active=Number(b.dataset.index);markActive()});

@@ -14,6 +14,11 @@ import androidx.media3.common.MediaItem;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
 import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.exoplayer.DefaultLoadControl;
+import androidx.media3.datasource.DefaultHttpDataSource;
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
+import android.os.Handler;
+import android.os.Looper;
 import androidx.media3.ui.PlayerView;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -30,6 +35,10 @@ public final class MainActivity extends Activity {
     private TextView status;
     private PlayerView video;
     private EditText server, token;
+    private final Handler playbackHandler = new Handler(Looper.getMainLooper());
+    private int playbackRetries = 0;
+    private String activeStreamUrl = "";
+    private String activeStreamName = "";
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -126,28 +135,76 @@ public final class MainActivity extends Activity {
     }
 
     private void playAuthorizedStream(String url, String name) {
-        if (!url.startsWith("https://")) { status.setText("Canal sin enlace HTTPS válido."); return; }
-        if (player != null) player.release();
-        if (video != null) { video.setPlayer(null); root.removeView(video); }
-        player = new ExoPlayer.Builder(this).build();
+        if (!url.startsWith("https://")) {
+            status.setText("Canal sin enlace HTTPS válido.");
+            return;
+        }
+        playbackHandler.removeCallbacksAndMessages(null);
+        playbackRetries = 0;
+        activeStreamUrl = url;
+        activeStreamName = name;
+        startPlayback();
+    }
+
+    private void startPlayback() {
+        if (activeStreamUrl.isEmpty()) return;
+        if (player != null) {
+            player.release();
+            player = null;
+        }
+        if (video == null) {
+            video = new PlayerView(this);
+            video.setUseController(true);
+            video.setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING);
+            root.addView(video, 5, new LinearLayout.LayoutParams(-1, 400));
+        }
+
+        DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
+                .setBufferDurationsMs(10000, 30000, 1000, 2500)
+                .build();
+        DefaultHttpDataSource.Factory httpFactory = new DefaultHttpDataSource.Factory()
+                .setConnectTimeoutMs(10000)
+                .setReadTimeoutMs(15000)
+                .setAllowCrossProtocolRedirects(true);
+        player = new ExoPlayer.Builder(this)
+                .setLoadControl(loadControl)
+                .setMediaSourceFactory(new DefaultMediaSourceFactory(httpFactory))
+                .build();
+
         player.addListener(new Player.Listener() {
+            @Override public void onPlaybackStateChanged(int playbackState) {
+                if (player == null) return;
+                if (playbackState == Player.STATE_BUFFERING) {
+                    status.setText("Cargando: " + activeStreamName);
+                } else if (playbackState == Player.STATE_READY) {
+                    status.setText("Reproduciendo: " + activeStreamName);
+                }
+            }
+
             @Override public void onPlayerError(PlaybackException error) {
-                status.setText("No se puede reproducir este canal. Revisa la señal autorizada.");
+                if (playbackRetries < 2) {
+                    playbackRetries++;
+                    status.setText("Señal interrumpida. Reconectando (" + playbackRetries + "/2)...");
+                    playbackHandler.postDelayed(() -> {
+                        if (!isFinishing() && !isDestroyed()) startPlayback();
+                    }, 1800);
+                } else {
+                    status.setText("No se pudo recuperar el canal. Comprueba la señal o inténtalo de nuevo.");
+                }
             }
         });
-        video = new PlayerView(this);
+
         video.setPlayer(player);
-        root.addView(video, 5, new LinearLayout.LayoutParams(-1, 400));
-        MediaItem.Builder media = new MediaItem.Builder().setUri(url);
-        if (url.toLowerCase(java.util.Locale.ROOT).contains(".m3u8")) {
+        MediaItem.Builder media = new MediaItem.Builder().setUri(activeStreamUrl);
+        if (activeStreamUrl.toLowerCase(java.util.Locale.ROOT).contains(".m3u8")) {
             media.setMimeType(androidx.media3.common.MimeTypes.APPLICATION_M3U8);
         }
         player.setMediaItem(media.build());
         player.prepare();
         player.play();
         video.requestFocus();
-        status.setText("Reproduciendo: " + name);
     }
+
     @Override protected void onStop() {
         super.onStop();
         if (player != null) { player.release(); player = null; }

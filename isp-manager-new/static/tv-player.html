@@ -180,7 +180,7 @@
     movies=next.filter(function(c){return c.type==='movie'});
     series=next.filter(function(c){return c.type==='series'});
     currentView='channels';currentItems=channels;active=-1;clearPlayer();
-    try{localStorage.setItem(STORAGE,JSON.stringify({name:name||'Inter Flash TV',channels:channels}))}catch(_e){}
+    try{localStorage.setItem(STORAGE,JSON.stringify({name:name||'Inter Flash TV',channels:next}))}catch(_e){}
     title.textContent='Inter Flash TV';group.textContent='Elige un canal para reproducirlo';
     logo.hidden=true;hint.hidden=false;hint.textContent=channels.length?'Elige un canal para reproducirlo.':'El panel no tiene canales en la lista.';
     setView('channels');

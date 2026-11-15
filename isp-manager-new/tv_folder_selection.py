@@ -49,6 +49,12 @@ def setup(app, host, db, entries, label, csrf, valid_csrf, today, manual_info):
         cinema_number = 135
         for item in items:
             original_group = category_key(group(item))
+            # Digital 15 must use its real remote-control channel number, not the provider ID.
+            item_name = category_key(label(item)[0] or item[0].rsplit(',', 1)[-1])
+            if original_group == 'republica dominicana' and 'digital 15' in item_name:
+                item = list(item)
+                item[0] = re.sub(r'\\s+tvg-chno="[^"]*"', '', item[0])
+                item[0] = item[0].replace('#EXTINF:-1', '#EXTINF:-1 tvg-chno="15"', 1)
             if original_group in ('cultural', 'culturales', 'infantiles', 'cine latino hd'):
                 item = list(item)
                 item[0] = re.sub(r'group-title="[^"]*"',

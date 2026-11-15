@@ -18,6 +18,9 @@ def setup(app, host, db, entries, label, csrf, valid_csrf, today, manual_info):
         c.execute('''CREATE TABLE IF NOT EXISTS tv_folder_catalog (
             source_id TEXT PRIMARY KEY, content_enc TEXT NOT NULL,
             selected_json TEXT, updated INTEGER NOT NULL)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS tv_channel_number_overrides (
+            source_id TEXT NOT NULL, item_key TEXT NOT NULL, channel_number INTEGER NOT NULL,
+            PRIMARY KEY(source_id,item_key))''')
 
     def source(c):
         row = c.execute('SELECT source_enc FROM tv_native_settings WHERE id=1').fetchone()
@@ -62,6 +65,13 @@ def setup(app, host, db, entries, label, csrf, valid_csrf, today, manual_info):
                     cultural_number += 1
             result.append(item)
         return preamble, result, target
+
+    def item_key(item):
+        return hashlib.sha256(("\\n".join(item)).encode("utf-8", errors="replace")).hexdigest()[:24]
+
+    def is_dominican(item):
+        name = category_key(group(item))
+        return "republica dominicana" in name or name == "canales dominicanos"
 
     def selected_groups(row, content):
         if row['selected_json'] is None:
@@ -125,6 +135,27 @@ def setup(app, host, db, entries, label, csrf, valid_csrf, today, manual_info):
                         message = 'Carpetas actualizadas. Marca cuáles quieres mostrar y guarda.'
                     except Exception:
                         message = 'No pude leer la lista completa del proveedor. La selección anterior se conserva; puedes volver a intentar.'
+                elif action == 'save_numbers' and row:
+                    if request.form.get('catalog_version') != str(row['updated']):
+                        return 'La lista se actualizó. Recarga antes de guardar.', 409
+                    content = host.dec(row['content_enc'])
+                    _, source_items = entries(content)
+                    for item in source_items:
+                        if not is_dominican(item):
+                            continue
+                        key = item_key(item)
+                        value = (request.form.get('channel_number_' + key) or '').strip()
+                        if not value:
+                            c.execute('DELETE FROM tv_channel_number_overrides WHERE source_id=? AND item_key=?', (sid, key))
+                            continue
+                        if not value.isdigit() or not 1 <= int(value) <= 9999:
+                            return 'Usa números de canal entre 1 y 9999.', 400
+                        c.execute("""INSERT INTO tv_channel_number_overrides(source_id,item_key,channel_number)
+                            VALUES(?,?,?) ON CONFLICT(source_id,item_key) DO UPDATE SET channel_number=excluded.channel_number""",
+                            (sid, key, int(value)))
+                    c.execute('UPDATE tv_native_settings SET revision=revision+1 WHERE id=1')
+                    c.commit()
+                    message = 'Numeración dominicana guardada. La app la recibirá al sincronizar o volver a abrir.'
                 elif action == 'save' and row:
                     if request.form.get('catalog_version') != str(row['updated']):
                         return 'La lista se actualizó. Recarga antes de guardar.', 409
@@ -149,6 +180,21 @@ def setup(app, host, db, entries, label, csrf, valid_csrf, today, manual_info):
                     checked = ' checked' if name in selected else ''
                     body += '<label class="tv-folder" data-name="'+host.e(name.lower())+'" style="display:flex;gap:10px;padding:10px;border-bottom:1px solid #354b64"><input type="checkbox" name="folder" value="'+host.e(name)+'"'+checked+'><span>'+host.e(name)+'</span><small>'+str(total)+'</small></label>'
                 body += '</div><button class="btn green" style="margin-top:12px">Guardar carpetas para la aplicación</button></form></div><script>function markFolders(v){document.querySelectorAll(".tv-folder input").forEach(x=>x.checked=v)}document.getElementById("folder-search").addEventListener("input",function(){const q=this.value.toLowerCase();document.querySelectorAll(".tv-folder").forEach(x=>x.style.display=x.dataset.name.includes(q)?"flex":"none")})</script>'
+                content = host.dec(row['content_enc'])
+                _, source_items = entries(content)
+                overrides = {r['item_key']: r['channel_number'] for r in c.execute('SELECT item_key,channel_number FROM tv_channel_number_overrides WHERE source_id=?', (sid,)).fetchall()}
+                dom_items = [item for item in source_items if is_dominican(item)]
+                if dom_items:
+                    body += '<div class="panel"><h2>Numeración de canales dominicanos</h2><p>Escribe el número que quieres usar con las teclas del control remoto. Ejemplo: Digital 15 = 15. Deja vacío para conservar el número original del proveedor.</p><form method="post">'+hidden+'<input type="hidden" name="action" value="save_numbers"><input type="hidden" name="catalog_version" value="'+str(row['updated'])+'"><div style="max-height:65vh;overflow:auto">'
+                    for item in dom_items:
+                        key = item_key(item)
+                        title = label(item)[0] or item[0].rsplit(',', 1)[-1].strip()
+                        current = overrides.get(key, '')
+                        if current == '':
+                            match = re.search(r'\\btvg-chno="([0-9]+)"', item[0])
+                            current = match.group(1) if match else ''
+                        body += '<label style="display:grid;grid-template-columns:minmax(0,1fr) 110px;gap:12px;align-items:center;padding:9px 4px;border-bottom:1px solid #354b64"><span>'+host.e(str(title))+'</span><input type="number" min="1" max="9999" name="channel_number_'+key+'" value="'+host.e(str(current))+'" placeholder="N.º" style="width:100%;padding:9px;border-radius:7px"></label>'
+                    body += '</div><button class="btn green" style="margin-top:12px">Guardar numeración dominicana</button></form></div>'
             else:
                 body += '<div class="panel">Pulsa Cargar / actualizar todas las carpetas para leer la lista completa. Esto no cambia los canales de la aplicación.</div>'
             c.commit()
@@ -191,6 +237,12 @@ def setup(app, host, db, entries, label, csrf, valid_csrf, today, manual_info):
             manual = c.execute('SELECT number,name,url_enc FROM tv_manual_channels ORDER BY number,name').fetchall()
             epg = c.execute('SELECT url_enc FROM tv_native_epg_settings WHERE id=1').fetchone()
         preamble, items, _ = merged_items(content)
+        with db() as c:
+            overrides = {r['item_key']: r['channel_number'] for r in c.execute('SELECT item_key,channel_number FROM tv_channel_number_overrides WHERE source_id=?', (sid,)).fetchall()}
+        for item in items:
+            if is_dominican(item) and item_key(item) in overrides:
+                item[0] = re.sub(r'\\s+tvg-chno="[^"]*"', '', item[0])
+                item[0] = item[0].replace('#EXTINF:-1', '#EXTINF:-1 tvg-chno="'+str(overrides[item_key(item)])+'"', 1)
         lines = preamble or ['#EXTM3U']
         if epg and host.dec(epg['url_enc']):
             header = re.sub(r'\s+(?:url-tvg|x-tvg-url)="[^"]*"', '', lines[0], flags=re.IGNORECASE)

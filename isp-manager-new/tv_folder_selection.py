@@ -51,9 +51,10 @@ def setup(app, host, db, entries, label, csrf, valid_csrf, today, manual_info):
             original_group = category_key(group(item))
             # Digital 15 must use its real remote-control channel number, not the provider ID.
             item_name = category_key(label(item)[0] or item[0].rsplit(',', 1)[-1])
-            if original_group == 'republica dominicana' and 'digital 15' in item_name:
+            if original_group == 'republica dominicana' and (
+                    'digital 15' in item_name or 'digital 15' in category_key(item[0])):
                 item = list(item)
-                item[0] = re.sub(r'\\s+tvg-chno="[^"]*"', '', item[0])
+                item[0] = re.sub(r'\s+tvg-chno="[^"]*"', '', item[0])
                 item[0] = item[0].replace('#EXTINF:-1', '#EXTINF:-1 tvg-chno="15"', 1)
             if original_group in ('cultural', 'culturales', 'infantiles', 'cine latino hd'):
                 item = list(item)
@@ -197,7 +198,7 @@ def setup(app, host, db, entries, label, csrf, valid_csrf, today, manual_info):
                         title = label(item)[0] or item[0].rsplit(',', 1)[-1].strip()
                         current = overrides.get(key, '')
                         if current == '':
-                            match = re.search(r'\\btvg-chno="([0-9]+)"', item[0])
+                            match = re.search(r'\btvg-chno="([0-9]+)"', item[0])
                             current = match.group(1) if match else ''
                         body += '<label style="display:grid;grid-template-columns:minmax(0,1fr) 110px;gap:12px;align-items:center;padding:9px 4px;border-bottom:1px solid #354b64"><span>'+host.e(str(title))+'</span><input type="number" min="1" max="9999" name="channel_number_'+key+'" value="'+host.e(str(current))+'" placeholder="N.º" style="width:100%;padding:9px;border-radius:7px"></label>'
                     body += '</div><button class="btn green" style="margin-top:12px">Guardar numeración dominicana</button></form></div>'
@@ -247,7 +248,7 @@ def setup(app, host, db, entries, label, csrf, valid_csrf, today, manual_info):
             overrides = {r['item_key']: r['channel_number'] for r in c.execute('SELECT item_key,channel_number FROM tv_channel_number_overrides WHERE source_id=?', (sid,)).fetchall()}
         for item in items:
             if is_dominican(item) and item_key(item) in overrides:
-                item[0] = re.sub(r'\\s+tvg-chno="[^"]*"', '', item[0])
+                item[0] = re.sub(r'\s+tvg-chno="[^"]*"', '', item[0])
                 item[0] = item[0].replace('#EXTINF:-1', '#EXTINF:-1 tvg-chno="'+str(overrides[item_key(item)])+'"', 1)
         lines = preamble or ['#EXTM3U']
         if epg and host.dec(epg['url_enc']):

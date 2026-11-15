@@ -39,6 +39,10 @@
 .toast{position:absolute;left:50%;bottom:84px;transform:translateX(-50%);padding:9px 14px;background:#12283a;border:1px solid #35506a;border-radius:7px;color:#fff;display:none}
 .videoFrame:fullscreen{background:#000}.videoFrame:fullscreen #player{width:100vw;height:100vh;object-fit:contain}
 .empty{color:#bdccda;text-align:center;padding:24px 12px;font-size:15px}
+.mediaTabs{display:flex;gap:6px;margin:4px 0 9px;flex:none}
+.mediaTabs button{flex:1;min-width:0;padding:9px 5px;border:1px solid #29445c;border-radius:7px;background:#10263a;color:#dceafa;font-size:14px;font-weight:700}
+.mediaTabs button.active{background:#087f99;border-color:#13b8cf;color:white}
+#categoryLabel{display:block;color:var(--muted);font-size:12px;margin:5px 0 3px}
 @media(max-width:700px){.app{grid-template-columns:minmax(210px,36vw) 1fr}.tv-channels{padding:8px}.brand{font-size:16px}.nowbar{height:54px;padding:6px 9px}.controls button{padding:7px}.nowtext #nowTitle{font-size:14px}}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.7.4/dist/hls.min.js"></script>
@@ -47,7 +51,13 @@
 <div class="app">
   <aside class="tv-channels">
     <div class="brand"><span class="brand-mark">IF</span><span>Inter Flash TV</span></div>
-    <h2>Canales</h2>
+    <h2 id="sectionTitle">Canales</h2>
+    <div class="mediaTabs" role="tablist" aria-label="Secciones">
+      <button type="button" class="active" data-view="channels" aria-selected="true">TV en vivo</button>
+      <button type="button" data-view="movies" aria-selected="false">Películas</button>
+      <button type="button" data-view="series" aria-selected="false">Series</button>
+    </div>
+    <label id="categoryLabel" for="category">Categoría</label>
     <div class="filters">
       <select id="category" aria-label="Categoría"><option value="">Todos</option></select>
       <span id="categoryRemote"></span>
@@ -77,7 +87,7 @@
 (function(){
   'use strict';
   var STORAGE='interflash_tv_player_playlist_v1';
-  var channels=[],active=-1,hls=null,toastTimer=null;
+  var channels=[],movies=[],series=[],active=-1,hls=null,toastTimer=null,currentView='channels',currentItems=channels;
   var list=document.getElementById('channelList'),search=document.getElementById('searchChannel');
   var category=document.getElementById('category'),video=document.getElementById('player');
   var hint=document.getElementById('playerHint'),title=document.getElementById('nowTitle');
@@ -91,13 +101,14 @@
       if(line.indexOf('#EXTINF:')===0){
         var comma=line.lastIndexOf(','),name=comma>=0?line.slice(comma+1).trim():'Canal sin nombre';
         var logoMatch=line.match(/tvg-logo=["']([^"']*)["']/i),groupMatch=line.match(/group-title=["']([^"']*)["']/i);
-        meta={name:name||'Canal sin nombre',logo:logoMatch?logoMatch[1]:'',group:groupMatch?groupMatch[1]:'Canales'};
+        var typeMatch=line.match(/(?:^|\\s)(?:type|tvg-type)=["']([^"']*)["']/i);
+        meta={name:name||'Canal sin nombre',logo:logoMatch?logoMatch[1]:'',group:groupMatch?groupMatch[1]:'Canales',type:typeMatch?typeMatch[1].toLowerCase():'channel'};
       }else if(line.charAt(0)!=='#'&&meta){meta.url=line;out.push(meta);meta=null}
     });
     return out;
   }
   function groups(){
-    var map={};channels.forEach(function(c){if(c.group)map[c.group]=true});
+    var map={};currentItems.forEach(function(c){if(c.group)map[c.group]=true});
     var values=Object.keys(map).sort(function(a,b){
       var ad=/dominican|dominicano/i.test(a),bd=/dominican|dominicano/i.test(b);
       return ad===bd?a.localeCompare(b,'es'):ad?-1:1
@@ -105,21 +116,23 @@
     return values;
   }
   function rebuildCategories(){
-    var current=category.value,opts=['<option value="">Todos</option>'];
-    groups().forEach(function(g){opts.push('<option value="'+esc(g)+'">'+esc(g)+'</option>')});
+    var current=category.value,opts=['<option value="">Todas las categorías</option>'];
+    var counts={};currentItems.forEach(function(c){var g=c.group||'Sin categoría';counts[g]=(counts[g]||0)+1});
+    groups().forEach(function(g){opts.push('<option value="'+esc(g)+'">'+esc(g)+' ('+counts[g]+')</option>')});
     category.innerHTML=opts.join('');
     if(Array.from(category.options).some(function(o){return o.value===current}))category.value=current;
     document.dispatchEvent(new Event('interflash-categories'));
   }
   function visibleChannels(){
     var q=search.value.trim().toLocaleLowerCase('es'),g=category.value;
-    return channels.map(function(c,i){return {c:c,i:i}}).filter(function(x){
+    return currentItems.map(function(c,i){return {c:c,i:i}}).filter(function(x){
       return (!g||x.c.group===g)&&(!q||x.c.name.toLocaleLowerCase('es').indexOf(q)>=0||x.c.group.toLocaleLowerCase('es').indexOf(q)>=0)
     });
   }
   function render(){
     var items=visibleChannels();
-    document.getElementById('count').textContent=channels.length?items.length+' de '+channels.length+' canales':'No hay canales en la lista del panel.';
+    var noun=currentView==='movies'?'películas':currentView==='series'?'series':'canales';
+    document.getElementById('count').textContent=currentItems.length?items.length+' de '+currentItems.length+' '+noun:'No hay '+noun+' en la lista del panel.';
     if(!items.length){list.innerHTML='<div class="empty">No se encontraron canales.</div>';return}
     list.innerHTML=items.map(function(x){
       var c=x.c;
@@ -146,8 +159,8 @@
     video.pause();video.removeAttribute('src');video.load()
   }
   function playChannel(index){
-    if(index<0||index>=channels.length)return;
-    active=index;var c=channels[index];clearPlayer();
+    if(index<0||index>=currentItems.length)return;
+    active=index;var c=currentItems[index];clearPlayer();
     title.textContent=c.name;group.textContent=c.group||'Canal en vivo';
     logo.hidden=!c.logo;if(c.logo)logo.src=c.logo;
     hint.hidden=true;render();
@@ -163,13 +176,26 @@
   }
   function importCustomM3U(text,name){
     var next=parseM3U(text);
-    channels=next;active=-1;clearPlayer();
+    channels=next.filter(function(c){return c.type!=='movie'&&c.type!=='series'});
+    movies=next.filter(function(c){return c.type==='movie'});
+    series=next.filter(function(c){return c.type==='series'});
+    currentView='channels';currentItems=channels;active=-1;clearPlayer();
     try{localStorage.setItem(STORAGE,JSON.stringify({name:name||'Inter Flash TV',channels:channels}))}catch(_e){}
     title.textContent='Inter Flash TV';group.textContent='Elige un canal para reproducirlo';
     logo.hidden=true;hint.hidden=false;hint.textContent=channels.length?'Elige un canal para reproducirlo.':'El panel no tiene canales en la lista.';
-    rebuildCategories();render();
+    setView('channels');
     return true;
   }
+  function setView(view){
+    currentView=view;currentItems=view==='movies'?movies:view==='series'?series:channels;
+    active=-1;category.value='';search.value='';
+    document.getElementById('sectionTitle').textContent=view==='movies'?'Películas':view==='series'?'Series':'Canales';
+    document.getElementById('categoryLabel').textContent=view==='movies'?'Categorías de películas':view==='series'?'Categorías de series':'Categoría de canales';
+    search.placeholder=view==='movies'?'Buscar película':view==='series'?'Buscar serie':'Buscar canal';
+    document.querySelectorAll('.mediaTabs button').forEach(function(b){var on=b.dataset.view===view;b.classList.toggle('active',on);b.setAttribute('aria-selected',on?'true':'false')});
+    rebuildCategories();render();
+  }
+  document.querySelectorAll('.mediaTabs button').forEach(function(b){b.addEventListener('click',function(){setView(b.dataset.view)})});
   window.importCustomM3U=importCustomM3U;
   search.addEventListener('input',render);
   category.addEventListener('change',render);
@@ -209,7 +235,7 @@
   video.addEventListener('error',function(){if(video.error)message('No se pudo abrir este canal.')});
   try{
     var saved=JSON.parse(localStorage.getItem(STORAGE)||'null');
-    if(saved&&Array.isArray(saved.channels)){channels=saved.channels;rebuildCategories();render();hint.textContent=channels.length?'Elige un canal para reproducirlo.':'El panel no tiene canales en la lista.'}
+    if(saved&&Array.isArray(saved.channels)){var all=saved.channels;channels=all.filter(function(c){return c.type!=='movie'&&c.type!=='series'});movies=all.filter(function(c){return c.type==='movie'});series=all.filter(function(c){return c.type==='series'});currentItems=channels;rebuildCategories();render();hint.textContent=channels.length?'Elige un canal para reproducirlo.':'El panel no tiene canales en la lista.'}
   }catch(_e){}
   render();
 })();

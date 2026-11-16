@@ -43,6 +43,13 @@
 .mediaTabs button{flex:1;min-width:0;padding:9px 5px;border:1px solid #29445c;border-radius:7px;background:#10263a;color:#dceafa;font-size:14px;font-weight:700}
 .mediaTabs button.active{background:#087f99;border-color:#13b8cf;color:white}
 #categoryLabel{display:block;color:var(--muted);font-size:12px;margin:5px 0 3px}
+#movieCatalogToggle{height:36px;margin:7px 0 0;flex:none;background:#10263a;color:var(--text);border:1px solid #29445c;border-radius:7px;font-size:14px;font-weight:700;cursor:pointer}
+#movieCatalogToggle[hidden],#movieCatalog[hidden]{display:none}
+#movieCatalog{max-height:48vh;overflow:auto;flex:none;margin-top:6px;padding:5px;background:#071421;border:1px solid #29445c;border-radius:7px}
+#movieCatalog button{width:100%;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 9px;background:transparent;color:var(--text);border:0;border-radius:5px;text-align:left;font-size:14px;cursor:pointer}
+#movieCatalog button:focus,#movieCatalog button[aria-current="true"],#movieCatalogToggle:focus{outline:2px solid var(--accent);outline-offset:-2px;background:var(--select)}
+.movieCatalogCount{font-weight:700;color:var(--muted)}
+
 @media(max-width:700px){.app{grid-template-columns:minmax(210px,36vw) 1fr}.tv-channels{padding:8px}.brand{font-size:16px}.nowbar{height:54px;padding:6px 9px}.controls button{padding:7px}.nowtext #nowTitle{font-size:14px}}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.7.4/dist/hls.min.js"></script>
@@ -63,6 +70,8 @@
       <span id="categoryRemote"></span>
       <input id="searchChannel" type="search" placeholder="Buscar canal" autocomplete="off">
     </div>
+    <button id="movieCatalogToggle" type="button" aria-controls="movieCatalog" aria-expanded="false" hidden>Ver catálogo</button>
+    <div id="movieCatalog" role="group" aria-label="Categorías de películas" hidden></div>
     <p id="count">Esperando la lista del panel…</p>
     <div id="channelList" role="listbox" aria-label="Canales"></div>
     <div id="m3uImport" hidden></div><input id="m3ufile" type="file" hidden>
@@ -90,6 +99,7 @@
   var channels=[],movies=[],series=[],seriesGroups=[],seriesSelection=null,active=-1,hls=null,toastTimer=null,currentView='channels',currentItems=channels;
   var list=document.getElementById('channelList'),search=document.getElementById('searchChannel');
   var category=document.getElementById('category'),video=document.getElementById('player');
+  var movieCatalogToggle=document.getElementById('movieCatalogToggle'),movieCatalog=document.getElementById('movieCatalog');
   var hint=document.getElementById('playerHint'),title=document.getElementById('nowTitle');
   var group=document.getElementById('nowGroup'),logo=document.getElementById('channelLogo');
   var toast=document.getElementById('toast'),frame=document.getElementById('videoFrame');
@@ -141,15 +151,33 @@
   function rebuildCategories(){
     var current=category.value,opts=['<option value="">Todas las categorías</option>'];
     var counts={};currentItems.forEach(function(c){var g=c.group||'Sin categoría';counts[g]=(counts[g]||0)+1});
-    groups().forEach(function(g){opts.push('<option value="'+esc(g)+'">'+esc(g)+' ('+counts[g]+')</option>')});
+    var names=currentView==='movies'?Object.keys(counts).sort(function(a,b){return a.localeCompare(b,'es')}):groups();
+    names.forEach(function(g){opts.push('<option value="'+esc(g)+'">'+esc(g)+' ('+counts[g]+')</option>')});
     category.innerHTML=opts.join('');
     if(Array.from(category.options).some(function(o){return o.value===current}))category.value=current;
     document.dispatchEvent(new Event('interflash-categories'));
   }
+  function renderMovieCatalog(){
+    if(currentView!=='movies')return;
+    var counts={};
+    movies.forEach(function(item){var key=item.group||'Sin categoría';counts[key]=(counts[key]||0)+1});
+    var names=Object.keys(counts).sort(function(a,b){return a.localeCompare(b,'es')});
+    var rows=[{name:'Todas las películas',value:'',count:movies.length}];
+    names.forEach(function(name){rows.push({name:name,value:name,count:counts[name]})});
+    movieCatalog.innerHTML=rows.map(function(row){
+      return '<button type="button" data-group="'+esc(row.value)+'" aria-current="'+(category.value===row.value?'true':'false')+'">'+
+        '<span>'+esc(row.name)+'</span><span class="movieCatalogCount">'+row.count+'</span></button>'
+    }).join('');
+  }
+  function closeMovieCatalog(){
+    movieCatalog.hidden=true;
+    movieCatalogToggle.setAttribute('aria-expanded','false');
+  }
   function visibleChannels(){
     var q=search.value.trim().toLocaleLowerCase('es'),g=category.value;
     return currentItems.map(function(c,i){return {c:c,i:i}}).filter(function(x){
-      return (!g||x.c.group===g)&&(!q||x.c.name.toLocaleLowerCase('es').indexOf(q)>=0||x.c.group.toLocaleLowerCase('es').indexOf(q)>=0)
+      var itemGroup=currentView==='movies'?(x.c.group||'Sin categoría'):x.c.group;
+      return (!g||itemGroup===g)&&(!q||x.c.name.toLocaleLowerCase('es').indexOf(q)>=0||(itemGroup||'').toLocaleLowerCase('es').indexOf(q)>=0)
     });
   }
   function selectSeries(index){
@@ -161,6 +189,7 @@
   }
   function render(){
     var items=visibleChannels(),isSeriesHome=currentView==='series'&&!seriesSelection;
+    if(currentView==='movies')renderMovieCatalog();
     var noun=currentView==='movies'?'películas':currentView==='series'?(isSeriesHome?'series':'episodios'):'canales';
     document.getElementById('count').textContent=currentItems.length?items.length+' de '+currentItems.length+' '+noun:'No hay '+noun+' en la lista del panel.';
     if(!items.length){list.innerHTML='<div class="empty">No se encontraron '+noun+'.</div>';return}
@@ -216,6 +245,7 @@
   }
   function setView(view){
     currentView=view;seriesSelection=null;currentItems=view==='movies'?movies:view==='series'?seriesGroups:channels;
+    closeMovieCatalog();movieCatalogToggle.hidden=view!=='movies';
     active=-1;category.value='';search.value='';
     document.getElementById('sectionTitle').textContent=view==='movies'?'Películas':view==='series'?'Series':'Canales';
     document.getElementById('categoryLabel').textContent=view==='movies'?'Categorías de películas':view==='series'?'Categorías de series':'Categoría de canales';
@@ -225,6 +255,20 @@
   }
   document.querySelectorAll('.mediaTabs button').forEach(function(b){b.addEventListener('click',function(){setView(b.dataset.view)})});
   window.importCustomM3U=importCustomM3U;
+  movieCatalogToggle.addEventListener('click',function(){
+    if(currentView!=='movies')return;
+    var opening=movieCatalog.hidden;
+    if(opening)renderMovieCatalog();
+    movieCatalog.hidden=!opening;
+    movieCatalogToggle.setAttribute('aria-expanded',opening?'true':'false');
+    if(opening){var first=movieCatalog.querySelector('button');if(first)first.focus()}
+  });
+  movieCatalog.addEventListener('click',function(event){
+    var button=event.target.closest('button[data-group]');
+    if(!button||!movieCatalog.contains(button))return;
+    category.value=button.dataset.group;
+    closeMovieCatalog();render();movieCatalogToggle.focus();
+  });
   search.addEventListener('input',render);
   category.addEventListener('change',render);
   list.addEventListener('keydown',function(e){
@@ -249,6 +293,7 @@
   });
   document.addEventListener('keydown',function(e){
     if(e.key==='Escape'||e.keyCode===4){
+      if(!movieCatalog.hidden){closeMovieCatalog();movieCatalogToggle.focus();e.preventDefault();return}
       if(document.fullscreenElement){document.exitFullscreen().catch(function(){});e.preventDefault()}
       else if(currentView==='series'&&seriesSelection){seriesSelection=null;currentItems=seriesGroups;active=-1;document.getElementById('sectionTitle').textContent='Series';document.getElementById('categoryLabel').textContent='Categorías de series';search.placeholder='Buscar serie';rebuildCategories();render();e.preventDefault()}
       else if(document.activeElement===video||document.activeElement===document.body){var b=list.querySelector('button[data-index="'+active+'"]');if(b)b.focus();e.preventDefault()}

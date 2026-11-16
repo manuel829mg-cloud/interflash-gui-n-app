@@ -167,7 +167,7 @@
     list.innerHTML=items.map(function(x){
       var c=x.c,detail=isSeriesHome?(c.episodes.length+' episodios'):(c.group||'');
       return '<button type="button" role="option" aria-selected="'+(x.i===active)+'" class="'+(x.i===active?'active':'')+'" data-index="'+x.i+'" data-channel-name="'+esc(c.name)+'">'+
-        (c.logo?'<img src="'+esc(c.logo)+'" alt="" loading="lazy" onerror="this.style.visibility=\\'hidden\\'">':'<span class="brand-mark">TV</span>')+
+        (c.logo?'<img src="'+esc(c.logo)+'" alt="" loading="lazy" onerror="this.hidden=true">':'<span class="brand-mark">TV</span>')+
         '<span class="channel-name">'+esc(c.name)+(detail?' · '+esc(detail):'')+'</span></button>'
     }).join('');
     Array.from(list.querySelectorAll('button[data-index]')).forEach(function(b){

@@ -243,10 +243,10 @@ jobs:
           +                        horizontalArrangement = if (fillsRow) Arrangement.SpaceBetween else Arrangement.spacedBy(minimumGap),
           +                        verticalAlignment = Alignment.CenterVertically,
           +                    ) {
-          +                        repeat(shown) { index ->
+          +                        for (index in 0 until shown) {
+          +                            val sourceIndex = (selectedIndex + index) % rowCount
+          +                            val item = titles[startIndex + sourceIndex] ?: continue
           +                            key(index) {
-          +                                val sourceIndex = (selectedIndex + index) % rowCount
-          +                                val item = titles[startIndex + sourceIndex] ?: return@key
           +                                val expanded = index == 0
           +                                val selected = activeRow == row && expanded
           +                                val shape = RoundedCornerShape(12.mpx)

@@ -1,4 +1,4 @@
-name: Inter Flash TV 0.59 APK
+name: Inter Flash TV 0.60 APK
 on:
   push:
     branches: ['build/interflash-tv-v057-native']
@@ -111,22 +111,355 @@ jobs:
           edit(".heightIn(min = 124.mpx).width(1100.mpx)", ".width(1100.mpx)")
           p.write_text(source)
           PY
+      - name: Compact catalogue rows and fit the screen
+        run: |
+          git apply --whitespace=nowarn <<'PATCH'
+          --- a/native-source/InterFlashTV-OwnTV/app/src/main/java/tv/own/owntv/features/shell/components/CinemaCategoryRows.kt
+          +++ b/native-source/InterFlashTV-OwnTV/app/src/main/java/tv/own/owntv/features/shell/components/CinemaCategoryRows.kt
+          @@ -22,10 +22,10 @@
+           import androidx.lifecycle.compose.LocalLifecycleOwner
+           import androidx.lifecycle.repeatOnLifecycle
+           import androidx.compose.ui.platform.LocalContext
+          +import androidx.compose.ui.platform.LocalDensity
+           import androidx.compose.ui.graphics.FilterQuality
+           import coil3.request.ImageRequest
+           import androidx.compose.foundation.lazy.LazyColumn
+          -import androidx.compose.foundation.lazy.LazyRow
+           import androidx.compose.foundation.lazy.itemsIndexed
+           import androidx.compose.runtime.*
+           import androidx.compose.ui.Modifier
+          @@ -35,7 +35,6 @@
+           import androidx.compose.ui.input.key.*
+           import androidx.paging.PagingData
+           import androidx.paging.compose.collectAsLazyPagingItems
+          -import androidx.paging.compose.itemKey
+           import androidx.tv.material3.Text
+           import kotlinx.coroutines.flow.Flow
+           import tv.own.owntv.core.live.LiveKey
+          @@ -73,6 +72,7 @@
+           ) {
+               val lifecycle = LocalLifecycleOwner.current.lifecycle
+               val context = LocalContext.current
+          +    val edge = 16.mpx
+               val openCurrent by rememberUpdatedState(onOpen)
+               val autoOpenCurrent by rememberUpdatedState(onAutoOpen)
+               var primed by remember(categories.firstOrNull()?.item?.key) { mutableStateOf(false) }
+          @@ -99,8 +99,8 @@
+               LazyColumn(
+                   state = columnState,
+                   modifier = modifier,
+          -        contentPadding = PaddingValues(top = 16.mpx, bottom = 24.mpx),
+          -        verticalArrangement = Arrangement.spacedBy(10.mpx),
+          +        contentPadding = PaddingValues(top = 2.mpx, bottom = 10.mpx),
+          +        verticalArrangement = Arrangement.spacedBy(6.mpx),
+               ) {
+                   itemsIndexed(rows, key = { row, category -> category.item.key.toString() + row }) { row, category ->
+                       val flow = remember(category.item.key) { categoryFlow(category.item.key) }
+          @@ -121,147 +121,158 @@
+                       }
+                       fun requester(index: Int) = rowRequester(row, index)
+                       Column(Modifier.drawWithContent {
+          -        val layout = columnState.layoutInfo
+          -        val entry = layout.visibleItemsInfo.firstOrNull { it.index == row }
+          -        // Show whole rows as focus advances through the catalogue.
+          -        if (row == activeRow || (entry != null && entry.offset >= layout.viewportStartOffset &&
+          -                    entry.offset + entry.size <= layout.viewportEndOffset)) {
+          -            drawContent()
+          -        }
+          -    }) {
+          -                  Text(category.label, style = stageText(25, 700), color = StageColors.Text,
+          -                    modifier = Modifier.padding(start = 84.mpx, bottom = 14.mpx))
+          -                BoxWithConstraints(Modifier.fillMaxWidth()) {
+          -                    val startPadding = 84.mpx
+          -                    val endPadding = 64.mpx
+          -                    val spacing = 18.mpx
+          -                    val posterWidth = 176.mpx
+          -                    val available = (maxWidth - startPadding - endPadding).coerceAtLeast(1.mpx)
+          -                    val leadWidth = if (activeRow == row) 640.mpx else posterWidth
+          -                    val extraSlots = ((available - leadWidth - 4.mpx) / (posterWidth + spacing)).toInt()
+          -                        .coerceAtLeast(0)
+          -                    LazyRow(
+          -                    userScrollEnabled = false,
+          -                    contentPadding = PaddingValues(start = startPadding, end = endPadding, bottom = 8.mpx),
+          -                    horizontalArrangement = Arrangement.spacedBy(spacing),
+          -                ) {
+          -                    items(count = minOf(rowCount, 1 + extraSlots), key = { slot -> slot }) { index ->
+          -                        val sourceIndex = (selectedIndex + index) % rowCount
+          -                        val item = titles[startIndex + sourceIndex] ?: return@items
+          -                        val expanded = index == 0
+          -                        val selected = activeRow == row && expanded
+          -                        val shape = RoundedCornerShape(12.mpx)
+          -                        var cardFocused by remember { mutableStateOf(false) }
+          -                        var opening by remember { mutableStateOf(false) }
+          -                        LaunchedEffect(cardFocused, itemId(item)) {
+          -                            if (cardFocused && expanded) {
+          -                                activeRow = row
+          -                                activeId = itemId(item)
+          -                                activeTitle = title(item)
+          -                                onFocus(item)
+          -                            }
+          -                        }
+          -                        // A title must retain actual focus, in the foreground, for the whole interval.
+          -                        LaunchedEffect(itemId(item), selected, cardFocused, previewEnabled, autoOpenCurrent != null, lifecycle) {
+          -                            val autoOpen = autoOpenCurrent
+          -                            if (selected && cardFocused && previewEnabled && autoOpen != null) {
+          -                                lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+          -                                    delay(50_000)
+          -                                    if (!opening) {
+          -                                        opening = true
+          -                                        // Remove/release the preview before acquiring the main player.
+          -                                        withFrameNanos { }
+          -                                        autoOpen(item)
+          +                val layout = columnState.layoutInfo
+          +                val entry = layout.visibleItemsInfo.firstOrNull { it.index == row }
+          +                if (row == activeRow || (entry != null && entry.offset >= layout.viewportStartOffset &&
+          +                            entry.offset + entry.size <= layout.viewportEndOffset)) {
+          +                    drawContent()
+          +                }
+          +            }) {
+          +                Text(category.label, style = stageText(25, 700), color = StageColors.Text,
+          +                    modifier = Modifier.padding(start = edge, bottom = 6.mpx))
+          +                BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = edge)) {
+          +                    val density = LocalDensity.current
+          +                    val available = with(density) { maxWidth.roundToPx() }
+          +                    val minimumGap = 10.mpx
+          +                    val gapPx = with(density) { minimumGap.roundToPx() }
+          +                    val posterWidth = 184.mpx
+          +                    val posterPx = with(density) { posterWidth.roundToPx() }.coerceAtLeast(1)
+          +                    val selectedPx = with(density) { 640.mpx.roundToPx() }.coerceAtMost(available)
+          +                    val focusedRow = activeRow == row
+          +                    val leadPx = if (focusedRow) selectedPx else minOf(posterPx, available)
+          +                    val capacity = 1 + (available - leadPx) / (posterPx + gapPx)
+          +                    val shown = minOf(rowCount, capacity)
+          +                    val fillsRow = shown == capacity && shown > 1
+          +                    val regularCount = if (focusedRow) shown - 1 else shown
+          +                    val fittedWidth = if (fillsRow) {
+          +                        val regularRoom = available - (if (focusedRow) selectedPx else 0) - (shown - 1) * gapPx
+          +                        minOf(192.mpx, with(density) { (regularRoom / regularCount).toDp() })
+          +                    } else minOf(posterWidth, maxWidth)
+          +                    Row(
+          +                        modifier = Modifier.fillMaxWidth().padding(bottom = 4.mpx),
+          +                        horizontalArrangement = if (fillsRow) Arrangement.SpaceBetween else Arrangement.spacedBy(minimumGap),
+          +                        verticalAlignment = Alignment.CenterVertically,
+          +                    ) {
+          +                        repeat(shown) { index ->
+          +                            key(index) {
+          +                                val sourceIndex = (selectedIndex + index) % rowCount
+          +                                val item = titles[startIndex + sourceIndex] ?: return@key
+          +                                val expanded = index == 0
+          +                                val selected = activeRow == row && expanded
+          +                                val shape = RoundedCornerShape(12.mpx)
+          +                                var cardFocused by remember { mutableStateOf(false) }
+          +                                var opening by remember { mutableStateOf(false) }
+          +                                LaunchedEffect(cardFocused, itemId(item)) {
+          +                                    if (cardFocused && expanded) {
+          +                                        activeRow = row
+          +                                        activeId = itemId(item)
+          +                                        activeTitle = title(item)
+          +                                        onFocus(item)
+                                               }
+          +                                }
+          +                                // A title must retain actual focus, in the foreground, for the whole interval.
+          +                                LaunchedEffect(itemId(item), selected, cardFocused, previewEnabled, autoOpenCurrent != null, lifecycle) {
+          +                                    val autoOpen = autoOpenCurrent
+          +                                    if (selected && cardFocused && previewEnabled && autoOpen != null) {
+          +                                        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+          +                                            delay(50_000)
+          +                                            if (!opening) {
+          +                                                opening = true
+          +                                                // Remove/release the preview before acquiring the main player.
+          +                                                withFrameNanos { }
+          +                                                autoOpen(item)
+          +                                            }
+          +                                        }
+          +                                    }
+          +                                }
+          +                                Box(
+          +                                    Modifier
+          +                                        .size(if (selected) minOf(640.mpx, maxWidth) else fittedWidth, if (selected) 360.mpx else 276.mpx)
+          +                                        .then(if (row == 0 && index == 0) Modifier.focusRequester(firstFocus) else Modifier)
+          +                                        .then(if (expanded && activeRow == row) Modifier.focusRequester(selectedFocus) else Modifier)
+          +                                        .focusRequester(requester(index))
+          +                                        .focusProperties { canFocus = expanded }
+          +                                        .onFocusChanged {
+          +                                            cardFocused = it.isFocused
+          +                                            if (!it.isFocused) opening = false
+          +                                            if (it.isFocused) {
+          +                                                activeRow = row
+          +                                                scope.launch { columnState.scrollToItem(row) }
+          +                                            }
+          +                                        }
+          +                                        .onPreviewKeyEvent { event ->
+          +                                            if (event.type != KeyEventType.KeyDown) false
+          +                                            else when (event.key) {
+          +                                                Key.Menu -> { onCategories(); true }
+          +                                                Key.DirectionUp, Key.DirectionDown -> {
+          +                                                    if (event.key == Key.DirectionUp && row == 0) {
+          +                                                        onTopMenu()
+          +                                                    } else {
+          +                                                        val nextRow = row + if (event.key == Key.DirectionUp) -1 else 1
+          +                                                        if (nextRow in rows.indices) scope.launch {
+          +                                                            columnState.scrollToItem(nextRow)
+          +                                                            // Paging may need a moment to attach the target card.
+          +                                                            for (attempt in 0 until 60) {
+          +                                                                withFrameNanos { }
+          +                                                                if (runCatching { rowRequester(nextRow, 0).requestFocus() }.getOrDefault(false)) break
+          +                                                                delay(25)
+          +                                                            }
+          +                                                        }
+          +                                                    }
+          +                                                    true
+          +                                                }
+          +                                                Key.DirectionRight, Key.DirectionLeft -> {
+          +                                                    targetIndex = (boundedTarget + (if (event.key == Key.DirectionRight) 1 else -1) + rowCount) % rowCount
+          +                                                    true
+          +                                                }
+          +                                                else -> false
+          +                                            }
+          +                                        }
+          +                                        .clip(shape)
+          +                                        .background(Color(0xFF181818))
+          +                                        .border(if (selected) 3.mpx else 0.mpx, if (selected) Color.White else Color.Transparent, shape)
+          +                                        .clickable {
+          +                                            if (!expanded) targetIndex = sourceIndex
+          +                                            else if (!opening) scope.launch {
+          +                                                opening = true
+          +                                                withFrameNanos { }
+          +                                                openCurrent(item)
+          +                                            }
+          +                                        },
+          +                                ) {
+          +                                    val artwork = if (selected && infoId == itemId(item)) info?.backdropUrl ?: poster(item) else poster(item)
+          +                                    if (artwork != null) {
+          +                                        var useOriginal by remember(artwork) { mutableStateOf(false) }
+          +                                        val sharpArtwork = if (!useOriginal && artwork.startsWith("https://image.tmdb.org/t/p/")) {
+          +                                            artwork.replace(Regex("/w[0-9]+/"), if (selected) "/original/" else "/w780/")
+          +                                        } else artwork
+          +                                        val request = ImageRequest.Builder(context).data(sharpArtwork)
+          +                                            .size(if (selected) 1920 else 480, if (selected) 1080 else 720).build()
+          +                                        AsyncImage(model = request, contentDescription = title(item),
+          +                                            contentScale = ContentScale.Crop, filterQuality = FilterQuality.High,
+          +                                            onError = { useOriginal = true }, modifier = Modifier.fillMaxSize())
+          +                                    } else VodPosterArt(null, placeholder)
+          +                                    if (selected && cardFocused && previewEnabled && !opening) {
+          +                                        VodFragmentPreview(itemId(item), { resolvePreview(item) }, Modifier.fillMaxSize())
+          +                                    }
+          +                                    if (!selected) Text(title(item), style = stageText(24, 700), color = Color.White, maxLines = 1,
+          +                                        overflow = TextOverflow.Ellipsis,
+          +                                        modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().background(Color.Black.copy(alpha = 0.65f)).padding(12.mpx))
+                                           }
+                                       }
+                                   }
+          -                        Box(
+          -                            Modifier
+          -                                .size(minOf(if (selected) 640.mpx else posterWidth, available), if (selected) 360.mpx else 264.mpx)
+          -                                .then(if (row == 0 && index == 0) Modifier.focusRequester(firstFocus) else Modifier)
+          -                                .then(if (expanded && activeRow == row) Modifier.focusRequester(selectedFocus) else Modifier)
+          -                                .focusRequester(requester(index))
+          -                                .focusProperties { canFocus = expanded }
+          -                                .onFocusChanged {
+          -                                    cardFocused = it.isFocused
+          -                                    if (!it.isFocused) opening = false
+          -                                    if (it.isFocused) {
+          -                                        activeRow = row
+          -                                        scope.launch { columnState.scrollToItem(row) }
+          -                                    }
+          -                                }
+          -                                .onPreviewKeyEvent { event ->
+          -                                    if (event.type != KeyEventType.KeyDown) false
+          -                                    else when (event.key) {
+          -                                        Key.Menu -> { onCategories(); true }
+          -                                        Key.DirectionUp, Key.DirectionDown -> {
+          -                                            if (event.key == Key.DirectionUp && row == 0) {
+          -                                                onTopMenu()
+          -                                            } else {
+          -                                                val nextRow = row + if (event.key == Key.DirectionUp) -1 else 1
+          -                                                if (nextRow in rows.indices) scope.launch {
+          -                                                    columnState.scrollToItem(nextRow)
+          -                                                    // Paging may need a moment to attach the target card.
+          -                                                    for (attempt in 0 until 60) {
+          -                                                        withFrameNanos { }
+          -                                                        if (runCatching { rowRequester(nextRow, 0).requestFocus() }.getOrDefault(false)) break
+          -                                                        delay(25)
+          -                                                    }
+          -                                                }
+          -                                            }
+          -                                            true
+          -                                        }
+          -                                        Key.DirectionRight, Key.DirectionLeft -> {
+          -                                            targetIndex = (boundedTarget + (if (event.key == Key.DirectionRight) 1 else -1) + rowCount) % rowCount
+          -                                            true
+          -                                        }
+          -                                        else -> false
+          -                                    }
+          -                                }
+          -                                .clip(shape)
+          -                                .background(Color(0xFF181818))
+          -                                .border(if (selected) 3.mpx else 0.mpx, if (selected) Color.White else Color.Transparent, shape)
+          -                                .clickable {
+          -                                    if (!expanded) targetIndex = sourceIndex
+          -                                    else if (!opening) scope.launch {
+          -                                        opening = true
+          -                                        withFrameNanos { }
+          -                                        openCurrent(item)
+          -                                    }
+          -                                },
+          -                        ) {
+          -                            val artwork = if (selected && infoId == itemId(item)) info?.backdropUrl ?: poster(item) else poster(item)
+          -                            if (artwork != null) {
+          -                                var useOriginal by remember(artwork) { mutableStateOf(false) }
+          -                                val sharpArtwork = if (!useOriginal && artwork.startsWith("https://image.tmdb.org/t/p/")) {
+          -                                    artwork.replace(Regex("/w[0-9]+/"), if (selected) "/original/" else "/w780/")
+          -                                } else artwork
+          -                                val request = ImageRequest.Builder(context).data(sharpArtwork)
+          -                                    .size(if (selected) 1920 else 480, if (selected) 1080 else 720).build()
+          -                                AsyncImage(model = request, contentDescription = title(item),
+          -                                    contentScale = ContentScale.Crop, filterQuality = FilterQuality.High,
+          -                                    onError = { useOriginal = true }, modifier = Modifier.fillMaxSize())
+          -                            } else VodPosterArt(null, placeholder)
+          -                            if (selected && cardFocused && previewEnabled && !opening) {
+          -                                VodFragmentPreview(itemId(item), { resolvePreview(item) }, Modifier.fillMaxSize())
+          -                            }
+          -                            if (!selected) Text(title(item), style = stageText(24, 700), color = Color.White, maxLines = 1,
+          -                                overflow = TextOverflow.Ellipsis,
+          -                                modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().background(Color.Black.copy(alpha = 0.65f)).padding(12.mpx))
+          -                        }
+                               }
+                           }
+          -                }
+                           if (activeRow == row) {
+          -                    Column(Modifier.padding(start = 84.mpx, end = 64.mpx).width(1100.mpx)) {
+          +                    Column(Modifier.padding(horizontal = edge).width(1100.mpx)) {
+                                   Text(if (infoId == activeId && info != null) info.title else activeTitle,
+                                       style = stageText(30, 700), color = StageColors.Text,
+          -                            modifier = Modifier.padding(bottom = 10.mpx))
+          +                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+          +                            modifier = Modifier.padding(bottom = 2.mpx))
+                                   if (infoId == activeId && info != null) {
+                                       VodMeta(listOfNotNull(info.year?.toString(), info.genres.takeIf { it.isNotEmpty() }?.joinToString(), info.runtimeSecs?.let { vodRuntime(it) }), info.rating, info.tags, 20)
+                                       info.plot?.let { Text(it, style = stageText(22, 400), color = StageColors.Text,
+          -                                maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 10.mpx)) }
+          +                                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.mpx)) }
+                                   }
+                               }
+                           }
+          PATCH
       - name: List available SDK platforms
         run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --list | grep -E "platforms;android-3[67]"'
       - name: Install Android SDK
         run: |
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --version
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --channel=3 "platforms;android-37.0" "build-tools;36.0.0"
-      - name: Compile native 0.59
+      - name: Compile native 0.60
         working-directory: native-source/InterFlashTV-OwnTV
         env:
-          VERSION_CODE: '59'
-          VERSION_NAME: 0.59
+          VERSION_CODE: '60'
+          VERSION_NAME: '0.60'
         run: |
           chmod +x gradlew
           ./gradlew :app:assembleStandardRelease -Powntv.corePath=../OwnTV_Core-main -Pkotlin.compiler.execution.strategy=in-process --no-daemon --max-workers=2 -Dorg.gradle.jvmargs="-Xmx4g -XX:ActiveProcessorCount=2"
       - uses: actions/upload-artifact@v4
         with:
-          name: InterFlashTV-v0.59-UNSIGNED
+          name: InterFlashTV-v0.60-UNSIGNED
           path: native-source/InterFlashTV-OwnTV/app/build/outputs/apk/standard/release/*.apk
           if-no-files-found: error

@@ -155,7 +155,7 @@ jobs:
                ) {
                    itemsIndexed(rows, key = { row, category -> category.item.key.toString() + row }) { row, category ->
                        val flow = remember(category.item.key) { categoryFlow(category.item.key) }
-          @@ -121,147 +121,158 @@
+          @@ -121,147 +121,159 @@
                        }
                        fun requester(index: Int) = rowRequester(row, index)
                        Column(Modifier.drawWithContent {
@@ -221,12 +221,13 @@ jobs:
           +                    modifier = Modifier.padding(start = edge, bottom = 6.mpx))
           +                BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = edge)) {
           +                    val density = LocalDensity.current
+          +                    val selectedWidth = minOf(640.mpx, maxWidth)
           +                    val available = with(density) { maxWidth.roundToPx() }
           +                    val minimumGap = 10.mpx
           +                    val gapPx = with(density) { minimumGap.roundToPx() }
           +                    val posterWidth = 184.mpx
           +                    val posterPx = with(density) { posterWidth.roundToPx() }.coerceAtLeast(1)
-          +                    val selectedPx = with(density) { 640.mpx.roundToPx() }.coerceAtMost(available)
+          +                    val selectedPx = with(density) { selectedWidth.roundToPx() }.coerceAtMost(available)
           +                    val focusedRow = activeRow == row
           +                    val leadPx = if (focusedRow) selectedPx else minOf(posterPx, available)
           +                    val capacity = 1 + (available - leadPx) / (posterPx + gapPx)
@@ -276,7 +277,7 @@ jobs:
           +                                }
           +                                Box(
           +                                    Modifier
-          +                                        .size(if (selected) minOf(640.mpx, maxWidth) else fittedWidth, if (selected) 360.mpx else 276.mpx)
+          +                                        .size(if (selected) selectedWidth else fittedWidth, if (selected) 360.mpx else 276.mpx)
           +                                        .then(if (row == 0 && index == 0) Modifier.focusRequester(firstFocus) else Modifier)
           +                                        .then(if (expanded && activeRow == row) Modifier.focusRequester(selectedFocus) else Modifier)
           +                                        .focusRequester(requester(index))

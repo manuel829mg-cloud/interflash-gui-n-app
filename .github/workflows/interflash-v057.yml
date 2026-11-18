@@ -1,4 +1,4 @@
-name: Inter Flash TV 0.58 APK
+name: Inter Flash TV 0.59 APK
 on:
   push:
     branches: ['build/interflash-tv-v057-native']
@@ -66,22 +66,67 @@ jobs:
                                       onAutoOpen = null,"""),
           ])
           PY
+      - name: Fit catalogue covers to the TV viewport
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("native-source/InterFlashTV-OwnTV/app/src/main/java/tv/own/owntv/features/shell/components/CinemaCategoryRows.kt")
+          source = p.read_text()
+          def edit(old, new):
+              global source
+              if source.count(old) != 1:
+                  raise ValueError(f"Unexpected source: {old}")
+              source = source.replace(old, new)
+
+          edit("import androidx.compose.ui.draw.clip", "import androidx.compose.ui.draw.clip\nimport androidx.compose.ui.draw.drawWithContent")
+          edit("verticalArrangement = Arrangement.spacedBy(24.mpx)", "verticalArrangement = Arrangement.spacedBy(10.mpx)")
+          edit("contentPadding = PaddingValues(top = 24.mpx, bottom = 36.mpx)", "contentPadding = PaddingValues(top = 16.mpx, bottom = 24.mpx)")
+          edit("            Column {\n                Text(category.label", """            Column(Modifier.drawWithContent {
+                  val layout = columnState.layoutInfo
+                  val entry = layout.visibleItemsInfo.firstOrNull { it.index == row }
+                  // Show whole rows as focus advances through the catalogue.
+                  if (row == activeRow || (entry != null && entry.offset >= layout.viewportStartOffset &&
+                              entry.offset + entry.size <= layout.viewportEndOffset)) {
+                      drawContent()
+                  }
+              }) {
+                            Text(category.label""")
+          edit("                LazyRow(", """                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                              val startPadding = 84.mpx
+                              val endPadding = 64.mpx
+                              val spacing = 18.mpx
+                              val posterWidth = 176.mpx
+                              val available = (maxWidth - startPadding - endPadding).coerceAtLeast(1.mpx)
+                              val leadWidth = if (activeRow == row) 640.mpx else posterWidth
+                              val extraSlots = ((available - leadWidth - 4.mpx) / (posterWidth + spacing)).toInt()
+                                  .coerceAtLeast(0)
+                              LazyRow(""")
+          edit("PaddingValues(start = 84.mpx, end = 64.mpx, top = 12.mpx, bottom = 18.mpx)",
+               "PaddingValues(start = startPadding, end = endPadding, bottom = 8.mpx)")
+          edit("horizontalArrangement = Arrangement.spacedBy(26.mpx)", "horizontalArrangement = Arrangement.spacedBy(spacing)")
+          edit("items(count = rowCount,", "items(count = minOf(rowCount, 1 + extraSlots),")
+          edit(".size(if (selected) 640.mpx else 160.mpx, if (selected) 360.mpx else 240.mpx)",
+               ".size(minOf(if (selected) 640.mpx else posterWidth, available), if (selected) 360.mpx else 264.mpx)")
+          edit("                if (activeRow == row) {\n                    Column", "                }\n                if (activeRow == row) {\n                    Column")
+          edit(".heightIn(min = 124.mpx).width(1100.mpx)", ".width(1100.mpx)")
+          p.write_text(source)
+          PY
       - name: List available SDK platforms
         run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --list | grep -E "platforms;android-3[67]"'
       - name: Install Android SDK
         run: |
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --version
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --channel=3 "platforms;android-37.0" "build-tools;36.0.0"
-      - name: Compile native 0.58
+      - name: Compile native 0.59
         working-directory: native-source/InterFlashTV-OwnTV
         env:
-          VERSION_CODE: '58'
-          VERSION_NAME: 0.58
+          VERSION_CODE: '59'
+          VERSION_NAME: 0.59
         run: |
           chmod +x gradlew
           ./gradlew :app:assembleStandardRelease -Powntv.corePath=../OwnTV_Core-main -Pkotlin.compiler.execution.strategy=in-process --no-daemon --max-workers=2 -Dorg.gradle.jvmargs="-Xmx4g -XX:ActiveProcessorCount=2"
       - uses: actions/upload-artifact@v4
         with:
-          name: InterFlashTV-v0.58-UNSIGNED
+          name: InterFlashTV-v0.59-UNSIGNED
           path: native-source/InterFlashTV-OwnTV/app/build/outputs/apk/standard/release/*.apk
           if-no-files-found: error

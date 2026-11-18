@@ -39,17 +39,7 @@ jobs:
       - name: Install Android SDK
         run: |
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --version
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --channel=3 "platforms;android-36" "build-tools;36.0.0"
-      - name: Use available Android 36 compile SDK
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          for p in Path("native-source").rglob("build.gradle.kts"):
-              text = p.read_text()
-              if "release(37)" in text:
-                  p.write_text(text.replace("release(37)", "release(36)"))
-                  print("Compile SDK 36:", p)
-          PY
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --channel=3 "platforms;android-37.0" "build-tools;36.0.0"
       - name: Compile native 0.57
         working-directory: native-source/InterFlashTV-OwnTV
         env:

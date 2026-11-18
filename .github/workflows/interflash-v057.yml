@@ -1,4 +1,4 @@
-name: Inter Flash TV 0.57 APK
+name: Inter Flash TV 0.58 APK
 on:
   push:
     branches: ['build/interflash-tv-v057-native']
@@ -34,22 +34,54 @@ jobs:
               p.parent.mkdir(parents=True, exist_ok=True)
               p.write_text('<resources><string name="interflash_view_catalog">' + label + '</string></resources>')
           PY
+      - name: Apply catalogue layout and series navigation
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path("native-source/InterFlashTV-OwnTV/app/src/main/java/tv/own/owntv/features")
+
+          def edit(path, replacements):
+              source = path.read_text()
+              for old, new in replacements:
+                  if source.count(old) != 1:
+                      raise ValueError(f"Unexpected source in {path}: {old}")
+                  source = source.replace(old, new)
+              path.write_text(source)
+
+          edit(root / "shell/components/CinemaCategoryRows.kt", [
+              ("onAutoOpen: (T) -> Unit = onOpen,", "onAutoOpen: ((T) -> Unit)? = onOpen,"),
+              ("if (selected && cardFocused && previewEnabled) {", "val autoOpen = autoOpenCurrent\n                            if (selected && cardFocused && previewEnabled && autoOpen != null) {"),
+              ("LaunchedEffect(itemId(item), selected, cardFocused, previewEnabled, lifecycle)", "LaunchedEffect(itemId(item), selected, cardFocused, previewEnabled, autoOpenCurrent != null, lifecycle)"),
+              ("autoOpenCurrent(item)", "autoOpen(item)"),
+              (".size(if (expanded) 760.mpx else 280.mpx, 428.mpx)", ".size(if (selected) 640.mpx else 160.mpx, if (selected) 360.mpx else 240.mpx)"),
+              ('if (expanded) "/original/" else "/w780/"', 'if (selected) "/original/" else "/w780/"'),
+              (".size(if (expanded) 1920 else 840, if (expanded) 1080 else 1260)", ".size(if (selected) 1920 else 480, if (selected) 1080 else 720)"),
+          ])
+          edit(root / "series/SeriesScreen.kt", [
+              ("""onOpen = { item -> scope.launch {
+                                          if (vm.playCatalogueSeries(item)) {
+                                              if (!vm.externalPlayerOn.value) onFullscreen()
+                                          } else vm.openSeries(item)
+                                      } },""", """onOpen = vm::openSeries,
+                                      onAutoOpen = null,"""),
+          ])
+          PY
       - name: List available SDK platforms
         run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --list | grep -E "platforms;android-3[67]"'
       - name: Install Android SDK
         run: |
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --version
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --channel=3 "platforms;android-37.0" "build-tools;36.0.0"
-      - name: Compile native 0.57
+      - name: Compile native 0.58
         working-directory: native-source/InterFlashTV-OwnTV
         env:
-          VERSION_CODE: '57'
-          VERSION_NAME: 0.57-ver-catalogo
+          VERSION_CODE: '58'
+          VERSION_NAME: 0.58
         run: |
           chmod +x gradlew
           ./gradlew :app:assembleStandardRelease -Powntv.corePath=../OwnTV_Core-main -Pkotlin.compiler.execution.strategy=in-process --no-daemon --max-workers=2 -Dorg.gradle.jvmargs="-Xmx4g -XX:ActiveProcessorCount=2"
       - uses: actions/upload-artifact@v4
         with:
-          name: InterFlashTV-v0.57-UNSIGNED
+          name: InterFlashTV-v0.58-UNSIGNED
           path: native-source/InterFlashTV-OwnTV/app/build/outputs/apk/standard/release/*.apk
           if-no-files-found: error

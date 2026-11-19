@@ -1,4 +1,4 @@
-name: Inter Flash TV 0.61 APK
+name: Inter Flash TV 0.62 APK
 on:
   push:
     branches: ['build/interflash-tv-v057-native']
@@ -447,6 +447,30 @@ jobs:
           PATCH
       - name: Apply 0.61 catalogue and movie artwork
         run: python3 native-v057/catalogue-v061.py
+
+      - name: Enlarge Series covers and reclaim top space
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path("native-source/InterFlashTV-OwnTV/app/src/main/java/tv/own/owntv/features")
+          def replace(path, old, new):
+              source = path.read_text()
+              if source.count(old) != 1:
+                  raise ValueError(f"Unexpected source in {path}: {old}")
+              path.write_text(source.replace(old, new))
+          rows = root / "shell/components/CinemaCategoryRows.kt"
+          replace(rows, "val edge = 16.mpx", "val edge = 16.mpx\n    val seriesLayout = placeholder == OwnTVIcon.SERIES")
+          replace(rows, "minOf(480.mpx, maxWidth)", "minOf(if (seriesLayout) 640.mpx else 480.mpx, maxWidth)")
+          replace(rows, "val posterWidth = 144.mpx", "val posterWidth = if (seriesLayout) 184.mpx else 144.mpx")
+          replace(rows, "minOf(152.mpx,", "minOf(if (seriesLayout) 192.mpx else 152.mpx,")
+          replace(rows, "if (selected) 270.mpx else 214.mpx", "if (selected) (if (seriesLayout) 360.mpx else 270.mpx) else (if (seriesLayout) 276.mpx else 214.mpx)")
+          shell = root / "shell/OwnTVShell.kt"
+          replace(shell, "top = if (classicVod) 94.mpx else if (clientMode) 112.mpx else 0.dp,", 
+              "top = if (clientMode && selectedSection == MainSection.SERIES) 80.mpx else if (classicVod) 94.mpx else if (clientMode) 112.mpx else 0.dp,")
+          rail = root / "shell/components/StageRail.kt"
+          replace(rail, "modifier.fillMaxWidth().padding(top = 20.mpx).height(72.mpx)", 
+              "modifier.fillMaxWidth().padding(top = if (selected == MainSection.SERIES) 8.mpx else 20.mpx).height(72.mpx)")
+          PY
       - name: Classify non-display catalogue literals
         working-directory: native-source/InterFlashTV-OwnTV
         run: |
@@ -469,16 +493,16 @@ jobs:
         run: |
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --version
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --channel=3 "platforms;android-37.0" "build-tools;36.0.0"
-      - name: Compile native 0.61
+      - name: Compile native 0.62
         working-directory: native-source/InterFlashTV-OwnTV
         env:
-          VERSION_CODE: '61'
-          VERSION_NAME: '0.61'
+          VERSION_CODE: '62'
+          VERSION_NAME: '0.62'
         run: |
           chmod +x gradlew
           ./gradlew :app:assembleStandardRelease -Powntv.corePath=../OwnTV_Core-main -Pkotlin.compiler.execution.strategy=in-process --no-daemon --max-workers=2 -Dorg.gradle.jvmargs="-Xmx4g -XX:ActiveProcessorCount=2"
       - uses: actions/upload-artifact@v4
         with:
-          name: InterFlashTV-v0.61-UNSIGNED
+          name: InterFlashTV-v0.62-UNSIGNED
           path: native-source/InterFlashTV-OwnTV/app/build/outputs/apk/standard/release/*.apk
           if-no-files-found: error

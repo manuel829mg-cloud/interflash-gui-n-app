@@ -447,6 +447,22 @@ jobs:
           PATCH
       - name: Apply 0.61 catalogue and movie artwork
         run: python3 native-v057/catalogue-v061.py
+      - name: Classify non-display catalogue literals
+        working-directory: native-source/InterFlashTV-OwnTV
+        run: |
+          python3 - <<'PY'
+          import subprocess
+          base = 'app/src/main/java/tv/own/owntv/features/'
+          for path, text, category in [
+              ('movies/MoviesScreen.kt', '', 'empty'),
+              ('series/SeriesScreen.kt', '', 'empty'),
+              ('shell/components/CinemaCategoryRows.kt', 'https://image.tmdb.org/t/p/', 'url'),
+              ('shell/components/CinemaCategoryRows.kt', '/w[0-9]+/', 'regex'),
+              ('shell/components/CinemaCategoryRows.kt', '/original/', 'uri'),
+          ]:
+              subprocess.run(['python3', 'tools/i18n/check_hardcoded_strings.py', 'classify-safe', '--path', base + path, '--text', text, '--category', category], check=True)
+          PY
+          python3 tools/i18n/check_hardcoded_strings.py verify --bootstrap
       - name: List available SDK platforms
         run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --list | grep -E "platforms;android-3[67]"'
       - name: Install Android SDK

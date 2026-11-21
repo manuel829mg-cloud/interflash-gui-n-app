@@ -1,0 +1,20 @@
+name: Verify WhatsApp bank number replies
+on:
+  push:
+    branches:
+      - feat/bank-numbers-only-whatsapp
+  workflow_dispatch:
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: pip install -r isp-manager-new/requirements.txt
+      - run: python -m unittest discover -s tests -p test_whatsapp_bank_numbers.py -v
+        working-directory: isp-manager-new
+        env:
+          INTERFLASH_TESTING: '1'

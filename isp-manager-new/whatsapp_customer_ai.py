@@ -188,7 +188,9 @@ def process_one():
         day=date.today().isoformat(); text=str(row['body'] or '').strip()
         c.execute("INSERT INTO whatsapp_customer_ai_jobs VALUES(?,?,?,'PROCESANDO',?,NULL)",(mid,phone,day,now))
         bank_request = is_bank_accounts_request(text)
-        skip = ((not in_service_hours() and not bank_request) or is_collection_request(text) or not text or text.startswith('[Archivo') or len(text)>1600 or
+        # The bank-number worker now owns these requests on every provider;
+        # do not also send the former banking-card image from WAHA.
+        skip = (bank_request or (not in_service_hours() and not bank_request) or is_collection_request(text) or not text or text.startswith('[Archivo') or len(text)>1600 or
                 c.execute("SELECT 1 FROM whatsapp_messages WHERE thread_id=? AND id>? AND direction='OUT'",(row['thread_id'],mid)).fetchone() or
                 c.execute("SELECT 1 FROM whatsapp_messages WHERE id=? AND datetime(created_at)<datetime('now','localtime','-5 minutes')",(mid,)).fetchone())
         pause=c.execute('SELECT until FROM whatsapp_customer_ai_pause WHERE phone=?',(phone,)).fetchone()

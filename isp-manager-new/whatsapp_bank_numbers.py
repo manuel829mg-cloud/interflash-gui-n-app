@@ -1,11 +1,14 @@
-"""Automatic WhatsApp reply with bank account numbers only.
+"""One-shot automatic banking flyer replies, independent of the welcome menu.
 
-Independent from the welcome menu/AI. Responds to new inbound account-number
-requests using active bank_accounts, with a single provider attempt per
-incoming message. Never changes a customer's billing, status or router.
+Send the existing verified Inter Flash banking flyer as an enhanced JPEG when
+customers request CUENTA, CUENTAS or the bank account number. Never change a
+customer's invoices, payments, account or router status.
 """
 import os
 import re
+import base64
+from io import BytesIO
+from pathlib import Path
 import threading
 import time
 import unicodedata
@@ -67,21 +70,59 @@ def schema():
     c.close()
 
 
-def numbers_message(c):
-    if not c.execute(
-        "SELECT 1 FROM sqlite_master WHERE name='bank_accounts' AND type='table'"
-    ).fetchone():
-        return None
-    rows = c.execute("""SELECT account_number FROM bank_accounts
-        WHERE active=1 AND TRIM(COALESCE(account_number,''))<>''
-        ORDER BY id""").fetchall()
-    nums = []
-    for row in rows:
-        num = str(row['account_number'] or '').strip()
-        if re.fullmatch(r'[0-9 -]{6,40}', num) and num not in nums:
-            nums.append(num)
-    # Do not guess or take old account numbers from an outdated image.
-    return '\n'.join(nums) if nums else None
+CAPTION = ("Cuentas bancarias de Inter Flash. Luego de realizar el pago, "
+           "envíanos el comprobante.\n\n⚡ Inter Flash, siempre conectado contigo.")
+
+
+def image_bytes():
+    """Load our existing account card and sharpen it for phone screens.
+
+    The original embedded card is the source of truth; do not reconstruct
+    financial numbers with AI or replace them with unverified database rows.
+    """
+    from PIL import Image, ImageEnhance, ImageFilter
+    file = Path(__file__).resolve().parent / 'assets' / 'bank_accounts.jpg.b64'
+    encoded = file.read_text(encoding='ascii').strip()
+    raw = base64.b64decode(encoded, validate=True)
+    with Image.open(BytesIO(raw)) as source:
+        image = ImageEnhance.Contrast(source.convert('RGB')).enhance(1.07)
+        image = image.filter(ImageFilter.UnsharpMask(radius=1.2,percent=140,threshold=2))
+        output = BytesIO()
+        image.save(output,format='JPEG',quality=92,optimize=True)
+    data = output.getvalue()
+    if not data or len(data) > 5_000_000:
+        raise ValueError('La imagen bancaria no cumple el límite de WhatsApp.')
+    return data
+
+
+def send_bank_image(phone, caption=CAPTION):
+    """Single provider send; preserve delivery IDs for tracking, no retries."""
+    import greenapi_suite as green
+    import whapi_suite as whapi
+    import waha_suite as waha
+    try:
+        data = image_bytes()
+    except (OSError,ValueError,base64.binascii.Error):
+        return False,'','No se pudo leer la imagen bancaria configurada.'
+    try:
+        if waha.enabled():
+            cfg = waha.config()
+            result = waha.api('/api/sendImage',{
+                'session':cfg['session_name'],'chatId':phone+'@c.us',
+                'file':{'mimetype':'image/jpeg','filename':'cuentas-interflash.jpg',
+                        'data':base64.b64encode(data).decode('ascii')},
+                'caption':caption},cfg)
+            mid = waha.message_id(result)
+            if not mid:
+                return False,'','WAHA no confirmó el envío de la imagen bancaria.'
+            return True,'waha:'+cfg['session_name']+':'+mid,''
+        if green.enabled():
+            return green.send_image(phone,data,'cuentas-interflash.jpg',caption)
+        if whapi.enabled():
+            return whapi.send_image(phone,data,'cuentas-interflash.jpg',caption)
+        return False,'','El proveedor activo no admite el envío de imágenes bancarias.'
+    except waha.APIError:
+        return False,'','El proveedor no confirmó el envío de la imagen bancaria.'
 
 
 def process_one():
@@ -123,14 +164,6 @@ def process_one():
                 (incoming_id,row['phone'],wa._now()))
             c.commit()
             return 'OMITIDO'
-        numbers = numbers_message(c)
-        if numbers is None:
-            # Do not send incorrect/missing financial details to customers.
-            c.execute("""INSERT INTO whatsapp_bank_number_jobs
-                (message_id,phone,state,created_at) VALUES(?,?,'SIN_CUENTAS',?)""",
-                (incoming_id,row['phone'],wa._now()))
-            c.commit()
-            return 'SIN_CUENTAS'
         if not wa._meta_ready():
             c.execute("""INSERT INTO whatsapp_bank_number_jobs
                 (message_id,phone,state,created_at) VALUES(?,?,'SIN_PROVEEDOR',?)""",
@@ -140,19 +173,24 @@ def process_one():
         # Recorded before sending, so a worker restart can never send twice.
         qid = c.execute("""INSERT INTO whatsapp_queue(
             thread_id,customer_id,phone,kind,body,status,created_at)
-            VALUES(?,?,?,'text',?,'PENDIENTE',?)""",
-            (row['thread_id'],None,row['phone'],numbers,wa._now())
+            VALUES(?,?,?,'image',?,'PENDIENTE',?)""",
+            (row['thread_id'],None,row['phone'],CAPTION,wa._now())
         ).lastrowid
         c.execute("""INSERT INTO whatsapp_bank_number_jobs
             (message_id,phone,state,queue_id,created_at)
             VALUES(?,?,'EN_PROCESO',?,?)""",
             (incoming_id,row['phone'],qid,wa._now()))
         c.commit()
-        job = c.execute('SELECT * FROM whatsapp_queue WHERE id=?',(qid,)).fetchone()
-        ok, err = wa._process_queue_item(c,job)
-        status = c.execute('SELECT status FROM whatsapp_queue WHERE id=?',(qid,)).fetchone()[0]
+        # One network call only. The job is already marked EN_PROCESO in the
+        # database; uncertain provider outcomes must be inspected, not retried.
+        ok,pid,err = send_bank_image(wa._wa_phone(row['phone']))
+        status = 'ACEPTADO' if ok else 'ERROR'
+        c.execute('UPDATE whatsapp_queue SET status=?,attempts=1,provider_id=?,last_error=?,sent_at=? WHERE id=?',
+                  (status,pid or None,err or None,wa._now() if ok else None,qid))
+        wa._record_outgoing(c,row['thread_id'],'[Imagen de cuentas bancarias] '+CAPTION,
+                            pid or '',status,err)
         c.execute('UPDATE whatsapp_bank_number_jobs SET state=? WHERE message_id=?',
-                  ('ACEPTADO' if ok else 'ERROR',incoming_id))
+                  (status,incoming_id))
         c.commit()
         return status
     finally:
@@ -165,9 +203,8 @@ def setup(app):
         return
     c = base.db()
     try:
-        active = c.execute("""SELECT COUNT(*) FROM bank_accounts
-            WHERE active=1 AND TRIM(COALESCE(account_number,''))<>''""").fetchone()[0]
-        app.logger.warning('INTERFLASH_BANK_NUMBERS_ACTIVE_COUNT=%s', active)
+        app.logger.info('INTERFLASH_BANK_FLYER_IMAGE_READY=%s',
+                        (Path(__file__).resolve().parent/'assets'/'bank_accounts.jpg.b64').is_file())
     finally:
         c.close()
 

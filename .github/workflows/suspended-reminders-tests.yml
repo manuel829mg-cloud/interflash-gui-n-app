@@ -1,0 +1,20 @@
+name: Test suspended WhatsApp reminders
+on:
+  push:
+    branches:
+      - feat/recordatorios-suspendidos-dia2-dia4
+  workflow_dispatch:
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: pip install -r isp-manager-new/requirements.txt
+      - run: python -m unittest discover -s tests -p test_suspended_whatsapp_reminders.py -v
+        working-directory: isp-manager-new
+        env:
+          INTERFLASH_TESTING: '1'

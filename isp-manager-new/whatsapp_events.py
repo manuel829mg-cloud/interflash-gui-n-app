@@ -165,6 +165,18 @@ def send_outbox(limit=25):
                     c.execute("UPDATE whatsapp_outbox SET status='CANCELADO',error='Recordatorio resuelto, desactivado o fuera de fecha' WHERE id=?", (row['id'],))
                     c.commit()
                     continue
+            if row['template_code'] in ('SUSPENDED_D2', 'SUSPENDED_D4'):
+                from suspended_whatsapp_reminders import valid as suspended_valid
+                reminder_validity = suspended_valid(c, row['id'])
+                if reminder_validity is None:
+                    deferred_ids.add(int(row['id']))
+                    c.rollback()
+                    continue
+                if not reminder_validity:
+                    c.execute("UPDATE whatsapp_outbox SET status='CANCELADO',error='Cliente reactivado, pago registrado o aviso inválido' WHERE id=?", (row['id'],))
+                    c.commit()
+                    continue
+                row = c.execute('SELECT * FROM whatsapp_outbox WHERE id=?', (row['id'],)).fetchone()
             if row['template_code'] == 'PROMISE_DUE':
                 event = c.execute('SELECT event_key FROM whatsapp_event_keys WHERE outbox_id=?', (row['id'],)).fetchone()
                 pid = int(event[0].split(':')[1]) if event else 0
@@ -247,6 +259,9 @@ def setup(app):
                         promise_reminders()
                         from zone_whatsapp_reminders import process
                         process()
+                    # This scheduler owns its Dominican-time sending window.
+                    from suspended_whatsapp_reminders import process as suspended_process
+                    suspended_process()
                     send_outbox()
             except Exception:
                 app.logger.error('Revisión de avisos WhatsApp pendiente; se volverá a comprobar.')

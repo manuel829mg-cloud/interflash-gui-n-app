@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - feat/bank-numbers-only-whatsapp
+      - fix/meta-whatsapp-bank-flyer-image
   workflow_dispatch:
 jobs:
   tests:

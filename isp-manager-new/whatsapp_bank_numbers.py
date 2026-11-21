@@ -6,6 +6,10 @@ customer's invoices, payments, account or router status.
 """
 import os
 import re
+import json
+import secrets
+import urllib.request
+import urllib.error
 import base64
 from io import BytesIO
 from pathlib import Path
@@ -95,6 +99,50 @@ def image_bytes():
     return data
 
 
+def send_meta_image(phone, data, caption):
+    """Upload the banking flyer to Meta and send it in the same reply window."""
+    import whatsapp_suite as wa
+    if not (wa.ACCESS_TOKEN and wa.PHONE_NUMBER_ID):
+        return False, '', 'Meta WhatsApp no está configurado.'
+    boundary = 'interflash-' + secrets.token_hex(12)
+    crlf = b'\r\n'
+    chunks = []
+    for key,value in (('messaging_product','whatsapp'),('type','image/jpeg')):
+        chunks.extend((
+            ('--'+boundary+'\r\nContent-Disposition: form-data; name="'+key+'"\r\n\r\n').encode('ascii'),
+            value.encode('ascii'), crlf
+        ))
+    chunks.extend((
+        ('--'+boundary+'\r\nContent-Disposition: form-data; name="file"; filename="cuentas-interflash.jpg"\r\nContent-Type: image/jpeg\r\n\r\n').encode('ascii'),
+        data, crlf, ('--'+boundary+'--\r\n').encode('ascii')
+    ))
+    req = urllib.request.Request(
+        f'https://graph.facebook.com/{wa.GRAPH_VERSION}/{wa.PHONE_NUMBER_ID}/media',
+        data=b''.join(chunks), method='POST',
+        headers={'Authorization':'Bearer '+wa.ACCESS_TOKEN,
+                 'Content-Type':'multipart/form-data; boundary='+boundary,
+                 'Accept':'application/json'})
+    try:
+        with urllib.request.urlopen(req,timeout=20) as response:
+            media=json.loads(response.read(4096).decode('utf-8'))
+        media_id=media.get('id') if isinstance(media,dict) else None
+        if not isinstance(media_id,str) or not media_id:
+            return False,'','Meta no devolvió identificador de imagen.'
+        payload={'messaging_product':'whatsapp','recipient_type':'individual',
+                 'to':phone,'type':'image',
+                 'image':{'id':media_id,'caption':caption}}
+        ok, result, error = wa._meta_post(payload)
+        if not ok:
+            return False,'','Meta rechazó el envío de la imagen: '+error[:140]
+        message_ids = result.get('messages') if isinstance(result,dict) else None
+        pid=message_ids[0].get('id') if isinstance(message_ids,list) and message_ids and isinstance(message_ids[0],dict) else None
+        if not isinstance(pid,str) or not pid:
+            return False,'','Meta no confirmó identificador del mensaje.'
+        return True,pid,''
+    except (urllib.error.URLError,TimeoutError,ValueError,KeyError,OSError):
+        return False,'','No se confirmó el envío de imagen de Meta; revisa WhatsApp antes de reenviar.'
+
+
 def send_bank_image(phone, caption=CAPTION):
     """Single provider send; preserve delivery IDs for tracking, no retries."""
     import greenapi_suite as green
@@ -120,6 +168,8 @@ def send_bank_image(phone, caption=CAPTION):
             return green.send_image(phone,data,'cuentas-interflash.jpg',caption)
         if whapi.enabled():
             return whapi.send_image(phone,data,'cuentas-interflash.jpg',caption)
+        if wa.ACCESS_TOKEN and wa.PHONE_NUMBER_ID:
+            return send_meta_image(phone,data,caption)
         return False,'','El proveedor activo no admite el envío de imágenes bancarias.'
     except waha.APIError:
         return False,'','El proveedor no confirmó el envío de la imagen bancaria.'

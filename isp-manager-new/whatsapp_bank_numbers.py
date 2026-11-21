@@ -163,6 +163,13 @@ def setup(app):
     schema()
     if os.getenv('INTERFLASH_TESTING') == '1':
         return
+    c = base.db()
+    try:
+        active = c.execute("""SELECT COUNT(*) FROM bank_accounts
+            WHERE active=1 AND TRIM(COALESCE(account_number,''))<>''""").fetchone()[0]
+        app.logger.warning('INTERFLASH_BANK_NUMBERS_ACTIVE_COUNT=%s', active)
+    finally:
+        c.close()
 
     def worker():
         while True:

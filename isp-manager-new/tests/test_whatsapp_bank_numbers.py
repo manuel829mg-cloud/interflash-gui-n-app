@@ -65,9 +65,9 @@ class BankNumberReplyTests(unittest.TestCase):
         sample=b'\\xff\\xd8'+b'photo'
         response=MagicMock()
         response.__enter__.return_value.read.return_value=b'{"id":"media-123"}'
-        with patch.object(wa,'ACCESS_TOKEN','test-token'), \\
-             patch.object(wa,'PHONE_NUMBER_ID','123456'), \\
-             patch.object(bot.urllib.request,'urlopen',return_value=response) as upload, \\
+        with patch.object(wa,'ACCESS_TOKEN','test-token'), \
+             patch.object(wa,'PHONE_NUMBER_ID','123456'), \
+             patch.object(bot.urllib.request,'urlopen',return_value=response) as upload, \
              patch.object(wa,'_meta_post',return_value=(True,{'messages':[{'id':'wamid-123'}]},'')) as post:
             ok,pid,error=bot.send_meta_image('18094121799',sample,'Cuentas bancarias')
         self.assertTrue(ok)

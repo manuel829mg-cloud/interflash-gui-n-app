@@ -252,6 +252,13 @@ def setup(app):
     app.add_url_rule('/whatsapp/automatics', endpoint='whatsapp_events_save', view_func=page, methods=['POST'])
     if os.getenv('INTERFLASH_TESTING') == '1': return
     def worker():
+        # Transport smoke test is opt-in and deduplicated in the database.
+        from whatsapp_smoke_once import send_once
+        try:
+            with app.app_context():
+                send_once()
+        except Exception:
+            app.logger.exception('WhatsApp transport smoke test failed')
         while True:
             try:
                 with app.app_context():

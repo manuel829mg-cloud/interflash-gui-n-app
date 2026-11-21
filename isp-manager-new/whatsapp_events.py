@@ -259,8 +259,9 @@ def setup(app):
                         promise_reminders()
                         from zone_whatsapp_reminders import process
                         process()
-                        from suspended_whatsapp_reminders import process as suspended_process
-                        suspended_process()
+                    # This scheduler owns its Dominican-time sending window.
+                    from suspended_whatsapp_reminders import process as suspended_process
+                    suspended_process()
                     send_outbox()
             except Exception:
                 app.logger.error('Revisión de avisos WhatsApp pendiente; se volverá a comprobar.')

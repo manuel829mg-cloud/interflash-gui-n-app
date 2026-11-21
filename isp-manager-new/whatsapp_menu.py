@@ -45,7 +45,9 @@ def enqueue(c, thread, text, event_id, instance):
     image_request=command in ('cuenta','cuentas','cuenta bancaria','cuentas bancarias',
                               'numero de cuenta','numero de cuentas',
                               'mandame el numero de cuenta','mandame el numero de cuentas')
-    if image_request: command='2'
+    # CUENTA/CUENTAS are handled by the dedicated text-only reply worker,
+    # even when the general welcome menu is disabled.
+    if image_request: return
     if command not in ('hola','menu','buenas','buenos dias','buenas tardes','buenas noches','1','2','3','4','asesor'): return
     now=time.time();phone=thread['phone']
     state=c.execute('SELECT * FROM whatsapp_menu_state WHERE phone=?',(phone,)).fetchone()
@@ -72,14 +74,14 @@ def enqueue(c, thread, text, event_id, instance):
         if image_request:
             reply='Cuentas bancarias de INTER Flash. Envíanos tu comprobante después de pagar.'
         else:
-            reply=('Cuentas de INTER Flash:\n'+'\n\n'.join(f"{b['bank']} · {b['account_type'] or ''}\n{b['account_number']}\n{b['label'] or ''}" for b in banks)+'\n\nEscribe 3 para reportar el pago.') if banks else 'Todavía no hay cuentas bancarias configuradas. Escribe ASESOR para solicitar los datos de pago.'
+            reply='\n'.join(str(b['account_number']).strip() for b in banks) if banks else 'Todavía no hay cuentas bancarias configuradas. Escribe ASESOR para solicitar los datos de pago.'
     elif command in ('3','4','asesor'):
         pause=now+86400
         reply={'3':'Para reportar tu pago, escribe el banco, monto, fecha y referencia. Un asesor lo revisará; este mensaje no registra ni confirma el pago. Puedes adjuntar el comprobante, pero su imagen todavía debe revisarse en el WhatsApp del negocio.',
                '4':'Cuéntanos qué problema tienes con tu internet. Tu consulta quedará en esta conversación para que un asesor la atienda.',
                'asesor':'Tu solicitud de atención quedará en esta conversación. Cuéntanos cómo podemos ayudarte.'}[command]
         reply+='\nEl menú queda pausado durante 24 horas. Escribe MENÚ para volver antes.'
-    cur=c.execute("INSERT INTO whatsapp_queue(thread_id,customer_id,phone,kind,body,status,created_at) VALUES(?,?,?,?,?,'PENDIENTE',?)",(thread['id'],thread['customer_id'],phone,'image' if image_request else 'text',reply[:4096],wa._now()))
+    cur=c.execute("INSERT INTO whatsapp_queue(thread_id,customer_id,phone,kind,body,status,created_at) VALUES(?,?,?,?,?,'PENDIENTE',?)",(thread['id'],thread['customer_id'],phone,'text',reply[:4096],wa._now()))
     c.execute('INSERT INTO whatsapp_menu_jobs(event_id,queue_id,instance,created) VALUES(?,?,?,?)',(event_id,cur.lastrowid,provider+':'+channel,now))
     c.execute('INSERT INTO whatsapp_menu_state(phone,last_reply,pause_until) VALUES(?,?,?) ON CONFLICT(phone) DO UPDATE SET last_reply=excluded.last_reply,pause_until=excluded.pause_until',(phone,now,pause))
 

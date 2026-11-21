@@ -41,7 +41,7 @@ def _sent_at(c, key):
         return None
 
 
-def candidates(c, now):
+def candidates(c, now, include_queued_first=False):
     """Returns only due, unpaid, currently suspended customers.
 
     The latest confirmed router action must be a suspension. A manual status
@@ -91,8 +91,9 @@ def candidates(c, now):
             'SELECT 1 FROM whatsapp_event_keys WHERE event_key=?',
             (first_key,)
         ).fetchone()
-        if not first:
+        if not first or include_queued_first:
             yield dict(row, days=2, event_key=first_key)
+        if not first:
             continue
         if now < suspended_at + timedelta(days=4):
             continue
@@ -151,7 +152,7 @@ def valid(c, outbox_id, now=None):
     if not event:
         return False
     key = event['event_key'].split('|PHONE:', 1)[0]
-    for row in candidates(c, now):
+    for row in candidates(c, now, include_queued_first=True):
         if row['event_key'] == key:
             c.execute(
                 'UPDATE whatsapp_outbox SET message=? WHERE id=?',

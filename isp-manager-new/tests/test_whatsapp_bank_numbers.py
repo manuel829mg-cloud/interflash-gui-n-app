@@ -43,18 +43,19 @@ class BankNumberReplyTests(unittest.TestCase):
         c.commit();c.close()
         return mid
 
-    def test_bank_numbers_only_in_one_reply_no_image(self):
+    def test_bank_flyer_in_one_reply_without_welcome_menu(self):
         mid=self.inbound('Por favor, mándame el número de cuenta')
         with patch.object(wa,'_meta_ready',return_value=True), \
-             patch.object(wa,'_send_text',return_value=(True,'test-out','')) as send:
+             patch.object(bot,'send_bank_image',return_value=(True,'greenapi:test123','')) as send:
             self.assertEqual(bot.process_one(),'ACEPTADO')
             self.assertIsNone(bot.process_one())
-            send.assert_called_once()
+            send.assert_called_once_with('18094121799')
         c=base.db()
         rows=c.execute('SELECT body,kind,status FROM whatsapp_queue').fetchall()
         self.assertEqual(len(rows),1)
-        self.assertEqual(rows[0]['body'],'1234567890\n9876543210')
-        self.assertEqual(rows[0]['kind'],'text')
+        self.assertIn('cuentas bancarias',rows[0]['body'].lower())
+        self.assertEqual(rows[0]['kind'],'image')
+        self.assertEqual(rows[0]['status'],'ACEPTADO')
         self.assertEqual(c.execute('SELECT state FROM whatsapp_bank_number_jobs WHERE message_id=?',(mid,)).fetchone()[0],'ACEPTADO')
         self.assertEqual(c.execute('SELECT enabled FROM whatsapp_menu_config WHERE id=1').fetchone()[0],0)
         c.close()
@@ -68,13 +69,21 @@ class BankNumberReplyTests(unittest.TestCase):
             self.assertIsNone(bot.process_one())
             send.assert_not_called()
 
-    def test_missing_bank_number_never_invents_details(self):
+    def test_original_banking_card_is_a_valid_jpeg(self):
+        image=bot.image_bytes()
+        self.assertTrue(image.startswith(b'\\xff\\xd8'))
+        self.assertLess(len(image),5_000_000)
+
+    def test_image_failed_provider_is_not_retried(self):
         self.inbound('CUENTAS')
-        c=base.db();c.execute('DELETE FROM bank_accounts');c.commit();c.close()
-        with patch.object(wa,'_send_text') as send:
-            self.assertEqual(bot.process_one(),'SIN_CUENTAS')
-            send.assert_not_called()
-        c=base.db();self.assertEqual(c.execute('SELECT COUNT(*) FROM whatsapp_queue').fetchone()[0],0);c.close()
+        with patch.object(wa,'_meta_ready',return_value=True), \
+             patch.object(bot,'send_bank_image',return_value=(False,'','No se confirmó')) as send:
+            self.assertEqual(bot.process_one(),'ERROR')
+            self.assertIsNone(bot.process_one())
+            send.assert_called_once()
+        c=base.db()
+        self.assertEqual(c.execute('SELECT COUNT(*) FROM whatsapp_bank_number_jobs').fetchone()[0],1)
+        c.close()
 
     def test_not_account_balance_request(self):
         self.assertFalse(bot.bank_request('dime mi saldo de cuenta'))

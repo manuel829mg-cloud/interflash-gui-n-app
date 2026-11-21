@@ -269,6 +269,10 @@ operation_alerts.setup(app)
 import whatsapp_customer_ai
 whatsapp_customer_ai.setup(app)
 
+# Independent CUENTA / CUENTAS bank-number-only WhatsApp response.
+import whatsapp_bank_numbers
+whatsapp_bank_numbers.setup(app)
+
 import payment_reports
 payment_reports.setup(app)
 

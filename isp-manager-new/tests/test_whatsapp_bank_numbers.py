@@ -71,7 +71,7 @@ class BankNumberReplyTests(unittest.TestCase):
 
     def test_original_banking_card_is_a_valid_jpeg(self):
         image=bot.image_bytes()
-        self.assertTrue(image.startswith(b'\\xff\\xd8'))
+        self.assertTrue(image.startswith(bytes((255,216))))
         self.assertLess(len(image),5_000_000)
 
     def test_image_failed_provider_is_not_retried(self):

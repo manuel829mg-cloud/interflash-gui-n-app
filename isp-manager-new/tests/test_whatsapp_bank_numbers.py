@@ -60,6 +60,27 @@ class BankNumberReplyTests(unittest.TestCase):
         self.assertEqual(c.execute('SELECT enabled FROM whatsapp_menu_config WHERE id=1').fetchone()[0],0)
         c.close()
 
+    def test_meta_media_upload_then_send_image(self):
+        from unittest.mock import MagicMock
+        sample=b'\\xff\\xd8'+b'photo'
+        response=MagicMock()
+        response.__enter__.return_value.read.return_value=b'{"id":"media-123"}'
+        with patch.object(wa,'ACCESS_TOKEN','test-token'), \
+             patch.object(wa,'PHONE_NUMBER_ID','123456'), \
+             patch.object(bot.urllib.request,'urlopen',return_value=response) as upload, \
+             patch.object(wa,'_meta_post',return_value=(True,{'messages':[{'id':'wamid-123'}]},'')) as post:
+            ok,pid,error=bot.send_meta_image('18094121799',sample,'Cuentas bancarias')
+        self.assertTrue(ok)
+        self.assertEqual(pid,'wamid-123')
+        self.assertEqual(error,'')
+        self.assertIn('/123456/media',upload.call_args.args[0].full_url)
+        self.assertIn(b'messaging_product',upload.call_args.args[0].data)
+        self.assertIn(sample,upload.call_args.args[0].data)
+        payload=post.call_args.args[0]
+        self.assertEqual(payload['type'],'image')
+        self.assertEqual(payload['image']['id'],'media-123')
+        self.assertEqual(payload['to'],'18094121799')
+
     def test_no_old_messages_replayed_on_initial_setup(self):
         self.inbound('cuenta')
         c=base.db()

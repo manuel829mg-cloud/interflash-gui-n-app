@@ -36,7 +36,8 @@ def _sent_at(c, key):
     if not row or row['status'] not in ('ACEPTADO', 'ENVIADO', 'ENTREGADO', 'LEIDO'):
         return None
     try:
-        return datetime.fromisoformat(str(row['sent_at']))
+        sent = datetime.fromisoformat(str(row['sent_at']))
+        return sent.astimezone(RD).replace(tzinfo=None)
     except (ValueError, TypeError):
         return None
 
@@ -78,8 +79,7 @@ def candidates(c, now, include_queued_first=False):
     for row in rows:
         try:
             suspended_at = datetime.fromisoformat(str(row['suspended_at']))
-            if suspended_at.tzinfo:
-                suspended_at = suspended_at.astimezone(RD).replace(tzinfo=None)
+            suspended_at = suspended_at.astimezone(RD).replace(tzinfo=None)
         except (ValueError, TypeError):
             continue
         if now < suspended_at + timedelta(days=2):

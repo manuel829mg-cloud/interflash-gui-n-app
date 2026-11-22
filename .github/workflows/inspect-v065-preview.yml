@@ -21,7 +21,7 @@ jobs:
           from pathlib import Path
           base = Path('native-source/InterFlashTV-OwnTV/app/src/main/java/tv/own/owntv')
           files = {
-            'features/live/LiveScreen.kt': [(1,225),(790,912),(1000,1080)],
+            'features/live/LiveScreen.kt': [(1,225),(225,315),(540,680),(790,912),(1000,1080)],
             'features/live/LiveViewModel.kt': [(925,1053),(1500,1538)],
           }
           for rel,ranges in files.items():
@@ -33,12 +33,12 @@ jobs:
                   for i in range(a-1,min(b,len(lines))): print(f'{i+1:4d}: {lines[i]}')
           for p in base.rglob('*.kt'):
               code=p.read_text()
-              if 'fun LivePreviewPane' in code or 'fun LivePreview' in code and 'AndroidView' in code:
+              if 'fun LiveStagePane' in code or 'fun LivePreviewPane' in code:
                   print(f'==== {p.relative_to(base)} (live preview candidate) ====')
                   lines=code.splitlines()
-                  marks=[i for i,x in enumerate(lines) if 'fun LivePreviewPane' in x or 'fun LivePreview' in x]
+                  marks=[i for i,x in enumerate(lines) if 'fun LiveStagePane' in x or 'fun LivePreviewPane' in x]
                   for mark in marks:
-                      for i in range(max(0,mark-35),min(len(lines),mark+210)):print(f'{i+1:4d}: {lines[i]}')
+                      for i in range(max(0,mark-35),min(len(lines),mark+300)):print(f'{i+1:4d}: {lines[i]}')
           PY
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'

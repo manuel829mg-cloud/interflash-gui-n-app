@@ -82,25 +82,27 @@ replace_one(screen,
 
 # Replace the native channel click callback (patched to "VLC fullscreen directly" in v0.65).
 s = screen.read_text()
-start_anchor = '''                                    onClick = {
-                                         if (true) { vm.playVlcTrial(channel) } else if (clientMode && !externalPlayerOn) {'''
-stop_anchor = '''                                    onLongClick = { contextChannel = channel; contextChannelId = channel.id },'''
-if s.count(start_anchor) != 1 or s.count(stop_anchor) != 1:
+needle = 'if (true) { vm.playVlcTrial(channel) } else if (clientMode && !externalPlayerOn) {'
+stop_anchor = 'onLongClick = { contextChannel = channel; contextChannelId = channel.id },'
+if s.count(needle) != 1 or s.count(stop_anchor) != 1:
     raise RuntimeError("Unexpected original LiveStageRow click handler")
-start = s.index(start_anchor)
-stop = s.index(stop_anchor, start)
-s = s[:start] + '''                                    onClick = {
-                                        if (vlcPreviewStream?.channelId == channel.id) {
-                                            // Release the in-pane decoder before fullscreen, avoiding a
-                                            // second session on one-connection IPTV subscriptions.
-                                            vm.clearVlcPreview()
-                                            vm.playVlcTrial(channel)
-                                        } else {
-                                            // First OK: keep the channel list and stage visible.
-                                            vm.selectVlcPreview(channel)
-                                        }
-                                    },
-''' + s[stop:]
+needle_at = s.index(needle)
+start = s.rfind('onClick = {', 0, needle_at)
+stop = s.index(stop_anchor, needle_at)
+indent = s[s.rfind('\n', 0, start) + 1:start]
+if start < 0 or stop < start or 'onClick' in s[start + 11:needle_at]:
+    raise RuntimeError("Cannot uniquely identify the VLC channel click block")
+s = s[:start] + '''onClick = {
+    if (vlcPreviewStream?.channelId == channel.id) {
+        // Release the embedded decoder before fullscreen on single-session panels.
+        vm.clearVlcPreview()
+        vm.playVlcTrial(channel)
+    } else {
+        // First OK retains the original channel list and preview rectangle.
+        vm.selectVlcPreview(channel)
+    }
+},
+''' + indent + s[stop:]
 screen.write_text(s)
 
 replace_one(screen,

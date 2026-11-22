@@ -109,8 +109,48 @@
 1585         recordLiveHistory(channel)
 1586     }
 1587 
-==== player-core/build.gradle.kts
-MISSING
+==== app/build.gradle.kts
+ 200         // extraction cannot reintroduce English-only quantity wording.
+ 201         fatal += "PluralsCandidate"
+ 202         checkDependencies = false
+ 203         // Media3's player API surface is almost entirely @UnstableApi; this app is built on it, so
+ 204         // the check fires ~90 times across the player, Home and Live code and carries no signal.
+ 205         // Opting in file-by-file would only move the same acknowledgement into ~12 annotations.
+ 206         disable += "UnsafeOptInUsageError"
+ 207         // local.properties is developer-local and never committed (its Windows SDK path can't be
+ 208         // escaped without breaking the local tooling that writes it). CI has no such file at all.
+ 209         disable += "PropertyEscape"
+ 210         // en-rGB is an intentional partial regional override of the canonical en-US source; its
+ 211         // omitted keys fall back to values/ and must not make every default string a lint error.
+ 212         disable += "MissingTranslation"
+ 213         // Reports are what a failed CI run is inspected from. Since AGP 9.3 the HTML/XML/text
+ 214         // reports are always generated, so there is nothing left to switch on here.
+ 215     }
+ 216 
+ 217     packaging {
+ 218         jniLibs {
+ 219             // Every .so we package is a prebuilt from a dependency (libmpv/FFmpeg, libc++_shared,
+ 220             // androidx graphics-path and datastore) and all of them are already stripped at the
+ 221             // source — none carries a .debug_info or .symtab section. AGP's strip step therefore has
+ 222             // nothing to remove, and on a machine without an NDK it can't run at all, which is where
+ 223             // the "Unable to strip the following libraries, packaging them as they are" line on every
+ 224             // release task came from. Skipping it packages byte-identical libraries without the noise.
+ 225             keepDebugSymbols += "**/*.so"
+ 226         }
+ 227     }
+ 228 
+ 229     compileOptions {
+ 230         sourceCompatibility = JavaVersion.VERSION_17
+ 231         targetCompatibility = JavaVersion.VERSION_17
+ 232     }
+ 233 }
+ 234 
+ 235 // Re-add the debug-only pseudolocale qualifiers that the shared `localeFilters` set above would
+ 236 // otherwise strip. This is the per-variant SetProperty form of localeFilters (the androidResources
+ 237 // block sets the MutableSet extension form, which applies to all variants equally and so cannot keep
+ 238 // pseudolocales out of release). Release variants ship neither pseudolocale. Verified syntax against
+ 239 // the AGP 9.2.1 variant API (ApplicationAndroidComponentsExtension.onVariants +
+ 240 // ApplicationAndroidResources.localeFilters: SetProperty<String>); re-verify before deviating.
 ==== app/build.gradle.kts
  395     // Database (Room, via KSP) + Paging
  396     implementation(libs.androidx.room.runtime)
@@ -166,4 +206,17 @@ MISSING
  446     androidTestImplementation(libs.androidx.junit)
  447     androidTestImplementation(libs.androidx.espresso.core)
  448 }
+==== core native library gradle files
+---- native-source/OwnTV_Core-main/player-core/build.gradle.kts
+93     // Playback — libmpv (FFmpeg) plus the Media3/ExoPlayer path used for VOD, image subtitles and
+96     // `api`, not `implementation`: OwnTVPlayer's supertype is MPVLib.EventObserver, so a consumer
+97     // that merely names the player type needs libmpv on its compile classpath. Hiding it here made
+100     // also pins both apps to ONE libmpv version; two hosts each declaring their own could package
+101     // two builds of the same native library.
+103     // -Powntv.libmpvLocalRepo=<folder> on the build command (never in a file) swaps in the
+104     // engine built on this PC by OwnTV_libmpv's buildscripts/wsl_build.sh; settings.gradle.kts adds
+106     if (providers.gradleProperty("owntv.libmpvLocalRepo").isPresent) {
+107         api("tv.own.owntv:libmpv:local")
+109         api(libs.libmpv)
+==== bundled AARs and native shared objects
 ==== bundled native shared objects

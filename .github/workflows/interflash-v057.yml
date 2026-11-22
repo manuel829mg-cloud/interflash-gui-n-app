@@ -1,4 +1,4 @@
-name: Inter Flash TV 0.63 VLC TEST APK
+name: Inter Flash TV 0.64 VLC ISOLATED TEST APK
 on:
   push:
     branches: ['experiment/libvlc-live-v063']
@@ -519,16 +519,16 @@ jobs:
         run: |
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --version
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --channel=3 "platforms;android-37.0" "build-tools;36.0.0"
-      - name: Compile isolated 0.63 VLC debug APK
+      - name: Compile isolated 0.64 VLC debug APK
         working-directory: native-source/InterFlashTV-OwnTV
         env:
-          VERSION_CODE: '63'
-          VERSION_NAME: '0.63-vlc-prueba'
+          VERSION_CODE: '64'
+          VERSION_NAME: '0.64-vlc-aislado'
         run: |
           chmod +x gradlew
           ./gradlew :app:assembleStandardDebug -Powntv.corePath=../OwnTV_Core-main -Pkotlin.compiler.execution.strategy=in-process --no-daemon --max-workers=2 -Dorg.gradle.jvmargs="-Xmx4g -XX:ActiveProcessorCount=2"
       - uses: actions/upload-artifact@v4
         with:
-          name: InterFlashTV-v0.63-VLC-PRUEBA
+          name: InterFlashTV-v0.64-VLC-PRUEBA
           path: native-source/InterFlashTV-OwnTV/app/build/outputs/apk/standard/debug/*.apk
           if-no-files-found: error

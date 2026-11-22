@@ -33,24 +33,45 @@ if package_count != 1:
     raise RuntimeError(f"Expected one applicationId in {build}; found {package_count}")
 build.write_text(build_source)
 replace_one(build, 'dependencies {', '''dependencies {
-    // Isolated live-TV trial only. Existing ExoPlayer/libmpv engines are unchanged.
-    implementation("org.videolan.android:libvlc-all:3.7.7")''')
+    // Use a locally sanitized VLC AAR, keeping the original MPV C++ runtime intact.
+    implementation(files("libs/libvlc-no-cxx.aar"))''')
 
 
-# LibVLC and libmpv both package a C++ runtime; keep one in this test build.
-# This requires runtime validation on real Android TV devices before release.
-replace_one(build, 'android {', '''android {
-    packaging {
-        jniLibs {
-            pickFirsts.add("**/libc++_shared.so")
-        }
-    }''')
+# Do not use Gradle pickFirst for libc++: it silently selects an arbitrary STL and
+# caused the normal MPV path to crash in the previous 0.63 APK on the user's TV.
+# Remove ONLY the bundled STL from the VLC AAR; Android will then package the
+# existing MPV libc++_shared.so, with all VLC JNI libraries preserved.
+# This creates a new local test dependency and never changes the official app.
+import io
+from urllib.request import urlopen
+from zipfile import ZipFile
+
+vlc_url = "https://repo.maven.apache.org/maven2/org/videolan/android/libvlc-all/3.7.7/libvlc-all-3.7.7.aar"
+vlc_dir = app / "app/libs"
+vlc_dir.mkdir(exist_ok=True, parents=True)
+vlc_target = vlc_dir / "libvlc-no-cxx.aar"
+with urlopen(vlc_url, timeout=90) as response:
+    vlc_data = response.read()
+with ZipFile(io.BytesIO(vlc_data)) as source, ZipFile(vlc_target, "w") as dest:
+    skipped = []
+    found_vlc_jni = 0
+    for item in source.infolist():
+        if item.filename.endswith("/libc++_shared.so") and item.filename.startswith("jni/"):
+            skipped.append(item.filename)
+            continue
+        if item.filename.startswith("jni/") and item.filename.endswith(".so"):
+            found_vlc_jni += 1
+        dest.writestr(item, source.read(item.filename))
+    if not skipped or found_vlc_jni == 0:
+        raise RuntimeError("Unexpected VLC AAR: C++ runtime or VLC JNI binaries missing")
+print("Prepared VLC AAR for test (MPV libc++ retained, dropped VLC duplicate from", len(skipped), "ABIs)")
 
 manifest = app / "app/src/main/AndroidManifest.xml"
 replace_one(manifest, '    </application>', '''        <!-- Separate, opt-in VLC experiment; never registered as a launcher. -->
         <activity android:name=".features.live.VlcTrialActivity"
                   android:exported="false"
                   android:screenOrientation="landscape"
+                  android:process=":vlc_trial"
                   android:theme="@android:style/Theme.Material.NoActionBar"/>
     </application>''')
 
@@ -202,7 +223,7 @@ public final class VlcTrialActivity extends Activity {
             mediaPlayer.setMedia(media);
             media.release();
             mediaPlayer.play();
-        } catch (Exception exception) {
+        } catch (Exception | LinkageError exception) {
             if (status != null) status.setText("No se pudo iniciar VLC. Pulsa Atrás para regresar.");
             releasePlayer();
         }
@@ -228,4 +249,4 @@ public final class VlcTrialActivity extends Activity {
 }
 ''')
 
-print("LibVLC trial patched: side-by-side app id, per-channel menu, native activity, resources")
+print("LibVLC 0.64 trial patched: sanitized VLC AAR, isolated VLC process, current MPV runtime")

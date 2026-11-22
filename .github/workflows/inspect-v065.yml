@@ -1,0 +1,46 @@
+name: Inspect Inter Flash 0.65 playback entrypoints
+on:
+  push:
+    branches: ['experiment/libvlc-only-v065']
+    paths: ['.github/workflows/inspect-v065.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore app source
+        run: |
+          cat native-v057/source.part*.b64 | base64 -d > /tmp/native.tar.xz
+          mkdir native-source
+          tar -xJf /tmp/native.tar.xz -C native-source
+      - name: Examine channel click routes and player dependencies
+        run: |
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          root=Path('native-source/InterFlashTV-OwnTV/app/src/main/java/tv/own/owntv')
+          paths=[root/'features/live/LiveScreen.kt',root/'features/live/LiveViewModel.kt']
+          for p in sorted((root/'features/player').glob('*.kt')):
+              if 'Player' in p.name:
+                  paths.append(p)
+          pat=re.compile(r'play|onClick|onSelect|onChannel|onPress|onLong|contextChannel|MenuAction|engine|mpv|exo|VLC|vlc',re.I)
+          for p in paths:
+              if not p.exists(): continue
+              s=p.read_text().splitlines()
+              print('==== '+str(p.relative_to(root))+' '+str(len(s))+' lines')
+              indices=[i for i,l in enumerate(s) if pat.search(l) and ('fun ' in l or 'onPlay' in l or 'onClick' in l or 'onChannel' in l or 'contextChannel' in l or 'MenuAction' in l or 'Player' in l or 'Engine' in l)]
+              keep=set()
+              for i in indices[:65]:
+                  keep.update(range(max(0,i-2),min(len(s),i+3)))
+              for i in sorted(keep):
+                  print(f'{i+1:4d}: {s[i][:240]}')
+          p=Path('native-source/InterFlashTV-OwnTV/app/build.gradle.kts')
+          print('==== app dependencies')
+          for i,l in enumerate(p.read_text().splitlines(),1):
+              if re.search(r'mpv|exo|media3|vlc|applicationId|native',l,re.I):
+                  print(f'{i}: {l[:220]}')
+          PY

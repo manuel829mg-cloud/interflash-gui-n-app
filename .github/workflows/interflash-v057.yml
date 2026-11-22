@@ -1,11 +1,11 @@
-name: Inter Flash TV 0.64 VLC ISOLATED TEST APK
+name: Inter Flash TV 0.65 VLC DIRECT TEST APK
 on:
   push:
-    branches: ['experiment/libvlc-live-v063']
-    paths: ['experiments/libvlc-v063/**', '.github/workflows/interflash-v057.yml']
+    branches: ['experiment/libvlc-only-v065']
+    paths: ['experiments/libvlc-v065/**', '.github/workflows/interflash-v057.yml']
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -495,8 +495,8 @@ jobs:
               subprocess.run(['python3', 'tools/i18n/check_hardcoded_strings.py', 'classify-safe', '--path', base + path, '--text', text, '--category', category], check=True)
           PY
           python3 tools/i18n/check_hardcoded_strings.py verify --bootstrap
-      - name: Integrate opt-in native LibVLC trial (existing engines kept intact)
-        run: python3 experiments/libvlc-v063/apply.py
+      - name: Route live channels directly to LibVLC (isolated test)
+        run: python3 experiments/libvlc-v065/apply.py
       - name: Classify VLC technical literals for i18n verification
         working-directory: native-source/InterFlashTV-OwnTV
         run: |
@@ -519,16 +519,28 @@ jobs:
         run: |
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --version
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --channel=3 "platforms;android-37.0" "build-tools;36.0.0"
-      - name: Compile isolated 0.64 VLC debug APK
+      - name: Compile isolated 0.65 VLC-first debug APK
         working-directory: native-source/InterFlashTV-OwnTV
         env:
-          VERSION_CODE: '64'
-          VERSION_NAME: '0.64-vlc-aislado'
+          VERSION_CODE: '65'
+          VERSION_NAME: '0.65-vlc-directo'
         run: |
           chmod +x gradlew
           ./gradlew :app:assembleStandardDebug -Powntv.corePath=../OwnTV_Core-main -Pkotlin.compiler.execution.strategy=in-process --no-daemon --max-workers=2 -Dorg.gradle.jvmargs="-Xmx4g -XX:ActiveProcessorCount=2"
       - uses: actions/upload-artifact@v4
         with:
-          name: InterFlashTV-v0.64-VLC-PRUEBA
+          name: InterFlashTV-v0.65-VLC-SOLO-PRUEBA
           path: native-source/InterFlashTV-OwnTV/app/build/outputs/apk/standard/debug/*.apk
           if-no-files-found: error
+
+      - name: Record 0.65 build outcome
+        if: always()
+        run: |
+          mkdir -p experiments/v065
+          printf 'run_id=%s\\njob_status=%s\\ncommit=%s\\n' '${{ github.run_id }}' '${{ job.status }}' '${{ github.sha }}' > experiments/v065/build_status.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add experiments/v065/build_status.txt
+          git commit -m 'Record VLC 0.65 test build outcome' || true
+          git pull --rebase || true
+          git push || true

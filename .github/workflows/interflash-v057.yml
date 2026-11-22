@@ -1,8 +1,8 @@
-name: Inter Flash TV 0.62 APK
+name: Inter Flash TV 0.63 VLC TEST APK
 on:
   push:
-    branches: ['build/interflash-tv-v057-native']
-    paths: ['native-v057/READY', '.github/workflows/interflash-v057.yml']
+    branches: ['experiment/libvlc-live-v063']
+    paths: ['experiments/libvlc-v063/**', '.github/workflows/interflash-v057.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -487,22 +487,24 @@ jobs:
               subprocess.run(['python3', 'tools/i18n/check_hardcoded_strings.py', 'classify-safe', '--path', base + path, '--text', text, '--category', category], check=True)
           PY
           python3 tools/i18n/check_hardcoded_strings.py verify --bootstrap
+      - name: Integrate opt-in native LibVLC trial (existing engines kept intact)
+        run: python3 experiments/libvlc-v063/apply.py
       - name: List available SDK platforms
         run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --list | grep -E "platforms;android-3[67]"'
       - name: Install Android SDK
         run: |
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --version
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --channel=3 "platforms;android-37.0" "build-tools;36.0.0"
-      - name: Compile native 0.62
+      - name: Compile isolated 0.63 VLC debug APK
         working-directory: native-source/InterFlashTV-OwnTV
         env:
-          VERSION_CODE: '62'
-          VERSION_NAME: '0.62'
+          VERSION_CODE: '63'
+          VERSION_NAME: '0.63-vlc-prueba'
         run: |
           chmod +x gradlew
-          ./gradlew :app:assembleStandardRelease -Powntv.corePath=../OwnTV_Core-main -Pkotlin.compiler.execution.strategy=in-process --no-daemon --max-workers=2 -Dorg.gradle.jvmargs="-Xmx4g -XX:ActiveProcessorCount=2"
+          ./gradlew :app:assembleStandardDebug -Powntv.corePath=../OwnTV_Core-main -Pkotlin.compiler.execution.strategy=in-process --no-daemon --max-workers=2 -Dorg.gradle.jvmargs="-Xmx4g -XX:ActiveProcessorCount=2"
       - uses: actions/upload-artifact@v4
         with:
-          name: InterFlashTV-v0.62-UNSIGNED
-          path: native-source/InterFlashTV-OwnTV/app/build/outputs/apk/standard/release/*.apk
+          name: InterFlashTV-v0.63-VLC-PRUEBA
+          path: native-source/InterFlashTV-OwnTV/app/build/outputs/apk/standard/debug/*.apk
           if-no-files-found: error

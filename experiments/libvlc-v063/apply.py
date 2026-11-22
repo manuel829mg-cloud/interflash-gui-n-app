@@ -37,8 +37,8 @@ replace_one(build, 'dependencies {', '''dependencies {
     implementation("org.videolan.android:libvlc-all:3.7.7")''')
 
 
-// LibVLC and libmpv both package a C++ runtime; keep one in this test build.
-// This requires runtime validation on real Android TV devices before release.
+# LibVLC and libmpv both package a C++ runtime; keep one in this test build.
+# This requires runtime validation on real Android TV devices before release.
 replace_one(build, 'android {', '''android {
     packaging {
         jniLibs {

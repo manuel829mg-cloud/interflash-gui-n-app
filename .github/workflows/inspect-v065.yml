@@ -48,7 +48,7 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add experiments/v065/inspect.txt
-          git commit -m 'Record v0.65 source inspection on experiment branch'
+          git commit -m 'Record v0.65 source inspection on experiment branch' || true
           git push
       - name: Inspect precise playback and native dependencies
         run: |

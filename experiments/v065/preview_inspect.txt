@@ -1,0 +1,850 @@
+==== features/live/LiveScreen.kt ====
+--- 1-225 ---
+   1: package tv.own.owntv.features.live
+   2: 
+   3: import tv.own.owntv.core.epg.displayLogoUrl
+   4: import androidx.compose.foundation.background
+   5: import androidx.compose.foundation.focusGroup
+   6: import androidx.compose.foundation.rememberScrollState
+   7: import androidx.compose.foundation.verticalScroll
+   8: import androidx.compose.foundation.layout.Arrangement
+   9: import androidx.compose.foundation.layout.Box
+  10: import androidx.compose.foundation.layout.BoxWithConstraints
+  11: import androidx.compose.foundation.layout.Column
+  12: import androidx.compose.foundation.layout.Row
+  13: import androidx.compose.foundation.layout.Spacer
+  14: import androidx.compose.foundation.layout.fillMaxHeight
+  15: import androidx.compose.foundation.layout.fillMaxSize
+  16: import androidx.compose.foundation.layout.fillMaxWidth
+  17: import androidx.compose.foundation.layout.height
+  18: import androidx.compose.foundation.layout.width
+  19: import androidx.compose.foundation.layout.padding
+  20: import androidx.compose.foundation.layout.size
+  21: import androidx.compose.foundation.lazy.LazyColumn
+  22: import androidx.compose.foundation.lazy.items
+  23: import androidx.compose.runtime.Composable
+  24: import androidx.compose.runtime.DisposableEffect
+  25: import androidx.compose.runtime.LaunchedEffect
+  26: import androidx.compose.runtime.getValue
+  27: import androidx.compose.runtime.mutableStateOf
+  28: import androidx.compose.runtime.mutableStateMapOf
+  29: import androidx.compose.runtime.remember
+  30: import androidx.compose.runtime.rememberCoroutineScope
+  31: import androidx.compose.runtime.produceState
+  32: import androidx.compose.runtime.setValue
+  33: import androidx.compose.runtime.withFrameNanos
+  34: import kotlinx.coroutines.delay
+  35: import kotlinx.coroutines.launch
+  36: import androidx.compose.ui.Alignment
+  37: import androidx.compose.ui.Modifier
+  38: import androidx.compose.ui.focus.FocusRequester
+  39: import androidx.compose.ui.focus.FocusDirection
+  40: import androidx.compose.ui.focus.focusProperties
+  41: import androidx.compose.ui.focus.focusRequester
+  42: import androidx.compose.ui.focus.onFocusChanged
+  43: import androidx.compose.ui.input.key.key
+  44: import androidx.compose.ui.input.key.type
+  45: import androidx.compose.ui.input.key.onPreviewKeyEvent
+  46: import androidx.compose.ui.res.pluralStringResource
+  47: import androidx.compose.ui.res.stringResource
+  48: import androidx.compose.ui.unit.dp
+  49: import androidx.compose.ui.unit.Dp
+  50: import androidx.compose.ui.graphics.graphicsLayer
+  51: import androidx.compose.ui.layout.layout
+  52: import androidx.compose.foundation.gestures.scrollBy
+  53: import androidx.compose.ui.focus.FocusRequester as RowFocus
+  54: import tv.own.owntv.ui.theme.mpx
+  55: import androidx.lifecycle.compose.collectAsStateWithLifecycle
+  56: import androidx.paging.compose.collectAsLazyPagingItems
+  57: import androidx.paging.compose.itemContentType
+  58: import androidx.paging.compose.itemKey
+  59: import org.koin.androidx.compose.koinViewModel
+  60: import org.koin.compose.koinInject
+  61: import androidx.tv.material3.Text
+  62: import tv.own.owntv.R
+  63: import androidx.compose.ui.input.key.KeyEventType
+  64: import androidx.compose.ui.input.key.Key
+  65: import tv.own.owntv.core.customize.categoryRestoreSummary
+  66: import tv.own.owntv.core.customize.CategoryRestorePlan
+  67: import tv.own.owntv.core.customize.CustomizeKeys
+  68: import tv.own.owntv.core.database.entity.ChannelEntity
+  69: import tv.own.owntv.core.database.entity.ContentOrderEntity
+  70: import tv.own.owntv.features.customize.MoveToCategoryDialog
+  71: import tv.own.owntv.features.settings.SettingsViewModel
+  72: import tv.own.owntv.core.settings.PanelSection
+  73: import tv.own.owntv.features.settings.data.computePanelWidths
+  74: import tv.own.owntv.features.settings.rememberPanelShares
+  75: import tv.own.owntv.features.shell.components.CategoryContextMenu
+  76: import tv.own.owntv.ui.components.MoveOrderOverlay
+  77: import tv.own.owntv.ui.components.chNavPaging
+  78: import tv.own.owntv.ui.components.longPressMenuGuard
+  79: import tv.own.owntv.ui.components.trapAllFocusExit
+  80: import tv.own.owntv.core.model.ContentMenu
+  81: import tv.own.owntv.ui.components.MenuAction
+  82: import tv.own.owntv.ui.components.arranged
+  83: import tv.own.owntv.ui.components.OwnTVIcon
+  84: import tv.own.owntv.ui.components.OwnTVSpinner
+  85: import tv.own.owntv.ui.components.TextInputDialog
+  86: import tv.own.owntv.ui.components.gridFocusTarget
+  87: import tv.own.owntv.ui.format.rememberBestDateFormatter
+  88: import tv.own.owntv.ui.format.rememberSystemTimeFormatter
+  89: import tv.own.owntv.core.live.LiveKey
+  90: import tv.own.owntv.core.live.ProviderTags
+  91: 
+  92: /** Live TV: the channel list, the stage beside it and the categories as a sheet or a column. */
+  93: @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+  94: @Composable
+  95: fun LiveScreen(
+  96:     onFullscreen: () -> Unit,
+  97:     onChildFocused: () -> Unit,
+  98:     onTopMenu: () -> Unit = {},
+  99:     previewEnabled: Boolean = true,
+ 100:     isBrowsePlaying: Boolean = false,
+ 101:     browseTuneEnabled: Boolean = false,
+ 102:     onBrowseTune: (() -> Unit)? = null,
+ 103:     restoreFocus: Boolean = false,
+ 104:     onRestored: () -> Unit = {},
+ 105:     modifier: Modifier = Modifier,
+ 106:     /**
+ 107:      * Pins the list to one folder and takes the category rail away — how More → Favourites and
+ 108:      * More → History show channels without a second copy of this list existing.
+ 109:      */
+ 110:     lockedKey: LiveKey? = null,
+ 111:     /** Guide view (Live TV tool row): opens the TV Guide until an in-place guide exists. */
+ 112:     onOpenGuide: () -> Unit = {},
+ 113:     onPreviewVideoBoundsChanged: ((androidx.compose.ui.geometry.Rect?) -> Unit)? = null,
+ 114: ) {
+ 115:     val clientMode = !tv.own.owntv.features.shell.InterFlashClientMode.administrator
+ 116:     var clientFocusedChannelId by remember { mutableStateOf<Long?>(null) }
+ 117:     val vm: LiveViewModel = koinViewModel()
+ 118:     // Locking and unlocking are one pair: the pin belongs to this screen's lifetime, not to the view
+ 119:     // model's. On the television that view model is a single instance shared with the browse section,
+ 120:     // so a pin left behind froze its category rail. `DisposableEffect` (not `LaunchedEffect`) also
+ 121:     // means the pin is in place before the first frame, so the list never flashes the wrong folder.
+ 122:     if (lockedKey != null) {
+ 123:         val pinned = lockedKey
+ 124:         DisposableEffect(pinned) {
+ 125:             vm.lock(pinned)
+ 126:             onDispose { vm.unlock() }
+ 127:         }
+ 128:     }
+ 129:     val allRailItems by vm.railItems.collectAsStateWithLifecycle()
+ 130:     val railItems = if (clientMode) allRailItems.filter { it.key != LiveKey.History } else allRailItems
+ 131:     val providerNames by vm.providerNames.collectAsStateWithLifecycle()
+ 132:     val railFocus = remember { FocusRequester() }
+ 133:     val selectedKey by vm.selectedKey.collectAsStateWithLifecycle()
+ 134:     val count by vm.count.collectAsStateWithLifecycle()
+ 135:     val favoriteIds by vm.favoriteIds.collectAsStateWithLifecycle()
+ 136:     val showChannelNumbers by vm.showChannelNumbers.collectAsStateWithLifecycle()
+ 137:     val externalPlayerOn by vm.externalPlayerOn.collectAsStateWithLifecycle()
+ 138:     val catchupPlayer by vm.catchupPlayer.collectAsStateWithLifecycle()
+ 139:     val previewChannel by vm.previewChannel.collectAsStateWithLifecycle()
+ 140:     val previewCategoryName by vm.previewCategoryName.collectAsStateWithLifecycle()
+ 141:     val previewArmed by vm.previewArmed.collectAsStateWithLifecycle()
+ 142:     val previewBlockedSingleSession by vm.previewBlockedSingleSession.collectAsStateWithLifecycle()
+ 143:     val nowNext by vm.nowNext.collectAsStateWithLifecycle()
+ 144:     val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
+ 145:     /** The search field's keyboard is open — ◀ then moves the text cursor, not to Categories. */
+ 146:     var searchEditing by remember { mutableStateOf(false) }
+ 147:     val sortMode by vm.sortMode.collectAsStateWithLifecycle()
+ 148:     val livePreviewSetting by vm.livePreviewEnabled.collectAsStateWithLifecycle()
+ 149:     val channels = vm.channels.collectAsLazyPagingItems()
+ 150:     val moveState by vm.moveState.collectAsStateWithLifecycle()
+ 151:     val categoryMoveState by vm.categoryMoveState.collectAsStateWithLifecycle()
+ 152: 
+ 153:     // Current programme title for each loaded channel (id → title), against the stored guide. Drives
+ 154:     // the small "now playing" subtitle on each channel row. Channels with no guide are absent from the
+ 155:     // map → their row shows no second line.
+ 156:     //
+ 157:     // An appended page asks only about the channels it added; the view model keeps the rest. This
+ 158:     // used to re-query every loaded channel on every append and again every 60 seconds, which deep
+ 159:     // in a large category was a dozen chunked queries a minute to learn nothing new.
+ 160:     val nowPlaying by vm.nowPlaying.collectAsStateWithLifecycle()
+ 161:     val loadedChannels = channels.itemSnapshotList.items.filterNotNull()
+ 162:     LaunchedEffect(loadedChannels.size, loadedChannels.firstOrNull()?.id, loadedChannels.lastOrNull()?.id) {
+ 163:         vm.ensureNowPlaying(loadedChannels)
+ 164:     }
+ 165:     // Turnover happens on the minute, so wait for the next one rather than 60s from mount — otherwise
+ 166:     // rows change late and at different instants from each other.
+ 167:     LaunchedEffect(Unit) {
+ 168:         while (true) {
+ 169:             val now = System.currentTimeMillis()
+ 170:             kotlinx.coroutines.delay(60_000 - (now % 60_000))
+ 171:             vm.refreshNowPlaying(channels.itemSnapshotList.items.filterNotNull())
+ 172:         }
+ 173:     }
+ 174:     // Preview runs only when the player isn't busy (previewEnabled) AND the user hasn't turned it off.
+ 175:     val effectivePreview = !clientMode && previewEnabled && livePreviewSetting
+ 176: 
+ 177:     // NOTE: do NOT stop the player when LiveScreen leaves composition — going fullscreen disposes
+ 178:     // this screen, and stopping here would abort the stream that was just started. Playback is
+ 179:     // stopped on fullscreen exit (shell BackHandler) instead.
+ 180: 
+ 181:     // One playback owner: browse tuning uses the shell's existing live player, including
+ 182:     // its fallback engine. Cancel pending tuning when focus moves or fullscreen opens.
+ 183:     LaunchedEffect(previewChannel?.id, effectivePreview, previewArmed, browseTuneEnabled) {
+ 184:         if (clientMode || !previewArmed) return@LaunchedEffect
+ 185:         val ch = previewChannel ?: return@LaunchedEffect
+ 186:         if (browseTuneEnabled && !externalPlayerOn && onBrowseTune != null) {
+ 187:             delay(250)
+ 188:             vm.watchFullscreen(ch, channels.itemSnapshotList.items.filterNotNull())
+ 189:             onBrowseTune.invoke()
+ 190:         } else if (effectivePreview) {
+ 191:             delay(700)
+ 192:             vm.playPreview(ch)
+ 193:         }
+ 194:     }
+ 195: 
+ 196:     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+ 197:     val selFocus = remember { FocusRequester() }
+ 198:     val firstItemFocus = remember { FocusRequester() }
+ 199:     // Right from the rail on an empty list: the list's search box, so a search with no results can be cleared.
+ 200:     val listSearchFocus = remember { FocusRequester() }
+ 201: 
+ 202:     // CH+- key paging: shared settings + a hoisted rail state so the same modifier can page both the
+ 203:     // category rail and this channel list. Channel-list pane focus is tracked separately from rail
+ 204:     // focus so chNavPaging only consumes the keys for whichever pane is active.
+ 205:     val settingsVm: SettingsViewModel = koinViewModel()
+ 206:     val chNavEnabled by settingsVm.chNavEnabled.collectAsStateWithLifecycle()
+ 207:     val chNavUpSkip by settingsVm.chNavUpSkip.collectAsStateWithLifecycle()
+ 208:     val chNavDownSkip by settingsVm.chNavDownSkip.collectAsStateWithLifecycle()
+ 209:     val rememberLive by settingsVm.rememberLastLive.collectAsStateWithLifecycle()
+ 210: 
+ 211:     // "Remember last item per category": ON → each category keeps its own scroll position via a per-category
+ 212:     // state map (so A→B→A lands back where you were in A). OFF → reset the shared state to the top whenever
+ 213:     // the category changes (fixes the cross-category scroll-leak bug).
+ 214:     val perCategoryStates = remember { mutableStateMapOf<LiveKey, androidx.compose.foundation.lazy.LazyListState>() }
+ 215:     val perCategoryChannelIds = remember { mutableStateMapOf<LiveKey, Long>() }
+ 216:     val effectiveListState =
+ 217:         if (rememberLive) perCategoryStates.getOrPut(selectedKey) { androidx.compose.foundation.lazy.LazyListState() }
+ 218:         else listState
+ 219:     LaunchedEffect(selectedKey, rememberLive) {
+ 220:         if (!rememberLive) runCatching { listState.scrollToItem(0) }
+ 221:     }
+ 222:     val catListState = androidx.compose.foundation.lazy.rememberLazyListState()
+ 223:     val categoryQuery by vm.categoryQuery.collectAsStateWithLifecycle()
+ 224:     val scope = rememberCoroutineScope()
+ 225:     var channelPaneFocused by remember { mutableStateOf(false) }
+--- 790-912 ---
+ 790:                             val placeable = measurable.measure(
+ 791:                                 constraints.copy(
+ 792:                                     minWidth = constraints.minWidth + extra * 2, maxWidth = constraints.maxWidth + extra * 2,
+ 793:                                 ),
+ 794:                             )
+ 795:                             layout(constraints.maxWidth, constraints.maxHeight) { placeable.place(-extra, 0) }
+ 796:                         },
+ 797:                         contentPadding = androidx.compose.foundation.layout.PaddingValues(start = glowRoom, end = glowRoom, bottom = 16.mpx),
+ 798:                     ) {
+ 799:                         items(
+ 800:                             count = channels.itemCount,
+ 801:                             key = channels.itemKey { it.id },
+ 802:                             contentType = channels.itemContentType { "channel" },
+ 803:                         ) { index ->
+ 804:                             val channel = channels[index]
+ 805:                             if (channel != null) {
+ 806:                                 val isPreviewed by remember(channel.id) {
+ 807:                                     androidx.compose.runtime.derivedStateOf { previewChannel?.id == channel.id }
+ 808:                                 }
+ 809:                                 val isTarget by remember(channel.id) {
+ 810:                                     androidx.compose.runtime.derivedStateOf { targetChannelIdState.value == channel.id }
+ 811:                                 }
+ 812:                                 val parsed = remember(channel.name) { ProviderTags.parse(channel.name) }
+ 813:                                 LiveStageRow(
+ 814:                                     channel = channel,
+ 815:                                     name = parsed,
+ 816:                                     // The channel under the cursor answers from the preview itself, so the row
+ 817:                                     // and the stage beside it can never disagree.
+ 818:                                     now = if (isPreviewed) nowNext?.now ?: nowProgrammes[channel.id] else nowProgrammes[channel.id],
+ 819:                                     nowTitle = nowPlaying[channel.id],
+ 820:                                     isFavorite = favoriteIds.contains(channel.id),
+ 821:                                     showNumber = showChannelNumbers,
+ 822:                                     mark = playlistMarks[channel.sourceId],
+ 823:                                     modifier = Modifier.gridFocusTarget(
+ 824:                                         itemId = channel.id, index = index,
+ 825:                                         contextId = contextChannelId, contextFocus = contextFocus,
+ 826:                                         selectedId = if (isTarget) channel.id else null, selectedFocus = selFocus,
+ 827:                                         firstItemFocus = firstItemFocus,
+ 828:                                     ).focusRequester(rowFocus(index)).onPreviewKeyEvent { e ->
+ 829:                                         if (e.type != androidx.compose.ui.input.key.KeyEventType.KeyDown) return@onPreviewKeyEvent false
+ 830:                                         when (e.key) {
+ 831:                                             // The remote's Menu key opens the same menu as holding OK.
+ 832:                                             androidx.compose.ui.input.key.Key.Menu -> { contextChannel = channel; contextChannelId = channel.id; true }
+ 833:                                             // ◀ Categories: the sheet (Stage) or the column (Separate); pinned lists have none.
+ 834:                                             androidx.compose.ui.input.key.Key.DirectionLeft -> when {
+ 835:                                                 lockedKey != null -> false
+ 836:                                                 separate -> { runCatching { railFocus.requestFocus() }; true }
+ 837:                                                 else -> { categoriesOpen = true; true }
+ 838:                                             }
+ 839:                                             // ▶ Schedule: next / later under the stage; nothing else to the right.
+ 840:                                             androidx.compose.ui.input.key.Key.DirectionRight -> true
+ 841:                                             // ▲/▼ step by row number, not by focus search: a held key outran the
+ 842:                                             // lazy list at the edge or a page boundary and stopped.
+ 843:                                             androidx.compose.ui.input.key.Key.DirectionDown -> (stepTarget ?: index).let { from -> from + 1 < channels.itemCount && run { stepTo(from + 1); true } }
+ 844:                                             androidx.compose.ui.input.key.Key.DirectionUp -> (stepTarget ?: index).let { from ->
+ 845:                                                 when {
+ 846:                                                     from > 0 -> { stepTo(from - 1); true }
+ 847:                                                     clientMode -> { onTopMenu(); true }
+ 848:                                                     else -> false
+ 849:                                                 }
+ 850:                                             }
+ 851:                                             else -> false
+ 852:                                         }
+ 853:                                     },
+ 854:                                     onFocus = {
+ 855:                                         if (clientMode) clientFocusedChannelId = channel.id else vm.onChannelFocused(channel)
+ 856:                                         if (rememberLive) perCategoryChannelIds[selectedKey] = channel.id
+ 857:                                     },
+ 858:                                     onClick = {
+ 859:                                         if (clientMode && !externalPlayerOn) {
+ 860:                                             if (isBrowsePlaying && previewChannel?.id == channel.id) {
+ 861:                                                 // Expand the existing playback session without retuning.
+ 862:                                                 onFullscreen()
+ 863:                                             } else {
+ 864:                                                 vm.watchFullscreen(channel, channels.itemSnapshotList.items.filterNotNull())
+ 865:                                                 onBrowseTune?.invoke()
+ 866:                                             }
+ 867:                                         } else {
+ 868:                                             vm.watchFullscreen(channel, channels.itemSnapshotList.items.filterNotNull())
+ 869:                                             if (!externalPlayerOn) onFullscreen()
+ 870:                                         }
+ 871:                                     },
+ 872:                                     onLongClick = { contextChannel = channel; contextChannelId = channel.id },
+ 873:                                 )
+ 874:                             }
+ 875:                         }
+ 876:                     }
+ 877:                     }
+ 878:                 }
+ 879:             }
+ 880: 
+ 881:             if (previewShown) {
+ 882:                 LiveStagePane(
+ 883:                     channel = previewChannel,
+ 884:                     channelName = previewChannel?.let { ProviderTags.parse(it.name).name },
+ 885:                     nowNext = nowNext,
+ 886:                     previewEngine = vm.previewEngine,
+ 887:                     showVideo = effectivePreview,
+ 888:                     singleSessionBlocked = previewBlockedSingleSession,
+ 889:                     scheduleFocus = scheduleFocus,
+ 890:                     onOpenProgramme = { p -> previewChannel?.let { openProgramme = it to p } },
+ 891:                     onBackToList = { focusCurrentRow() },
+ 892:                     onVideoBoundsChanged = onPreviewVideoBoundsChanged,
+ 893:                     modifier = Modifier
+ 894:                         .padding(start = screenW - margin - stageW, top = if (clientMode) 96.mpx else 120.mpx)
+ 895:                         .width(stageW),
+ 896:                 )
+ 897:             }
+ 898:         }
+ 899: 
+ 900:         if (categoriesOpen) {
+ 901:             LiveCategories(
+ 902:                 entries = categoryEntries,
+ 903:                 selectedIndex = selectedIndex,
+ 904:                 groupsHeading = groupsHeading,
+ 905:                 sheet = true,
+ 906:                 listState = catListState,
+ 907:                 onSelect = onCategorySelect,
+ 908:                 onLongSelect = onCategoryLongSelect,
+ 909:                 onNavigateRight = { categoriesOpen = false; focusChannelList() },
+ 910:                 focusRequester = railFocus,
+ 911:                 focusRowIndex = railFocusRow,
+ 912:                 onRowFocused = { railFocusRow = null },
+--- 1000-1080 ---
+1000:     matchingEpg?.let { ch ->
+1001:         EpgMatchDialog(
+1002:             channelName = ch.name,
+1003:             currentMatch = vm.currentEpgMatch(ch),
+1004:             loadChannels = { q -> vm.availableEpgChannels(ch.name, q) },
+1005:             onPick = { epgId -> vm.setEpgMatch(ch, epgId); matchingEpg = null },
+1006:             onClear = { vm.setEpgMatch(ch, null); matchingEpg = null },
+1007:             onDismiss = { matchingEpg = null },
+1008:         )
+1009:     }
+1010: 
+1011:     offsettingEpg?.let { ch ->
+1012:         EpgOffsetDialog(
+1013:             channelName = ch.name,
+1014:             currentMinutes = vm.currentEpgShift(ch),
+1015:             globalMinutes = vm.globalEpgShift(),
+1016:             onSet = { vm.setEpgShift(ch, it) },
+1017:             onDismiss = { offsettingEpg = null },
+1018:         )
+1019:     }
+1020: 
+1021:     // Long-press a channel → quick actions.
+1022:     contextChannel?.let { ch ->
+1023:         ChannelContextMenu(
+1024:             channel = ch,
+1025:             title = ch.name,
+1026:             subtitle = listOfNotNull(headerLabel, vm.sourceNameOf(ch.sourceId)).joinToString(" · "),
+1027:             isFavorite = favoriteIds.contains(ch.id),
+1028:             epgMatchManual = vm.currentEpgMatch(ch) != null,
+1029:             epgShiftMinutes = vm.currentEpgShift(ch),
+1030:             canMove = selectedKey is LiveKey.Folder || selectedKey is LiveKey.Custom || selectedKey == LiveKey.Favorites,
+1031:             isHistory = selectedKey == LiveKey.History,
+1032:             onToggleFavorite = { vm.toggleFavorite(ch); contextChannel = null },
+1033:             onRename = { renaming = ch; contextChannel = null },
+1034:             onHide = { vm.hideChannel(ch); contextChannel = null },
+1035:             onMatchEpg = { matchingEpg = ch; contextChannel = null },
+1036:             onEpgOffset = { offsettingEpg = ch; contextChannel = null },
+1037:             onCatchup = { catchupChannel = ch; contextChannel = null },
+1038:             isRecording = ch.id in recordingChannelIds,
+1039:             onRecord = { if (ch.id in recordingChannelIds) vm.stopRecordingOn(ch) else vm.recordNow(ch); contextChannel = null },
+1040:             onScheduleRecord = { schedulingChannel = ch; contextChannel = null },
+1041:             onPlayExternal = { vm.playExternal(ch); contextChannel = null },
+1042:             // Only offered once Multiview is switched on. Adding is silent apart from the toast: the
+1043:             // grid opens when the user plays a channel, which is the gesture that says "now".
+1044:             onAddToMultiview = if (multiviewEnabled) {
+1045:                 {
+1046:                     vm.addToMultiview(ch, multiviewTiles)
+1047:                     multiviewToast.show(
+1048:                         multiviewRes.getString(
+1049:                             R.string.multiview_added,
+1050:                             vm.multiviewSelection.value.size,
+1051:                             multiviewTiles,
+1052:                         ),
+1053:                     )
+1054:                     contextChannel = null
+1055:                 }
+1056:             } else {
+1057:                 null
+1058:             },
+1059:             onMove = { contextChannel = null; enteringMoveMode = true; vm.enterMoveMode(ch, selectedKey) },
+1060:             onMoveToCategory = {
+1061:                 moveOriginKey = when (val k = selectedKey) {
+1062:                     is LiveKey.Folder -> vm.folderKey(k.id)
+1063:                     is LiveKey.Custom -> k.id
+1064:                     LiveKey.Favorites -> ContentOrderEntity.FAV_CONTEXT
+1065:                     else -> null
+1066:                 }
+1067:                 moveOriginName = railItems.firstOrNull { it.key == selectedKey }?.title
+1068:                 moveItem = ch
+1069:                 contextChannel = null
+1070:             },
+1071:             onRemoveFromHistory = { vm.removeFromHistory(ch.id); contextChannel = null },
+1072:             onRemoveFromCategory = (selectedKey as? LiveKey.Custom)?.let { k -> { vm.removeFromCustomCategory(ch, k); contextChannel = null } },
+1073:             onDismiss = { contextChannel = null },
+1074:         )
+1075:     }
+1076: 
+1077:     val scheduledDay = tv.own.owntv.ui.format.rememberBestDateFormatter("EEEMMMd")
+1078:     val scheduledTime = tv.own.owntv.ui.format.rememberSystemTimeFormatter()
+1079:     schedulingChannel?.let { ch ->
+1080:         ScheduleRecordingDialog(
+==== features/live/LiveViewModel.kt ====
+--- 925-1053 ---
+ 925:             if (!settings.rememberLastLive.first()) return@launch
+ 926:             val savedId = settings.lastLiveChannelId.first()
+ 927:             if (savedId > 0 && _previewChannel.value == null) {
+ 928:                 ctx.first { it.profileId >= 0 }
+ 929:                 channelDao.getById(savedId)?.let { if (_previewChannel.value == null) _previewChannel.value = it }
+ 930:             }
+ 931:         }
+ 932:     }
+ 933: 
+ 934:     fun setSearchQuery(query: String) {
+ 935:         _search.value = query
+ 936:     }
+ 937: 
+ 938:     fun onChannelFocused(channel: ChannelEntity) {
+ 939:         _previewArmed.value = true // a real user focus — the in-pane preview may now play
+ 940:         _previewChannel.value = channel
+ 941:     }
+ 942: 
+ 943:     /** Search's "Go to channel": the list scrolls to [reveal] and focuses it, then calls [revealDone]. */
+ 944:     private val _reveal = MutableStateFlow<tv.own.owntv.features.search.Reveal?>(null)
+ 945:     val reveal: StateFlow<tv.own.owntv.features.search.Reveal?> = _reveal.asStateFlow()
+ 946: 
+ 947:     /** Open [channel] where it lives: its own category, or All channels when that category is not in
+ 948:      *  the rail or the channel is not in it. It becomes the preview, as if the user had walked there. */
+ 949:     fun revealChannel(channel: ChannelEntity) {
+ 950:         _search.value = ""
+ 951:         _previewArmed.value = true
+ 952:         _previewChannel.value = channel
+ 953:         viewModelScope.launch {
+ 954:             val c = ctx.first { it.profileId >= 0 }
+ 955:             val sort = settings.sortLive.first()
+ 956:             val folder = channel.categoryId?.let { LiveKey.Folder(it) }
+ 957:             val inRail = folder != null &&
+ 958:                 kotlinx.coroutines.withTimeoutOrNull(2_000) { railItems.first { list -> list.any { it.key == folder } } } != null
+ 959:             for (key in listOfNotNull(folder.takeIf { inRail }, LiveKey.All)) {
+ 960:                 val position = pagingSource(key, c, "", sort).positionOf(channel.id, { it.id }) ?: continue
+ 961:                 if (lockedKey == null) _selected.value = key
+ 962:                 _reveal.value = tv.own.owntv.features.search.Reveal(key, channel.id, position)
+ 963:                 return@launch
+ 964:             }
+ 965:         }
+ 966:     }
+ 967: 
+ 968:     fun revealDone() { _reveal.value = null }
+ 969: 
+ 970:     /** The rail entry [channel] lives in: its own category, or All channels when that category is not in the rail. */
+ 971:     suspend fun railKeyOf(channel: ChannelEntity): LiveKey {
+ 972:         val folder = channel.categoryId?.let { LiveKey.Folder(it) } ?: return LiveKey.All
+ 973:         val inRail = kotlinx.coroutines.withTimeoutOrNull(2_000) { railItems.first { list -> list.any { it.key == folder } } } != null
+ 974:         return if (inRail) folder else LiveKey.All
+ 975:     }
+ 976: 
+ 977:     // The in-pane preview only plays once the user has actually focused a channel — so restoring the last
+ 978:     // focused channel on startup positions focus & the details pane WITHOUT auto-previewing on launch (#6).
+ 979:     private val _previewArmed = MutableStateFlow(false)
+ 980:     val previewArmed: StateFlow<Boolean> = _previewArmed.asStateFlow()
+ 981: 
+ 982: 
+ 983:     /**
+ 984:      * Live routing, the fallback ladder, the ExoPlayer ⇄ mpv handovers, the Stalker reconnect link and
+ 985:      * the preview pane's engine — core's, the same code the phone runs. What stays here is the
+ 986:      * television's own: which channel is on screen, the zap list, history, catch-up and the HUD state.
+ 987:      */
+ 988:     private val live = tv.own.owntv.player.LiveTuneController(
+ 989:         scope = viewModelScope,
+ 990:         engines = tv.own.owntv.player.EnginePair(previewEngine, player),
+ 991:         host = tv.own.owntv.player.LiveTuneController.CoreHost(
+ 992:             context = appContext,
+ 993:             settings = settings,
+ 994:             sourceDao = sourceDao,
+ 995:             resolver = streamUrlResolver,
+ 996:             forceMpvStore = forceMpvStore,
+ 997:             label = ::channelNumberLabel,
+ 998:             // The warm playlist map, so a preview on a focus step never waits on the database.
+ 999:             sourceLookup = { id -> sourceById[id] },
+1000:             // A handover re-opens the channel at its live edge: the rewind is over.
+1001:             backToLiveEdge = { clearTimeshift() },
+1002:             downloadHolds = downloadWatchGuard::holdsOnlyStream,
+1003:         ),
+1004:     )
+1005: 
+1006:     // True while the in-pane preview is suppressed because the provider allows one stream at a time and
+1007:     // that stream is already in use (full-screen playback). The pane says so instead of sitting silently
+1008:     // dead — otherwise "no preview" looks like a broken channel.
+1009:     val previewBlockedSingleSession: StateFlow<Boolean> = live.previewBlockedSingleSession
+1010: 
+1011:     /** In-pane preview playback (no history) — triggered by the UI after the focus settles. */
+1012:     fun playPreview(channel: ChannelEntity) {
+1013:         if (channel.categoryId != null && channel.categoryId in hiddenCategoryIds.value) return
+1014:         // Core keeps the preview off a promoted full-screen stream, re-mutes on a re-focus instead of
+1015:         // reloading, mints a Stalker link, and holds back on a one-session panel while mpv plays.
+1016:         live.preview(channel, muted = !livePreviewAudio.value)
+1017:     }
+1018: 
+1019:     // --- Multiview: channels kept from the browse screen ------------------------------------------
+1020:     // The plan's second entry point: pick two to four channels from the Live list, then press play and
+1021:     // the grid opens already filled. Held here rather than in the shell because the context menu that
+1022:     // fills it and the player that empties it are two different screens.
+1023:     private val _multiviewSelection = MutableStateFlow<List<ChannelEntity>>(emptyList())
+1024:     val multiviewSelection: StateFlow<List<ChannelEntity>> = _multiviewSelection.asStateFlow()
+1025: 
+1026:     /** Keep [channel] for the grid, up to [limit] tiles. Adding one twice does nothing. */
+1027:     fun addToMultiview(channel: ChannelEntity, limit: Int) {
+1028:         val current = _multiviewSelection.value
+1029:         if (current.any { it.id == channel.id } || current.size >= limit) return
+1030:         _multiviewSelection.value = current + channel
+1031:     }
+1032: 
+1033:     fun clearMultiviewSelection() {
+1034:         _multiviewSelection.value = emptyList()
+1035:     }
+1036: 
+1037:     /** The playlist a channel came from, so a caller can ask what it allows (Multiview's tile budget). */
+1038:     fun sourceOf(channel: ChannelEntity): SourceEntity? = sourceById[channel.sourceId]
+1039: 
+1040:     /** The channel's own headers plus its playlist's Referer, unless the channel names one itself. */
+1041:     private fun headersFor(channel: ChannelEntity): String? =
+1042:         SourceOverrides.headersWithReferer(channel.httpHeaders, sourceById[channel.sourceId])
+1043: 
+1044:     /**
+1045:      * Tune [channel] into a Multiview tile's own engine.
+1046:      *
+1047:      * Deliberately routed through here rather than built in the grid: which URL a channel actually
+1048:      * plays is not a property of the channel row. It is the playlist's pre-buffer override, its live
+1049:      * latency, its User-Agent, the channel's own headers and DRM, and — for Stalker — a `cmd` that
+1050:      * has to be resolved to a link per play. All of that already lives here, and a second copy in the
+1051:      * grid would drift the first time one of them changed.
+1052:      */
+1053:     fun tuneTile(engine: tv.own.owntv.player.LivePreviewEngine, channel: ChannelEntity, muted: Boolean) {
+--- 1500-1538 ---
+1500:         raw
+1501:             .filter { isChannelVisible(it, cust, hiddenCats) }
+1502:             .map { ch -> cust.itemNames[CustomizeKeys.channel(ch)]?.let { ch.copy(name = it) } ?: ch }
+1503:     }
+1504: 
+1505:     /** "External player" is on for Live TV — the screen must NOT open the fullscreen in-app player
+1506:      *  (mounting it spins up an engine even though the channel went to the external app). */
+1507:     val externalPlayerOn: StateFlow<Boolean> = settings.externalPlayerLive
+1508:         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+1509: 
+1510:     /** Hand [channel] to an external app (VLC, MX Player). Used by the Live TV long-press menu, and by
+1511:      *  [playChannel] when Live TV's external-player default is on. Stalker channels store a portal
+1512:      *  cmd rather than a URL, so it's resolved first — an external app can't mint one. */
+1513:     fun playExternal(channel: ChannelEntity) {
+1514:         viewModelScope.launch {
+1515:             val pid = currentProfileId() ?: return@launch
+1516:             if (!tv.own.owntv.core.content.AdultCategoryClassifier.allows(pid, channel.categoryId, profileDao, categoryDao)) return@launch
+1517:             val source = withContext(Dispatchers.IO) { sourceDao.getById(channel.sourceId) }
+1518:             val url = if (streamUrlResolver.needsResolve(source)) {
+1519:                 withContext(Dispatchers.IO) {
+1520:                     runCatching { streamUrlResolver.resolve(source!!, channel.streamUrl) }
+1521:                         .onFailure { Log.w(TAG, "stalker resolve failed channelId=${channel.id}", it) }
+1522:                         .getOrNull()
+1523:                 } ?: return@launch
+1524:             } else {
+1525:                 channel.streamUrl
+1526:             }
+1527:             externalPlayerLauncher.launch(
+1528:                 url = url,
+1529:                 title = channel.name,
+1530:                 userAgent = source?.userAgent,
+1531:                 httpHeaders = SourceOverrides.headersWithReferer(channel.httpHeaders, source),
+1532:             )
+1533:             recordLiveHistory(channel, immediate = true)
+1534:         }
+1535:     }
+1536: 
+1537:     /** Go full-screen on [channel]. Cancels any pending direct-tune zap rebuild first, so normal
+1538:      *  navigation always wins over an in-flight rebuild. ExoPlayer is the **primary** live engine
+==== features/shell/components/SettingsScreen.kt (live preview candidate) ====
+2061: 
+2062: /** The repository line More › About shows. */
+2063: internal const val GITHUB_REPO = "github.com/ahXN00/OwnTV"
+2064: internal const val TELEGRAM_LINK = "t.me/owntvplayer"
+2065: 
+2066: /**
+2067:  * Read-only viewer for the persisted playback error history: the last ~10 failures with their
+2068:  * plain-English reason, media spec, raw engine text, engine, stream type and device info — so users
+2069:  * who can't pull logcat can read/report what happened after dismissing the error screen.
+2070:  */
+2071: @Composable
+2072: internal fun String.playbackDisplayName(): String = when (trim().lowercase(java.util.Locale.ROOT)) {
+2073:     "mpv" -> stringResource(R.string.settings_player_mpv)
+2074:     "exoplayer", "exo" -> stringResource(R.string.settings_player_exoplayer)
+2075:     else -> this
+2076: }
+2077: 
+2078: /**
+2079:  * Warn before enabling Auto frame rate below Android 12, where smooth refresh-rate alternatives cannot
+2080:  * be queried and a mode switch can trigger a visible HDMI re-handshake.
+2081:  */
+2082: @Composable
+2083: internal fun AutoFrameRateWarningDialog(onEnable: () -> Unit, onDismiss: () -> Unit) {
+2084:     tv.own.owntv.ui.stage.StageConfirm(
+2085:         title = stringResource(R.string.settings_auto_frame_rate_warning_title),
+2086:         body = stringResource(R.string.settings_auto_frame_rate_warning_description, android.os.Build.VERSION.RELEASE),
+2087:         cancel = stringResource(R.string.settings_auto_frame_rate_keep_off),
+2088:         confirm = stringResource(R.string.settings_auto_frame_rate_turn_on_anyway),
+2089:         onConfirm = onEnable,
+2090:         onCancel = onDismiss,
+2091:         focusCancel = true,
+2092:     )
+2093: }
+2094: 
+2095: @Composable
+2096: internal fun LivePreviewPanelHiddenDialog(onDismiss: () -> Unit) {
+2097:     tv.own.owntv.ui.stage.StageNotice(
+2098:         title = stringResource(R.string.settings_live_preview_panel_hidden_title),
+2099:         body = stringResource(R.string.settings_live_preview_panel_hidden_description, *NO_ARGS),
+2100:         onDismiss = onDismiss,
+2101:     )
+2102: }
+2103: 
+2104: /** Stable, non-display choices for the history picker. */
+2105: private enum class HistoryScope(val type: tv.own.owntv.core.model.MediaType?, val labelRes: Int) {
+2106:     LIVE(tv.own.owntv.core.model.MediaType.LIVE, R.string.settings_history_live),
+2107:     MOVIES(tv.own.owntv.core.model.MediaType.MOVIE, R.string.settings_history_movies),
+2108:     SERIES(tv.own.owntv.core.model.MediaType.SERIES, R.string.settings_history_series),
+2109:     ALL(null, R.string.settings_history_all),
+2110: }
+2111: 
+2112: /**
+2113:  * Pick what watch history to clear: everything, or just Live TV / Movies / Series. Over a dimmed scrim;
+2114:  * Cancel is focused first so a stray OK doesn't wipe anything. [onClear] gets null for "all".
+2115:  */
+2116: @Composable
+2117: internal fun ClearHistoryDialog(
+2118:     onClear: (tv.own.owntv.core.model.MediaType?) -> Unit,
+2119:     onDismiss: () -> Unit,
+2120: ) {
+2121:     var pending by remember { mutableStateOf<HistoryScope?>(null) }
+2122:     val firstFocus = remember { FocusRequester() }
+2123:     LaunchedEffect(pending) { kotlinx.coroutines.delay(60); runCatching { firstFocus.requestFocus() } }
+2124:     val p = pending
+2125:     // One popup, two steps: what to clear, then "can't be undone" (focus on No). Back steps back first.
+2126:     tv.own.owntv.ui.stage.StagePopup(
+2127:         onDismiss = { if (pending != null) pending = null else onDismiss() },
+2128:         title = if (p == null) stringResource(R.string.settings_clear_history) else stringResource(R.string.settings_clear_history_confirm, stringResource(p.labelRes)),
+2129:         body = if (p == null) stringResource(R.string.settings_choose_history) else stringResource(R.string.settings_cannot_undo),
+2130:         width = 760.mpx,
+2131:         buttons = {
+2132:             if (p == null) {
+2133:                 tv.own.owntv.ui.stage.StageButton(stringResource(R.string.common_cancel), onClick = onDismiss, height = 56.mpx, textSize = 19)
+2134:             } else {
+2135:                 tv.own.owntv.ui.stage.StageButton(stringResource(R.string.settings_no), onClick = { pending = null }, height = 56.mpx, textSize = 19, modifier = Modifier.focusRequester(firstFocus))
+2136:                 tv.own.owntv.ui.stage.StageButton(stringResource(R.string.settings_yes_clear), onClick = { onClear(p.type) }, height = 56.mpx, textSize = 19, tinted = true)
+2137:             }
+2138:         },
+2139:     ) {
+2140:         if (p == null) {
+2141:             listOf(HistoryScope.LIVE to OwnTVIcon.LIVE_TV, HistoryScope.MOVIES to OwnTVIcon.MOVIES, HistoryScope.SERIES to OwnTVIcon.SERIES, HistoryScope.ALL to OwnTVIcon.TRASH).forEachIndexed { i, (scope, icon) ->
+2142:                 val all = scope == HistoryScope.ALL
+2143:                 tv.own.owntv.ui.stage.StagePopupOption(
+2144:                     title = stringResource(if (all) R.string.settings_all_history else scope.labelRes),
+2145:                     onClick = { pending = scope }, danger = all,
+2146:                     modifier = if (i == 0) Modifier.focusRequester(firstFocus) else Modifier,
+2147:                     leading = { tv.own.owntv.ui.stage.StagePopupIcon(icon, if (all) tv.own.owntv.ui.theme.StageColors.Danger else tv.own.owntv.ui.theme.StageColors.Text) },
+2148:                 )
+2149:             }
+2150:         }
+2151:     }
+2152: }
+2153: 
+2154: @Composable
+2155: internal fun fontFamilyLabel(family: AppFontFamily): String = stringResource(
+2156:     when (family) {
+2157:         AppFontFamily.LORA -> R.string.settings_font_lora
+2158:         AppFontFamily.SYSTEM_SANS -> R.string.settings_font_system_sans
+2159:         AppFontFamily.MONOSPACE -> R.string.settings_font_monospace
+2160:         AppFontFamily.PLAYFAIR_DISPLAY -> R.string.settings_font_playfair_display
+2161:         AppFontFamily.DANCING_SCRIPT -> R.string.settings_font_dancing_script
+2162:         AppFontFamily.POPPINS -> R.string.settings_font_poppins
+2163:         AppFontFamily.PLUS_JAKARTA_SANS -> R.string.settings_font_plus_jakarta_sans
+2164:     },
+2165: )
+2166: 
+2167: /** A stepper for shared popup geometry. Changes apply live to this dialog too. */
+2168: @Composable
+2169: private fun PopupSizeDialog(current: Int, onSet: (Int) -> Unit, onDismiss: () -> Unit) {
+2170:     // The value with a real-size sample popup above it: in the page's panel on a settings page,
+2171:     // a Stage popup elsewhere.
+2172:     val stepper: @Composable () -> Unit = {
+2173:         tv.own.owntv.features.settings.PanelStepper(
+2174:             value = stringResource(R.string.common_percent, current),
+2175:             onStep = { d -> onSet(PopupSizeScale.clamp(current + d * PopupSizeScale.STEP)) },
+2176:             onReset = { onSet(PopupSizeScale.DEFAULT) },
+2177:             onDone = onDismiss,
+2178:             preview = { tv.own.owntv.features.settings.PopupSizeSample(current) },
+2179:         )
+2180:     }
+2181:     if (tv.own.owntv.features.settings.panelEditor(onDismiss) { stepper() }) return
+2182:     tv.own.owntv.ui.stage.StagePopup(onDismiss = onDismiss, title = stringResource(R.string.settings_popup_size), body = stringResource(R.string.settings_popup_size_range, PopupSizeScale.MIN, PopupSizeScale.MAX)) { stepper() }
+2183: }
+2184: 
+2185: /** A stepper for the global UI scale. Changes apply live (the whole UI re-scales as you adjust). */
+2186: @Composable
+2187: private fun ZoomDialog(current: Int, onSet: (Int) -> Unit, onDismiss: () -> Unit) {
+2188:     // Zoom below LOW_RAM_WARN doubles the on-screen item count, which can OOM-crash 2 GB devices
+2189:     // the first step under it asks first (a Stage question, focus on Cancel). Accepting once
+2190:     // arms the rest of this session; if it was opened already below the line, don't nag.
+2191:     var lowZoomAccepted by remember { mutableStateOf(current < UiZoom.LOW_RAM_WARN) }
+2192:     var pendingLowZoom by remember { mutableStateOf<Int?>(null) }
+2193:     val stepper: @Composable () -> Unit = {
+2194:         tv.own.owntv.features.settings.PanelStepper(
+2195:             value = stringResource(R.string.common_percent, current),
+2196:             onStep = { d ->
+2197:                 val next = UiZoom.clamp(current + d * UiZoom.STEP)
+2198:                 if (d < 0 && next < UiZoom.LOW_RAM_WARN && !lowZoomAccepted) pendingLowZoom = next else onSet(next)
+2199:             },
+2200:             onReset = { onSet(UiZoom.DEFAULT) },
+2201:             onDone = onDismiss,
+2202:         )
+2203:     }
+2204:     // In the page's panel on a settings page, a Stage popup elsewhere.
+2205:     if (!tv.own.owntv.features.settings.panelEditor(onDismiss) { stepper() }) {
+2206:         tv.own.owntv.ui.stage.StagePopup(onDismiss = onDismiss, title = stringResource(R.string.settings_ui_zoom), body = stringResource(R.string.settings_ui_zoom_range, UiZoom.MIN, UiZoom.MAX)) { stepper() }
+2207:     }
+2208:     pendingLowZoom?.let { target ->
+2209:         tv.own.owntv.ui.stage.StageConfirm(
+2210:             title = stringResource(R.string.settings_low_zoom_warning_title),
+2211:             body = stringResource(R.string.settings_low_zoom_warning, UiZoom.LOW_RAM_WARN, UiZoom.LOW_RAM_WARN),
+2212:             confirm = stringResource(R.string.settings_low_zoom_accept),
+2213:             onConfirm = { lowZoomAccepted = true; pendingLowZoom = null; onSet(target) },
+2214:             onCancel = { pendingLowZoom = null },
+2215:             focusCancel = true,
+2216:         )
+2217:     }
+2218: }
+2219: 
+2220: /** Solid-interface radiance controls, kept together in one compact TV-safe popup. */
+2221: @Composable
+2222: private fun AmbientGlowDialog(
+2223:     glowEnabled: Boolean,
+2224:     pulseEnabled: Boolean,
+2225:     onToggleGlow: () -> Unit,
+2226:     onTogglePulse: () -> Unit,
+2227:     onDismiss: () -> Unit,
+2228: ) {
+2229:     // Two switches: in the page's panel, a Stage popup elsewhere.
+2230:     val rows: @Composable () -> Unit = {
+2231:         val first = remember { FocusRequester() }
+2232:         LaunchedEffect(Unit) { kotlinx.coroutines.delay(60); runCatching { first.requestFocus() } }
+2233:         Column(Modifier.trapAllFocusExit().focusGroup()) {
+2234:             tv.own.owntv.ui.stage.StagePopupOption(
+2235:                 title = stringResource(R.string.settings_ambient_glow_effect), onClick = onToggleGlow, modifier = Modifier.focusRequester(first),
+2236:                 trailing = { tv.own.owntv.ui.stage.StageSwitch(glowEnabled) },
+2237:             )
+2238:             if (glowEnabled) tv.own.owntv.ui.stage.StagePopupOption(
+2239:                 title = stringResource(R.string.settings_ambient_glow_pulse), onClick = onTogglePulse,
+2240:                 trailing = { tv.own.owntv.ui.stage.StageSwitch(pulseEnabled) },
+2241:             )
+2242:             Row(Modifier.fillMaxWidth().padding(top = 16.mpx), horizontalArrangement = Arrangement.End) {
+2243:                 tv.own.owntv.ui.stage.StageButton(stringResource(R.string.settings_done), onClick = onDismiss, height = 52.mpx, textSize = 18, tinted = true)
+2244:             }
+2245:         }
+2246:     }
+2247:     if (tv.own.owntv.features.settings.panelEditor(onDismiss) { rows() }) return
+2248:     tv.own.owntv.ui.stage.StagePopup(onDismiss = onDismiss, title = stringResource(R.string.settings_ambient_glow), body = stringResource(R.string.settings_ambient_glow_dialog_description)) { rows() }
+2249: }
+2250: 
+2251: /** The Glass & background page. Background selection stays nested here, so Back returns here. */
+2252: @Composable
+2253: private fun GlassEffectSettingsScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
+2254:     val settingsVm: SettingsViewModel = koinViewModel()
+2255:     val glassConfig by settingsVm.glassConfig.collectAsStateWithLifecycle()
+2256:     val bgImagePath by settingsVm.bgImagePath.collectAsStateWithLifecycle()
+2257:     var showBackgroundChooser by remember { mutableStateOf(false) }
+2258:     var showLocalPicker by remember { mutableStateOf(false) }
+2259:     var showRemotePicker by remember { mutableStateOf(false) }
+2260:     val ingestScope = rememberCoroutineScope()
+2261: 
+2262:     val background by settingsVm.backgroundConfig.collectAsStateWithLifecycle()
+2263:     GlassBackgroundPage(
+2264:         background = background,
+2265:         glassOn = glassConfig.enabled,
+2266:         alphaPercent = (glassConfig.alpha * 100).roundToInt(),
+2267:         onSetStyle = { style ->
+2268:             // Picture with no picture yet goes straight to the picker.
+2269:             settingsVm.setBackgroundStyle(style)
+2270:             if (style == tv.own.owntv.core.theme.BackgroundStyle.PICTURE && bgImagePath.isBlank()) showBackgroundChooser = true
+2271:         },
+2272:         onOpenPicture = { showBackgroundChooser = true },
+2273:         onSetLook = settingsVm::setPictureLook,
+2274:         onSetDim = settingsVm::setBackgroundDim,
+2275:         onSetBlur = settingsVm::setBackgroundBlur,
+2276:         onSetAccentLight = settingsVm::setBackgroundAccentLight,
+2277:         onToggleGlass = {
+2278:             settingsVm.setGlassScopeBitmask(
+2279:                 if (glassConfig.enabled) 0 else GlassConfig.ON_BITS,
+2280:             )
+2281:         },
+2282:         onSetAlpha = settingsVm::setGlassAlphaPercent,
+2283:         onReset = settingsVm::resetGlassAndBackground,
+2284:         onBack = onBack,
+2285:         modifier = modifier,
+2286:     )
+2287: 
+2288:     if (showBackgroundChooser) {
+2289:         BackgroundImageChooserDialog(
+2290:                 hasImage = bgImagePath.isNotBlank(),
+2291:                 onPickLocal = { showBackgroundChooser = false; showLocalPicker = true },
+2292:                 onPickRemote = { showBackgroundChooser = false; showRemotePicker = true },
+2293:                 onClear = { settingsVm.setBgImagePath(""); showBackgroundChooser = false },
+2294:                 onDismiss = { showBackgroundChooser = false },
+2295:             )
+2296:     }
+2297:     if (showRemotePicker) {
+2298:         val context = LocalContext.current
+2299:         val remoteState by settingsVm.remoteState.collectAsStateWithLifecycle()
+2300:         tv.own.owntv.ui.components.RemoteBackgroundDialog(
+2301:             state = remoteState,
+2302:             images = settingsVm.remoteImages,
+2303:             onStart = settingsVm::startRemoteImageListener,
+2304:             onStop = settingsVm::stopRemoteListener,
+2305:             onImageReceived = { file ->

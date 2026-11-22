@@ -50,3 +50,28 @@ jobs:
           git add experiments/v065/inspect.txt
           git commit -m 'Record v0.65 source inspection on experiment branch'
           git push
+      - name: Inspect precise playback and native dependencies
+        run: |
+          python3 - <<'PY' > experiments/v065/native_deps.txt
+          from pathlib import Path
+          root=Path('native-source/InterFlashTV-OwnTV')
+          for name,a,b in [('app/src/main/java/tv/own/owntv/features/live/LiveScreen.kt',850,880),('app/src/main/java/tv/own/owntv/features/live/LiveScreen.kt',1180,1235),('app/src/main/java/tv/own/owntv/features/live/LiveViewModel.kt',1535,1590),('player-core/build.gradle.kts',1,180)]:
+              p=root/name
+              print('====',name)
+              if not p.exists():print('MISSING');continue
+              lines=p.read_text().splitlines()
+              for i in range(a-1,min(b,len(lines))):print(f'{i+1:4d} {lines[i]}')
+          print('==== native runtime paths')
+          for p in Path('native-source').rglob('*.so'):
+              print(p)
+          print('==== module references to libmpv dependencies')
+          for p in root.rglob('build.gradle.kts'):
+              if any(x in str(p) for x in ['app','player-core']):
+                  for i,l in enumerate(p.read_text().splitlines(),1):
+                      if 'libmpv' in l or 'player.core' in l or 'native' in l or 'jniLibs' in l:print(p,i,l[:180])
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add experiments/v065/native_deps.txt
+          git commit -m 'Record native dependency map for VLC test' || true
+          git push

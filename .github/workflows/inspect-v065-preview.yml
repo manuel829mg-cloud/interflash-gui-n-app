@@ -1,0 +1,48 @@
+name: Inspect v0.65 VLC preview integration
+on:
+  push:
+    branches: ['experiment/libvlc-only-v065']
+    paths: ['.github/workflows/inspect-v065-preview.yml']
+permissions:
+  contents: write
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract relevant native source excerpts
+        run: |
+          cat native-v057/source.part*.b64 | base64 -d > /tmp/native.tar.xz
+          mkdir native-source
+          tar -xJf /tmp/native.tar.xz -C native-source
+          mkdir -p experiments/v065
+          python3 - <<'PY' > experiments/v065/preview_inspect.txt
+          from pathlib import Path
+          base = Path('native-source/InterFlashTV-OwnTV/app/src/main/java/tv/own/owntv')
+          files = {
+            'features/live/LiveScreen.kt': [(1,225),(790,912),(1000,1080)],
+            'features/live/LiveViewModel.kt': [(925,1053),(1500,1538)],
+          }
+          for rel,ranges in files.items():
+              p = base / rel
+              print(f'==== {rel} ====')
+              lines=p.read_text().splitlines()
+              for a,b in ranges:
+                  print(f'--- {a}-{b} ---')
+                  for i in range(a-1,min(b,len(lines))): print(f'{i+1:4d}: {lines[i]}')
+          for p in base.rglob('*.kt'):
+              code=p.read_text()
+              if 'fun LivePreviewPane' in code or 'fun LivePreview' in code and 'AndroidView' in code:
+                  print(f'==== {p.relative_to(base)} (live preview candidate) ====')
+                  lines=code.splitlines()
+                  marks=[i for i,x in enumerate(lines) if 'fun LivePreviewPane' in x or 'fun LivePreview' in x]
+                  for mark in marks:
+                      for i in range(max(0,mark-35),min(len(lines),mark+210)):print(f'{i+1:4d}: {lines[i]}')
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add experiments/v065/preview_inspect.txt
+          git commit -m 'Inspect native 0.65 preview source for VLC embed' || true
+          git pull --rebase || true
+          git push || true

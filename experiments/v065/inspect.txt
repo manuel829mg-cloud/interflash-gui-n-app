@@ -1,0 +1,491 @@
+==== features/live/LiveScreen.kt 1534 lines
+  79: import tv.own.owntv.ui.components.trapAllFocusExit
+  80: import tv.own.owntv.core.model.ContentMenu
+  81: import tv.own.owntv.ui.components.MenuAction
+  82: import tv.own.owntv.ui.components.arranged
+  83: import tv.own.owntv.ui.components.OwnTVIcon
+ 135:     val favoriteIds by vm.favoriteIds.collectAsStateWithLifecycle()
+ 136:     val showChannelNumbers by vm.showChannelNumbers.collectAsStateWithLifecycle()
+ 137:     val externalPlayerOn by vm.externalPlayerOn.collectAsStateWithLifecycle()
+ 138:     val catchupPlayer by vm.catchupPlayer.collectAsStateWithLifecycle()
+ 139:     val previewChannel by vm.previewChannel.collectAsStateWithLifecycle()
+ 140:     val previewCategoryName by vm.previewCategoryName.collectAsStateWithLifecycle()
+ 184:         if (clientMode || !previewArmed) return@LaunchedEffect
+ 185:         val ch = previewChannel ?: return@LaunchedEffect
+ 186:         if (browseTuneEnabled && !externalPlayerOn && onBrowseTune != null) {
+ 187:             delay(250)
+ 188:             vm.watchFullscreen(ch, channels.itemSnapshotList.items.filterNotNull())
+ 237:         mutableStateOf<Pair<ChannelEntity, tv.own.owntv.core.database.entity.EpgProgrammeEntity>?>(null)
+ 238:     }
+ 239:     var contextChannel by remember { mutableStateOf<ChannelEntity?>(null) } // long-press quick menu
+ 240:     // Multiview: whether the menu offers it at all, how many tiles the grid has, and the confirmation
+ 241:     // after a channel is kept (null = nothing to say).
+ 269:     // entry-redirect pinned it to the rail before selFocus.requestFocus() ran. Tracking the long-press
+ 270:     // target by id and binding a dedicated requester makes the restore deterministic.
+ 271:     var contextChannelId by remember { mutableStateOf<Long?>(null) }
+ 272:     val contextFocus = remember { FocusRequester() }
+ 273:     var enteringMoveMode by remember { mutableStateOf(false) }
+ 312:     // Land focus back on the long-pressed channel's row (or a sensible fallback if it's gone).
+ 313:     suspend fun restoreToContextRow() {
+ 314:         val targetId = contextChannelId
+ 315:         if (targetId == null) { runCatching { selFocus.requestFocus() }; return }
+ 316: 
+ 322:         } else {
+ 323:             // Row is gone (e.g. "Hide channel" removed it) — clear the anchor and land on the first row.
+ 324:             contextChannelId = null
+ 325:             runCatching { firstItemFocus.requestFocus() }
+ 326:         }
+ 327:     }
+ 328:     LaunchedEffect(contextChannel) {
+ 329:         val opened = contextChannel != null
+ 330:         if (opened) { contextMenuOpen = true; return@LaunchedEffect }
+ 331:         if (!contextMenuOpen) return@LaunchedEffect
+ 693:                                         // The remembered channel is the focus target, so it moves with the jump;
+ 694:                                         // focus by row number, which holds whatever the row's other requesters are.
+ 695:                                         if (clientMode) clientFocusedChannelId = item.id else vm.onChannelFocused(item)
+ 696:                                         if (rememberLive) perCategoryChannelIds[selectedKey] = item.id
+ 697:                                         withFrameNanos { }
+ 756:                         icon = OwnTVIcon.SORT,
+ 757:                         value = if (sortMode == tv.own.owntv.core.settings.SettingsRepository.SortMode.ALPHA) stringResource(R.string.settings_sort_alpha) else stringResource(R.string.content_epg_sort_provider),
+ 758:                         onClick = vm::toggleSort,
+ 759:                     )
+ 760:                     tv.own.owntv.ui.stage.StageTool(
+ 761:                         text = stringResource(R.string.content_live_guide_view),
+ 762:                         icon = OwnTVIcon.GRID,
+ 763:                         onClick = { if (!clientMode) onOpenGuide() },
+ 764:                     )
+ 765:                 }
+ 823:                                     modifier = Modifier.gridFocusTarget(
+ 824:                                         itemId = channel.id, index = index,
+ 825:                                         contextId = contextChannelId, contextFocus = contextFocus,
+ 826:                                         selectedId = if (isTarget) channel.id else null, selectedFocus = selFocus,
+ 827:                                         firstItemFocus = firstItemFocus,
+ 830:                                         when (e.key) {
+ 831:                                             // The remote's Menu key opens the same menu as holding OK.
+ 832:                                             androidx.compose.ui.input.key.Key.Menu -> { contextChannel = channel; contextChannelId = channel.id; true }
+ 833:                                             // ◀ Categories: the sheet (Stage) or the column (Separate); pinned lists have none.
+ 834:                                             androidx.compose.ui.input.key.Key.DirectionLeft -> when {
+ 853:                                     },
+ 854:                                     onFocus = {
+ 855:                                         if (clientMode) clientFocusedChannelId = channel.id else vm.onChannelFocused(channel)
+ 856:                                         if (rememberLive) perCategoryChannelIds[selectedKey] = channel.id
+ 857:                                     },
+ 858:                                     onClick = {
+ 859:                                         if (clientMode && !externalPlayerOn) {
+ 860:                                             if (isBrowsePlaying && previewChannel?.id == channel.id) {
+ 861:                                                 // Expand the existing playback session without retuning.
+ 867:                                         } else {
+ 868:                                             vm.watchFullscreen(channel, channels.itemSnapshotList.items.filterNotNull())
+ 869:                                             if (!externalPlayerOn) onFullscreen()
+ 870:                                         }
+ 871:                                     },
+ 872:                                     onLongClick = { contextChannel = channel; contextChannelId = channel.id },
+ 873:                                 )
+ 874:                             }
+ 884:                     channelName = previewChannel?.let { ProviderTags.parse(it.name).name },
+ 885:                     nowNext = nowNext,
+ 886:                     previewEngine = vm.previewEngine,
+ 887:                     showVideo = effectivePreview,
+ 888:                     singleSessionBlocked = previewBlockedSingleSession,
+ 942:             actions = tv.own.owntv.features.epg.guideProgrammeActions(
+ 943:                 epgVm, ch, p, System.currentTimeMillis(),
+ 944:                 onWatch = { vm.watchFullscreen(ch, emptyList()); if (!externalPlayerOn) onFullscreen() },
+ 945:                 onPlayFromStart = { vm.playCatchupProgramme(ch, p); if (!externalPlayerOn) onFullscreen() },
+ 946:                 onPickEpg = { contextChannelId = ch.id; matchingEpg = ch },
+ 947:                 onEpgOffset = { contextChannelId = ch.id; offsettingEpg = ch },
+ 948:                 autoMatch = false,
+ 949:             ),
+ 962:                 catchupChannel = null
+ 963:                 vm.playCatchupAt(ch, offset)
+ 964:                 if (!externalPlayerOn) onFullscreen()
+ 965:             },
+ 966:             onDismiss = { catchupChannel = null },
+ 978:             isFavorite = favoriteIds.contains(ch.id),
+ 979:             onToggleFavorite = { vm.toggleFavorite(ch) },
+ 980:             onWatch = { catchupDetail = null; vm.watchFullscreen(ch, emptyList()); if (!externalPlayerOn) onFullscreen() },
+ 981:             onPlayCatchup = { catchupDetail = null; vm.playCatchupProgramme(ch, prog); onFullscreen() },
+ 982:             // External: the archive went to another app, so don't mount the fullscreen player over it.
+ 983:             onPlayCatchupExternal = { catchupDetail = null; vm.playCatchupExternal(ch, prog) },
+ 984:             catchupPlayer = catchupPlayer,
+ 985:             onDismiss = { catchupDetail = null },
+ 986:             compact = true,
+1020: 
+1021:     // Long-press a channel → quick actions.
+1022:     contextChannel?.let { ch ->
+1023:         ChannelContextMenu(
+1024:             channel = ch,
+1030:             canMove = selectedKey is LiveKey.Folder || selectedKey is LiveKey.Custom || selectedKey == LiveKey.Favorites,
+1031:             isHistory = selectedKey == LiveKey.History,
+1032:             onToggleFavorite = { vm.toggleFavorite(ch); contextChannel = null },
+1033:             onRename = { renaming = ch; contextChannel = null },
+1034:             onHide = { vm.hideChannel(ch); contextChannel = null },
+1035:             onMatchEpg = { matchingEpg = ch; contextChannel = null },
+1036:             onEpgOffset = { offsettingEpg = ch; contextChannel = null },
+1037:             onCatchup = { catchupChannel = ch; contextChannel = null },
+1038:             isRecording = ch.id in recordingChannelIds,
+1039:             onRecord = { if (ch.id in recordingChannelIds) vm.stopRecordingOn(ch) else vm.recordNow(ch); contextChannel = null },
+1040:             onScheduleRecord = { schedulingChannel = ch; contextChannel = null },
+1041:             onPlayExternal = { vm.playExternal(ch); contextChannel = null },
+1042:             // Only offered once Multiview is switched on. Adding is silent apart from the toast: the
+1043:             // grid opens when the user plays a channel, which is the gesture that says "now".
+1052:                         ),
+1053:                     )
+1054:                     contextChannel = null
+1055:                 }
+1056:             } else {
+1057:                 null
+1058:             },
+1059:             onMove = { contextChannel = null; enteringMoveMode = true; vm.enterMoveMode(ch, selectedKey) },
+1060:             onMoveToCategory = {
+1061:                 moveOriginKey = when (val k = selectedKey) {
+1067:                 moveOriginName = railItems.firstOrNull { it.key == selectedKey }?.title
+1068:                 moveItem = ch
+1069:                 contextChannel = null
+1070:             },
+1071:             onRemoveFromHistory = { vm.removeFromHistory(ch.id); contextChannel = null },
+1072:             onRemoveFromCategory = (selectedKey as? LiveKey.Custom)?.let { k -> { vm.removeFromCustomCategory(ch, k); contextChannel = null } },
+1073:             onDismiss = { contextChannel = null },
+1074:         )
+1075:     }
+1193:     onRecord: () -> Unit,
+1194:     onScheduleRecord: () -> Unit,
+1195:     onPlayExternal: () -> Unit,
+1196:     // Null unless Multiview is switched on: keep this channel for the grid.
+1197:     onAddToMultiview: (() -> Unit)?,
+1213:     val watch = 0; val chan = 1; val guide = 2; val organise = 3
+1214:     val actions = buildList {
+1215:         if (channel.catchup) add(MenuAction("catchup", stringResource(R.string.content_catchup), OwnTVIcon.REWIND, group = watch, onClick = onCatchup))
+1216:         // Record this channel from now. The guide's Record needs a programme, so a channel
+1217:         // the provider publishes no guide for can only be recorded from here. While it records, the
+1218:         // same row stops it — pressing Record again would start a second copy on another connection.
+1219:         add(MenuAction("record", stringResource(if (isRecording) R.string.recording_stop else R.string.recording_record), OwnTVIcon.REC, group = watch, onClick = onRecord))
+1220:         add(MenuAction("schedule_record", stringResource(R.string.recording_schedule), OwnTVIcon.CLOCK, group = watch, onClick = onScheduleRecord))
+1221:         if (onAddToMultiview != null) {
+1222:             add(MenuAction("add_to_multiview", stringResource(R.string.multiview_add_to), OwnTVIcon.MULTIVIEW, group = watch, onClick = onAddToMultiview))
+1223:         }
+1224:         // Always offered, regardless of the Live TV external-player default — this is the per-channel
+1225:         // escape hatch for a stream neither in-app engine can open (same as Movies/Series/Downloads).
+1226:         add(MenuAction("play_external", stringResource(R.string.content_play_external_short), OwnTVIcon.EXTERNAL, group = watch, onClick = onPlayExternal))
+1227:         add(MenuAction("favourite", if (isFavorite) stringResource(R.string.content_remove_favourite) else stringResource(R.string.content_add_favourite), OwnTVIcon.FAVORITE, group = chan, onClick = onToggleFavorite))
+1228:         add(MenuAction("rename", stringResource(R.string.content_rename), OwnTVIcon.PENCIL, group = chan, onClick = onRename))
+1229:         add(MenuAction("hide", stringResource(R.string.content_hide_channel), OwnTVIcon.EYE_OFF, group = chan, onClick = onHide))
+1230:         if (isHistory) add(MenuAction("remove_history", stringResource(R.string.content_remove_history), OwnTVIcon.HISTORY, group = chan, onClick = onRemoveFromHistory))
+1231:         add(MenuAction("match_epg", stringResource(R.string.content_match_epg), OwnTVIcon.EPG, group = guide, onClick = onMatchEpg))
+1232:         add(MenuAction("epg_offset", stringResource(R.string.content_epg_time_offset), OwnTVIcon.CLOCK, group = guide, onClick = onEpgOffset))
+1233:         if (canMove) {
+1234:             add(MenuAction("move", stringResource(R.string.content_move), OwnTVIcon.MOVE, group = organise, onClick = onMove))
+1235:             add(MenuAction("move_to_category", stringResource(R.string.content_move_to_category), OwnTVIcon.FOLDER, group = organise, onClick = onMoveToCategory))
+1236:         }
+1237:         if (onRemoveFromCategory != null) {
+1238:             add(MenuAction("remove_from_category", stringResource(R.string.content_remove_from_category), OwnTVIcon.CLOSE, group = organise, onClick = onRemoveFromCategory))
+1239:         }
+1240:     }
+1276:                         iconFilled = action.icon == OwnTVIcon.REC,
+1277:                         value = values[action.key],
+1278:                         onClick = action.onClick,
+1279:                         modifier = if (index == 0) Modifier.focusRequester(focus) else Modifier,
+1280:                     )
+1336:         eyebrow = null,
+1337:         scroll = false,
+1338:         buttons = { tv.own.owntv.ui.stage.StageButton(stringResource(R.string.content_close), onClick = onDismiss, height = 56.mpx, textSize = 19) },
+1339:     ) {
+1340:         when (val progs = list) {
+1358:                     items(progs, key = { it.id }) { p ->
+1359:                         tv.own.owntv.ui.stage.StagePopupOption(
+1360:                             title = p.title, subtitle = formatCatchupTime(p.startMs, p.stopMs, formatTime), onClick = { onPick(p) },
+1361:                             modifier = if (p == progs.first()) Modifier.focusRequester(firstFocus) else Modifier,
+1362:                             leading = { tv.own.owntv.ui.stage.StagePopupIcon(tv.own.owntv.ui.components.OwnTVIcon.CATCHUP) },
+1435:                                 value = epg.epgChannelId.takeIf { epg.displayName != null },
+1436:                                 checked = epg.epgChannelId == currentMatch,
+1437:                                 onClick = { onPick(epg.epgChannelId) },
+1438:                                 modifier = if (epg == list.first()) Modifier.focusRequester(firstItemFocus) else Modifier,
+1439:                             )
+==== features/live/LiveViewModel.kt 2221 lines
+  84: import tv.own.owntv.player.LiveExoWatchdog
+  85: import tv.own.owntv.player.LiveProgramme
+  86: import tv.own.owntv.player.OwnTVPlayer
+  87: import tv.own.owntv.ui.components.OwnTVIcon
+  88: import tv.own.owntv.core.live.LiveTimeshift
+ 126:     /** Shared with the Guide: one now/next cache, so an invalidation reaches both screens. */
+ 127:     private val epgReader: LiveEpgReader,
+ 128:     val player: OwnTVPlayer,
+ 129:     val previewEngine: tv.own.owntv.player.LivePreviewEngine,
+ 130:     private val forceMpvStore: tv.own.owntv.core.player.ForceMpvStore,
+ 131:     private val contentOrderDao: ContentOrderDao,
+ 133:     private val streamUrlResolver: tv.own.owntv.core.stalker.StreamUrlResolver,
+ 134:     private val epgRepository: tv.own.owntv.core.repository.EpgRepository,
+ 135:     private val externalPlayerLauncher: tv.own.owntv.core.player.ExternalPlayerLauncher,
+ 136:     private val recordings: tv.own.owntv.core.recording.RecordingManager,
+ 137:     /** Keeps the preview pane off a one-stream playlist while a download is using it. */
+ 167:      * [RecordingManager.canRecordOn] is asked first — a refusal is a sentence, not a failed recording.
+ 168:      */
+ 169:     fun togglePlayerRecording(channel: ChannelEntity) {
+ 170:         viewModelScope.launch {
+ 171:             val open = _playerRecording.value
+ 386:     // Watch a catch-up-capable live channel a few minutes behind the live edge (a missed goal, etc.) using
+ 387:     // the provider's rolling archive (Xtream timeshift / M3U catchup), then jump back to live. The archive
+ 388:     // is a VOD-style stream on mpv (isArchive, mid-GOP tolerant); "Go to live" returns to ExoPlayer.
+ 389:     //
+ 390:     // How far back the user is, when to reload and the counters that run while an archive plays all live
+ 936:     }
+ 937: 
+ 938:     fun onChannelFocused(channel: ChannelEntity) {
+ 939:         _previewArmed.value = true // a real user focus — the in-pane preview may now play
+ 940:         _previewChannel.value = channel
+ 982: 
+ 983:     /**
+ 984:      * Live routing, the fallback ladder, the ExoPlayer ⇄ mpv handovers, the Stalker reconnect link and
+ 985:      * the preview pane's engine — core's, the same code the phone runs. What stays here is the
+ 986:      * television's own: which channel is on screen, the zap list, history, catch-up and the HUD state.
+ 988:     private val live = tv.own.owntv.player.LiveTuneController(
+ 989:         scope = viewModelScope,
+ 990:         engines = tv.own.owntv.player.EnginePair(previewEngine, player),
+ 991:         host = tv.own.owntv.player.LiveTuneController.CoreHost(
+ 992:             context = appContext,
+1010: 
+1011:     /** In-pane preview playback (no history) — triggered by the UI after the focus settles. */
+1012:     fun playPreview(channel: ChannelEntity) {
+1013:         if (channel.categoryId != null && channel.categoryId in hiddenCategoryIds.value) return
+1014:         // Core keeps the preview off a promoted full-screen stream, re-mutes on a re-focus instead of
+1051:      * grid would drift the first time one of them changed.
+1052:      */
+1053:     fun tuneTile(engine: tv.own.owntv.player.LivePreviewEngine, channel: ChannelEntity, muted: Boolean) {
+1054:         viewModelScope.launch { live.playTile(engine, channel, muted) }
+1055:     }
+1181:     }
+1182: 
+1183:     /** True when full-screen is running on the **ExoPlayer** engine (a promoted preview) rather than mpv.
+1184:      *  The shell renders the ExoPlayer surface instead of mpv's when this is set. */
+1185:     val liveOnExo: StateFlow<Boolean> = live.liveOnExo
+1186: 
+1188:     // on the next tune, so turning it off left the current channel audible until focus moved. Never while
+1189:     // promoted to full-screen (_liveOnExo): that stream is meant to be heard.
+1190:     // Declared HERE, below _liveOnExo/previewEngine: viewModelScope is Main.immediate, so this collector
+1191:     // starts inline during construction and must not touch a property initialized further down the class.
+1192:     init {
+1193:         viewModelScope.launch {
+1194:             livePreviewAudio.collect { on ->
+1195:                 if (!liveOnExo.value && previewEngine.currentUrl != null) previewEngine.setMuted(!on)
+1196:             }
+1197:         }
+1201:         // decoder re-tuning on every focus step is the heaviest background cost there. Lifted the moment
+1202:         // the channel goes full-screen, so the promoted stream switches up to its full variant.
+1203:         if (tv.own.owntv.core.player.PlayerBudget.of(appContext).lowSpec) {
+1204:             viewModelScope.launch {
+1205:                 liveOnExo.collect { fullScreen -> previewEngine.setMaxVideoHeight(if (fullScreen) null else PREVIEW_MAX_HEIGHT) }
+1206:             }
+1207:         }
+1209: 
+1210:     /** Called when anything OTHER than a promoted live channel takes over full-screen (a movie/episode,
+1211:      *  catch-up, an EPG/search channel — all play on mpv). Clears the ExoPlayer flag so the shell renders
+1212:      *  mpv's surface (not the leftover live channel) and stops the preview so it doesn't hold a connection. */
+1213:     /** Back out of full-screen to the Live screen: we're no longer full-screen on ExoPlayer, so the preview
+1214:      *  pane may re-take the engine (and re-apply the preview mute) on the next focus. Keeps the stream
+1215:      *  playing (no stop) — just clears the flag so [playPreview] works again. */
+1219:         // 1 Hz "behind live" ticker would otherwise keep running against nothing for the rest of the session.
+1220:         clearTimeshift()
+1221:         // With the in-pane preview enabled, the preview pane re-takes the ExoPlayer engine on the next
+1222:         // focus and re-applies the preview mute — so we can leave it running here. But when live preview
+1223:         // is OFF, nothing ever re-takes it, and the engine would keep decoding the (unmuted) channel's
+1226:     }
+1227: 
+1228:     fun clearLiveOnExo() {
+1229:         // A live tune still in flight would otherwise start over whatever takes mpv now.
+1230:         live.cancelTune()
+1283:      *
+1284:      *  Every live entry point funnels through here into [playChannel], so Prefer HLS, the
+1285:      *  ExoPlayer→mpv ladder, compatibility-mode pins, learned stream quirks, the per-playlist
+1286:      *  pre-buffer and the external-player toggle apply however the channel was found. */
+1287:     fun watchFromGuide(channel: ChannelEntity) {
+1360:      * bounded window, and the CH+/- anchor that covers the gap — is [LiveZapList.directTune].
+1361:      */
+1362:     suspend fun tuneByNumber(number: Int): tv.own.owntv.player.DirectTuneResult {
+1363:         try {
+1364:             val currentChannel = _previewChannel.value ?: return tv.own.owntv.player.DirectTuneResult.NotFound(number)
+1378:             } else null
+1379: 
+1380:             // DB queries on IO; playback on Main (ExoPlayer/mpv require main thread).
+1381:             val resolved = withContext(Dispatchers.IO) {
+1382:                 // Resolve hidden categories for sources not in the active set (source may have been removed).
+1505:     /** "External player" is on for Live TV — the screen must NOT open the fullscreen in-app player
+1506:      *  (mounting it spins up an engine even though the channel went to the external app). */
+1507:     val externalPlayerOn: StateFlow<Boolean> = settings.externalPlayerLive
+1508:         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+1509: 
+1510:     /** Hand [channel] to an external app (VLC, MX Player). Used by the Live TV long-press menu, and by
+1511:      *  [playChannel] when Live TV's external-player default is on. Stalker channels store a portal
+1512:      *  cmd rather than a URL, so it's resolved first — an external app can't mint one. */
+1513:     fun playExternal(channel: ChannelEntity) {
+1514:         viewModelScope.launch {
+1515:             val pid = currentProfileId() ?: return@launch
+1525:                 channel.streamUrl
+1526:             }
+1527:             externalPlayerLauncher.launch(
+1528:                 url = url,
+1529:                 title = channel.name,
+1536: 
+1537:     /** Go full-screen on [channel]. Cancels any pending direct-tune zap rebuild first, so normal
+1538:      *  navigation always wins over an in-flight rebuild. ExoPlayer is the **primary** live engine
+1539:      *  (instant for HLS, and it plays the channels mpv struggles to open): promote the running
+1540:      *  preview if it's already this channel, else (re)start ExoPlayer on it. We fall back to the
+1541:      *  full **mpv** player ONLY if ExoPlayer **errors** (a stream it can't open) — never just
+1542:      *  because it's still loading (clicking OK before the preview is ready used to drop to mpv and
+1543:      *  stick on a black screen for HLS). */
+1544:     fun ensurePlaying(channel: ChannelEntity) {
+1545:         // A deliberate pick, not a CH+/- step: an unclaimed zap press must not be timed against it.
+1546:         tv.own.owntv.player.ZapTiming.shared.clear()
+1555:         pendingZapTuneJob?.cancel()
+1556:         pendingZapTuneJob = null
+1557:         // Before the full-screen player is first drawn: a channel ExoPlayer is already previewing opens on
+1558:         // ExoPlayer's surface straight away, instead of on mpv's until the tune below gets there.
+1559:         live.expectPromotion(channel)
+1560:         // The controller's one tune job: a quicker second pick cancels the first wherever it has
+1566:         sourceById[sourceId] ?: sourceDao.getById(sourceId)
+1567: 
+1568:     /** Internal playback: the canonical ExoPlayer / mpv / Stalker / history side-effects for a
+1569:      *  channel. Direct-tune's background rebuild path calls this without cancelling the rebuild
+1570:      *  so the in-flight rebuild it owns isn't killed by its own play. */
+1571:     private suspend fun playChannel(channel: ChannelEntity) {
+1572:         val pid = currentProfileId() ?: return
+1573:         if (!tv.own.owntv.core.content.AdultCategoryClassifier.allows(pid, channel.categoryId, profileDao, categoryDao)) return
+1576:         // A protected channel stays in-app whatever this setting says: no standard intent extra
+1577:         // carries a licence URL, so the external player would open it and fail immediately.
+1578:         if (externalPlayerOn.value && channel.drmConfig == null) { playExternal(channel); return }
+1579:         _previewChannel.value = channel
+1580:         clearTimeshift() // normal live = not timeshifted
+1587: 
+1588:     /** HUD "compatibility mode" toggle: flip the current channel's engine and pin the choice. */
+1589:     fun toggleForceMpv() {
+1590:         // A catch-up archive is loaded, not the live stream: re-tuning here would replace the programme
+1591:         // the user is watching with the channel's CURRENT one. The HUD hides the toggle then too.
+1594:         // Not for a copy saved on this device: the other engine continues it at the same moment.
+1595:         if (timeshift.isRewound && live.localTimeshift.value == null) return
+1596:         live.toggleEngine()
+1597:     }
+1598: 
+1620:     /** Open a channel from a caller-owned rail (for example Home favorites), preserving that rail as the
+1621:      *  playback browse/zap context instead of replacing it with provider-category metadata. */
+1622:     suspend fun ensurePlayingByIdAsync(channelId: Long, zapChannels: List<ChannelEntity> = emptyList()): Boolean {
+1623:         val channel = channelDao.getById(channelId) ?: return false
+1624:         if (zapChannels.isEmpty()) {
+1670: 
+1671:     /** True while a catch-up **archive programme** is what's on screen, rather than the live stream.
+1672:      *  The HUD keys off this: an archive is VOD-style playback, so it must offer the mpv/ExoPlayer VOD
+1673:      *  engine toggle (which reloads the SAME archive URL at the same position) instead of Live TV's
+1674:      *  compatibility toggle — the latter re-tunes the live stream and drops you onto the current
+1679: 
+1680:     /** Which player takes a catch-up archive — read by the UI so "Watch from start" can route itself. */
+1681:     val catchupPlayer: StateFlow<SettingsRepository.CatchupPlayer> = settings.catchupPlayer
+1682:         .stateIn(viewModelScope, SharingStarted.Eagerly, SettingsRepository.CatchupPlayer.INTERNAL)
+1683: 
+1684:     /**
+1693:     val catchupUnavailable: SharedFlow<Unit> = _catchupUnavailable.asSharedFlow()
+1694: 
+1695:     /** Hand an archive programme to an external app (VLC, MX Player). No HUD, resume or engine toggle
+1696:      *  once it leaves, but external players cope with mid-GOP archive segments some providers serve. */
+1697:     fun playCatchupExternal(ch: ChannelEntity, programme: tv.own.owntv.core.database.entity.EpgProgrammeEntity) {
+1698:         viewModelScope.launch {
+1699:             val pid = currentProfileId() ?: return@launch
+1706:             // The same identity the in-app catch-up opens with: playlist User-Agent, the channel's own
+1707:             // headers and the playlist's Referer — a provider that checks them checks the archive too.
+1708:             externalPlayerLauncher.launch(
+1709:                 url, ch.name, programme.title,
+1710:                 userAgent = sourceById[ch.sourceId]?.userAgent,
+1720: 
+1721:     /** Replay a past programme from the channel's archive (seekable, like the Guide's "Watch from start"). */
+1722:     fun playCatchupProgramme(ch: ChannelEntity, programme: tv.own.owntv.core.database.entity.EpgProgrammeEntity) {
+1723:         // The controller's one tune job: a live tune still resolving is cancelled rather than starting
+1724:         // over the programme a moment later.
+1731:             }
+1732:             val sourceUa = withContext(Dispatchers.IO) { sourceDao.getById(ch.sourceId)?.userAgent }
+1733:             // The archive URL shape decides whether ExoPlayer can take it at all (progressive .ts vs
+1734:             // .m3u8 vs an extension-less panel endpoint), so log it redacted — it's the first thing
+1735:             // needed when the HUD's engine toggle can't get a catch-up programme playing.
+1739:             _catchupActive.value = true      // HUD: VOD engine toggle, not the live compatibility toggle
+1740:             playingCatchupProgramme = programme // …and the anchor auto-play continues from
+1741:             releaseForArchive() // catch-up is a VOD-style archive on mpv, not the live ExoPlayer channel
+1742:             // isLive=false → seekable archive; isArchive → mid-GOP tolerant (hardware first, software rescue).
+1743:             // Keyed on the channel's archive, not the time-specific URL; a Stalker archive gets a
+1764:      * of leaving the black screen a finished archive used to leave.
+1765:      *
+1766:      * The player raises [OwnTVPlayer.archiveEnded] because it cannot know what "next" is — that lives
+1767:      * in the guide. [CatchupContinue] decides between the next programme, the live stream and stopping;
+1768:      * everything here is the lookup.
+1791: 
+1792:     /**
+1793:      * The archive on screen stopped arriving ([OwnTVPlayer.archiveStalled]). A replay of a programme
+1794:      * still on air, or a rewind close to now, goes live instead of freezing; anything else stays with
+1795:      * the player's own recovery. The rule is core's [CatchupContinue.liveAfterStall].
+1877:      *  channel is not playing yet, so this also arms CH+/CH− and records the watch, exactly as tuning
+1878:      *  it live would. Without that the channel-list overlay and zapping stay dead for the session. */
+1879:     fun playCatchupAt(ch: ChannelEntity, offsetSec: Int) {
+1880:         if (!ch.catchup) return
+1881:         if (ch.categoryId != null && ch.categoryId in hiddenCategoryIds.value) return
+1898:     private fun clearTimeshift() { timeshift.clear() }
+1899: 
+1900:     /** Jump back to the real-time live edge (back on the fast ExoPlayer engine). */
+1901:     fun goToLive() {
+1902:         clearTimeshift()
+1926:         // localized context, so an in-session locale switch updates an already-visible subtitle.
+1927:         _previewChannel.value = ch
+1928:         clearLiveOnExo() // archive plays as a VOD-style mpv stream, not the live ExoPlayer channel
+1929:         player.play(
+1930:             url = archive.url,
+1965:      * actually have something airing right now.
+1966:      */
+1967:     suspend fun nowPlayingFor(channels: List<ChannelEntity>): Map<Long, tv.own.owntv.core.parser.XtEpgEntry> =
+1968:         epgReader.nowProgrammesFor(channels, custom.value, epgOffset.value)
+1969: 
+1976:      */
+1977:     private val nowPlayingCache = object : LinkedHashMap<Long, tv.own.owntv.core.parser.XtEpgEntry?>(256, 0.75f, true) {
+1978:         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, tv.own.owntv.core.parser.XtEpgEntry?>?) = size > MAX_NOW_PLAYING
+1979:     }
+1980: 
+1999:     private var nowPlayingJob: kotlinx.coroutines.Job? = null
+2000: 
+2001:     private fun publishNowPlaying(resolved: Map<Long, tv.own.owntv.core.parser.XtEpgEntry?>) {
+2002:         synchronized(nowPlayingCache) {
+2003:             nowPlayingCache.putAll(resolved)
+2006:     }
+2007: 
+2008:     private fun cachedNowPlaying(): Map<Long, tv.own.owntv.core.parser.XtEpgEntry?> = synchronized(nowPlayingCache) { HashMap(nowPlayingCache) }
+2009: 
+2010:     /** Forget every resolved title — the guide data or the offset moved underneath them. */
+2011:     private fun clearNowPlaying() {
+2012:         synchronized(nowPlayingCache) { nowPlayingCache.clear() }
+2013:         _nowPlaying.value = emptyMap()
+2022:      * almost nothing new. The phone has always done it this way; this is the television adopting it.
+2023:      */
+2024:     fun ensureNowPlaying(loaded: List<ChannelEntity>) {
+2025:         if (loaded.isEmpty()) return
+2026:         val known = cachedNowPlaying()
+2043:      * and at different instants from one another.
+2044:      */
+2045:     fun refreshNowPlaying(loaded: List<ChannelEntity>) {
+2046:         if (loaded.isEmpty()) return
+2047:         nowPlayingJob?.cancel()
+2159: 
+2160:     private companion object {
+2161:         const val ENGINE_TAG = "LiveEngine"
+2162: 
+2163:         /** How long a channel must stay tuned before it counts as watched — see [recordLiveHistory]. */
+2202: 
+2203:         /** How long mpv gets to produce a picture before the channel moves to the next rung of the
+2204:          *  ladder — see [watchMpvOutcome]. Looser than ExoPlayer's: mpv runs its own open watchdog
+2205:          *  (10s) plus a retry and a format alternate underneath this one, and cutting in before that
+2206:          *  finishes would throw away attempts that often succeed. */
+==== app dependencies
+47:         applicationId = "com.interflash.tv.player"
+203:         // Media3's player API surface is almost entirely @UnstableApi; this app is built on it, so
+219:             // Every .so we package is a prebuilt from a dependency (libmpv/FFmpeg, libc++_shared,
+382:     // Baseline profiles: installs the merged library profiles (Compose, Media3, Room, ...) into
+408:     // Media playback — libmpv (FFmpeg) is NOT declared here. `:player-core` exposes it as `api`, so it
+410:     // duplicate-class / duplicate-.so conflict the swap to OwnTV's own libmpv build ran into.
+411:     // Media3 / ExoPlayer — used ONLY for the VOD + image-subtitle (PGS/VOBSUB/DVB) handoff, where it
+412:     // keeps video zero-copy AND renders bitmap subs on its own layer (mpv's direct path can't). Not a
+413:     // sidecar: mpv is stopped first, so the provider only ever sees one connection.
+414:     implementation(libs.androidx.media3.exoplayer)
+415:     implementation(libs.androidx.media3.exoplayer.hls) // HLS (.m3u8) support for the Live preview engine
+418:     implementation(libs.androidx.media3.exoplayer.dash)
+419:     implementation(libs.androidx.media3.ui)
+420:     implementation(libs.androidx.media3.datasource.okhttp)

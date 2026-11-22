@@ -1,0 +1,169 @@
+==== app/src/main/java/tv/own/owntv/features/live/LiveScreen.kt
+ 850                                             }
+ 851                                             else -> false
+ 852                                         }
+ 853                                     },
+ 854                                     onFocus = {
+ 855                                         if (clientMode) clientFocusedChannelId = channel.id else vm.onChannelFocused(channel)
+ 856                                         if (rememberLive) perCategoryChannelIds[selectedKey] = channel.id
+ 857                                     },
+ 858                                     onClick = {
+ 859                                         if (clientMode && !externalPlayerOn) {
+ 860                                             if (isBrowsePlaying && previewChannel?.id == channel.id) {
+ 861                                                 // Expand the existing playback session without retuning.
+ 862                                                 onFullscreen()
+ 863                                             } else {
+ 864                                                 vm.watchFullscreen(channel, channels.itemSnapshotList.items.filterNotNull())
+ 865                                                 onBrowseTune?.invoke()
+ 866                                             }
+ 867                                         } else {
+ 868                                             vm.watchFullscreen(channel, channels.itemSnapshotList.items.filterNotNull())
+ 869                                             if (!externalPlayerOn) onFullscreen()
+ 870                                         }
+ 871                                     },
+ 872                                     onLongClick = { contextChannel = channel; contextChannelId = channel.id },
+ 873                                 )
+ 874                             }
+ 875                         }
+ 876                     }
+ 877                     }
+ 878                 }
+ 879             }
+ 880 
+==== app/src/main/java/tv/own/owntv/features/live/LiveViewModel.kt
+1510     /** Hand [channel] to an external app (VLC, MX Player). Used by the Live TV long-press menu, and by
+1511      *  [playChannel] when Live TV's external-player default is on. Stalker channels store a portal
+1512      *  cmd rather than a URL, so it's resolved first — an external app can't mint one. */
+1513     fun playExternal(channel: ChannelEntity) {
+1514         viewModelScope.launch {
+1515             val pid = currentProfileId() ?: return@launch
+1516             if (!tv.own.owntv.core.content.AdultCategoryClassifier.allows(pid, channel.categoryId, profileDao, categoryDao)) return@launch
+1517             val source = withContext(Dispatchers.IO) { sourceDao.getById(channel.sourceId) }
+1518             val url = if (streamUrlResolver.needsResolve(source)) {
+1519                 withContext(Dispatchers.IO) {
+1520                     runCatching { streamUrlResolver.resolve(source!!, channel.streamUrl) }
+1521                         .onFailure { Log.w(TAG, "stalker resolve failed channelId=${channel.id}", it) }
+1522                         .getOrNull()
+1523                 } ?: return@launch
+1524             } else {
+1525                 channel.streamUrl
+1526             }
+1527             externalPlayerLauncher.launch(
+1528                 url = url,
+1529                 title = channel.name,
+1530                 userAgent = source?.userAgent,
+1531                 httpHeaders = SourceOverrides.headersWithReferer(channel.httpHeaders, source),
+1532             )
+1533             recordLiveHistory(channel, immediate = true)
+1534         }
+1535     }
+1536 
+1537     /** Go full-screen on [channel]. Cancels any pending direct-tune zap rebuild first, so normal
+1538      *  navigation always wins over an in-flight rebuild. ExoPlayer is the **primary** live engine
+1539      *  (instant for HLS, and it plays the channels mpv struggles to open): promote the running
+1540      *  preview if it's already this channel, else (re)start ExoPlayer on it. We fall back to the
+1541      *  full **mpv** player ONLY if ExoPlayer **errors** (a stream it can't open) — never just
+1542      *  because it's still loading (clicking OK before the preview is ready used to drop to mpv and
+1543      *  stick on a black screen for HLS). */
+1544     fun ensurePlaying(channel: ChannelEntity) {
+1545         // A deliberate pick, not a CH+/- step: an unclaimed zap press must not be timed against it.
+1546         tv.own.owntv.player.ZapTiming.shared.clear()
+1547         startTune(channel)
+1548     }
+1549 
+1550     /** [ensurePlaying] without forgetting the zap press: the tune a CH+/- step opens, timed from that press. */
+1551     private fun startTune(channel: ChannelEntity) {
+1552         zapList.cancelPendingRebuild()
+1553         // A deliberate pick supersedes a CH+/- step still waiting out its delay — otherwise the deferred
+1554         // tune would land half a second later and drag the user off the channel they just chose.
+1555         pendingZapTuneJob?.cancel()
+1556         pendingZapTuneJob = null
+1557         // Before the full-screen player is first drawn: a channel ExoPlayer is already previewing opens on
+1558         // ExoPlayer's surface straight away, instead of on mpv's until the tune below gets there.
+1559         live.expectPromotion(channel)
+1560         // The controller's one tune job: a quicker second pick cancels the first wherever it has
+1561         // got to, so two picks can no longer finish in the wrong order.
+1562         live.launch { playChannel(channel) }
+1563     }
+1564 
+1565     private suspend fun getSource(sourceId: Long): tv.own.owntv.core.database.entity.SourceEntity? =
+1566         sourceById[sourceId] ?: sourceDao.getById(sourceId)
+1567 
+1568     /** Internal playback: the canonical ExoPlayer / mpv / Stalker / history side-effects for a
+1569      *  channel. Direct-tune's background rebuild path calls this without cancelling the rebuild
+1570      *  so the in-flight rebuild it owns isn't killed by its own play. */
+1571     private suspend fun playChannel(channel: ChannelEntity) {
+1572         val pid = currentProfileId() ?: return
+1573         if (!tv.own.owntv.core.content.AdultCategoryClassifier.allows(pid, channel.categoryId, profileDao, categoryDao)) return
+1574         // Live TV set to play externally: hand the channel over instead of tuning an in-app engine.
+1575         // History is still recorded, so the channel shows up in History/Recently watched either way.
+1576         // A protected channel stays in-app whatever this setting says: no standard intent extra
+1577         // carries a licence URL, so the external player would open it and fail immediately.
+1578         if (externalPlayerOn.value && channel.drmConfig == null) { playExternal(channel); return }
+1579         _previewChannel.value = channel
+1580         clearTimeshift() // normal live = not timeshifted
+1581         _catchupActive.value = false // tuning live ends any archive playback the HUD was showing
+1582         // Core routes it (DRM, the pin, a learned panel refusal, the playlist, the setting), arms the
+1583         // ladder and starts the engine — the same code the phone runs.
+1584         live.start(channel, getSource(channel.sourceId))
+1585         recordLiveHistory(channel)
+1586     }
+1587 
+==== player-core/build.gradle.kts
+MISSING
+==== app/build.gradle.kts
+ 395     // Database (Room, via KSP) + Paging
+ 396     implementation(libs.androidx.room.runtime)
+ 397     implementation(libs.androidx.room.ktx)
+ 398     implementation(libs.androidx.room.paging)
+ 399     ksp(libs.androidx.room.compiler)
+ 400     implementation(libs.androidx.paging.runtime)
+ 401     implementation(libs.androidx.paging.compose)
+ 402 
+ 403     // Networking
+ 404     implementation(libs.okhttp)
+ 405     implementation(libs.zxing.core) // QR generation for the Remote (companion) add-source flow
+ 406     implementation(libs.juniversalchardet) // local subtitle charset detection
+ 407 
+ 408     // Media playback — libmpv (FFmpeg) is NOT declared here. `:player-core` exposes it as `api`, so it
+ 409     // arrives with core, on core's version. Two hosts each naming their own copy is exactly the
+ 410     // duplicate-class / duplicate-.so conflict the swap to OwnTV's own libmpv build ran into.
+ 411     // Media3 / ExoPlayer — used ONLY for the VOD + image-subtitle (PGS/VOBSUB/DVB) handoff, where it
+ 412     // keeps video zero-copy AND renders bitmap subs on its own layer (mpv's direct path can't). Not a
+ 413     // sidecar: mpv is stopped first, so the provider only ever sees one connection.
+ 414     implementation(libs.androidx.media3.exoplayer)
+ 415     implementation(libs.androidx.media3.exoplayer.hls) // HLS (.m3u8) support for the Live preview engine
+ 416     // DASH (.mpd) — the container protected channels use. DefaultMediaSourceFactory only
+ 417     // builds a DASH source when this is on the classpath; without it a .mpd fails as "unsupported".
+ 418     implementation(libs.androidx.media3.exoplayer.dash)
+ 419     implementation(libs.androidx.media3.ui)
+ 420     implementation(libs.androidx.media3.datasource.okhttp)
+ 421 
+ 422     // In-app YouTube trailer playback — WebView-backed IFrame player; the only ToS-clean
+ 423     // way to play YouTube trailers inside the app. Falls back to an "Open in YouTube" intent.
+ 424     implementation(libs.youtube.player)
+ 425 
+ 426     // Image loading
+ 427     implementation(libs.coil.compose)
+ 428     implementation(libs.coil.network.okhttp)
+ 429 
+ 430     // Dependency injection
+ 431     implementation(platform(libs.koin.bom))
+ 432     implementation(libs.koin.android)
+ 433     implementation(libs.koin.androidx.compose)
+ 434 
+ 435 
+ 436     // Debug tooling
+ 437     debugImplementation(libs.androidx.compose.ui.tooling)
+ 438     debugImplementation(libs.androidx.compose.ui.test.manifest)
+ 439 
+ 440     // Test
+ 441     testImplementation(libs.junit)
+ 442     // Test-only, never packaged: android.jar's org.json is a stub, and isReturnDefaultValues turns
+ 443     // every JSONObject call into a silent null/0. Backup/restore is all JSON, so the unit tests need
+ 444     // the real implementation to mean anything.
+ 445     testImplementation(libs.org.json)
+ 446     androidTestImplementation(libs.androidx.junit)
+ 447     androidTestImplementation(libs.androidx.espresso.core)
+ 448 }
+==== bundled native shared objects

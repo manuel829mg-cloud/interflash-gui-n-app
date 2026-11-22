@@ -21,6 +21,14 @@ jobs:
           cat native-v057/source.part*.b64 | base64 -d > /tmp/native.tar.xz
           mkdir native-source
           tar -xJf /tmp/native.tar.xz -C native-source
+      - name: Inspect Android player dependencies for VLC compatibility
+        run: |
+          echo '=== App gradle configuration (excluding credentials) ==='
+          sed -n '1,230p' native-source/InterFlashTV-OwnTV/app/build.gradle.kts | grep -v -i -E 'password|token|secret|key=' | head -175
+          echo '=== MPV implementation paths ==='
+          rg -l 'libmpv|mpv-android|MpvPlayer|MPVPlayer|MPV' native-source/InterFlashTV-OwnTV/app/src/main/java native-source/OwnTV_Core-main | head -70 || true
+          echo '=== Player relevant source references ==='
+          rg -n 'MPV|mpv|PlayerEngine|PlayerType' native-source/InterFlashTV-OwnTV/app/src/main/java/tv/own/owntv/features/player native-source/InterFlashTV-OwnTV/app/src/main/java/tv/own/owntv/features/live | head -90 || true
       - name: Localize catalog label
         run: |
           python3 - <<'PY'

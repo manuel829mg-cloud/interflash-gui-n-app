@@ -5,7 +5,7 @@ on:
     paths: ['.github/workflows/inspect-v065.yml']
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 jobs:
   inspect:
     runs-on: ubuntu-latest
@@ -19,7 +19,8 @@ jobs:
           tar -xJf /tmp/native.tar.xz -C native-source
       - name: Examine channel click routes and player dependencies
         run: |
-          python3 - <<'PY'
+          mkdir -p experiments/v065
+          python3 - <<'PY' > experiments/v065/inspect.txt
           import re
           from pathlib import Path
           root=Path('native-source/InterFlashTV-OwnTV/app/src/main/java/tv/own/owntv')
@@ -44,3 +45,8 @@ jobs:
               if re.search(r'mpv|exo|media3|vlc|applicationId|native',l,re.I):
                   print(f'{i}: {l[:220]}')
           PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add experiments/v065/inspect.txt
+          git commit -m 'Record v0.65 source inspection on experiment branch'
+          git push

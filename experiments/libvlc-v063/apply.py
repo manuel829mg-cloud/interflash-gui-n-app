@@ -20,8 +20,18 @@ def replace_one(path: Path, old: str, new: str):
     path.write_text(s.replace(old, new, 1))
 
 build = app / "app/build.gradle.kts"
-replace_one(build, 'applicationId = "tv.own.owntv"',
-            'applicationId = "tv.own.owntv.vlctest"')
+# The recovered 0.62 archive can use the Inter Flash-specific application ID.
+# Replace the single Gradle declaration, not an assumed upstream ID.
+import re
+build_source = build.read_text()
+build_source, package_count = re.subn(
+    r'(?m)^(\s*applicationId\s*=\s*)"[^"]+"',
+    lambda m: m.group(1) + '"tv.own.owntv.vlctest"',
+    build_source,
+)
+if package_count != 1:
+    raise RuntimeError(f"Expected one applicationId in {build}; found {package_count}")
+build.write_text(build_source)
 replace_one(build, 'dependencies {', '''dependencies {
     // Isolated live-TV trial only. Existing ExoPlayer/libmpv engines are unchanged.
     implementation("org.videolan.android:libvlc-all:3.7.7")''')

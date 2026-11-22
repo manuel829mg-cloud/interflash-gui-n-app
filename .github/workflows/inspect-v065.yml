@@ -20,12 +20,22 @@ jobs:
           python3 - <<'PY' > experiments/v065/native_deps.txt
           from pathlib import Path
           root=Path('native-source/InterFlashTV-OwnTV')
-          for name,a,b in [('app/src/main/java/tv/own/owntv/features/live/LiveScreen.kt',850,880),('app/src/main/java/tv/own/owntv/features/live/LiveViewModel.kt',1510,1587),('player-core/build.gradle.kts',1,200),('app/build.gradle.kts',395,450)]:
+          for name,a,b in [('app/src/main/java/tv/own/owntv/features/live/LiveScreen.kt',850,880),('app/src/main/java/tv/own/owntv/features/live/LiveViewModel.kt',1510,1587),('app/build.gradle.kts',200,240),('app/build.gradle.kts',395,450)]:
               p=root/name
               print('====',name)
               if not p.exists(): print('MISSING'); continue
               lines=p.read_text().splitlines()
               for i in range(a-1,min(b,len(lines))): print(f'{i+1:4d} {lines[i]}')
+          print('==== core native library gradle files')
+          core=Path('native-source/OwnTV_Core-main')
+          for p in core.rglob('build.gradle.kts'):
+              rows=p.read_text().splitlines()
+              if 'player' in str(p) or any('libmpv' in x for x in rows):
+                  print('----',p)
+                  for i,line in enumerate(rows,1):
+                      if 'mpv' in line.lower() or 'native' in line.lower() or 'jni' in line.lower() or 'api(' in line:print(i,line[:240])
+          print('==== bundled AARs and native shared objects')
+          for p in Path('native-source').rglob('*.aar'): print(p)
           print('==== bundled native shared objects')
           for p in Path('native-source').rglob('*.so'):
               print(p)

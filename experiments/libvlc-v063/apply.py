@@ -36,6 +36,16 @@ replace_one(build, 'dependencies {', '''dependencies {
     // Isolated live-TV trial only. Existing ExoPlayer/libmpv engines are unchanged.
     implementation("org.videolan.android:libvlc-all:3.7.7")''')
 
+
+// LibVLC and libmpv both package a C++ runtime; keep one in this test build.
+// This requires runtime validation on real Android TV devices before release.
+replace_one(build, 'android {', '''android {
+    packaging {
+        jniLibs {
+            pickFirsts.add("**/libc++_shared.so")
+        }
+    }''')
+
 manifest = app / "app/src/main/AndroidManifest.xml"
 replace_one(manifest, '    </application>', '''        <!-- Separate, opt-in VLC experiment; never registered as a launcher. -->
         <activity android:name=".features.live.VlcTrialActivity"

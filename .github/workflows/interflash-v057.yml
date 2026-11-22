@@ -489,6 +489,22 @@ jobs:
           python3 tools/i18n/check_hardcoded_strings.py verify --bootstrap
       - name: Integrate opt-in native LibVLC trial (existing engines kept intact)
         run: python3 experiments/libvlc-v063/apply.py
+      - name: Classify VLC technical literals for i18n verification
+        working-directory: native-source/InterFlashTV-OwnTV
+        run: |
+          python3 - <<'PY'
+          import subprocess
+          base = 'app/src/main/java/tv/own/owntv/features/live/'
+          for name, value, category in [
+              ('LiveScreen.kt', 'vlc_trial', 'technical'),
+              ('LiveViewModel.kt', '', 'empty'),
+              ('LiveViewModel.kt', 'http://', 'url'),
+              ('LiveViewModel.kt', 'https://', 'url'),
+          ]:
+              subprocess.run(['python3','tools/i18n/check_hardcoded_strings.py','classify-safe',
+                              '--path',base + name,'--text',value,'--category',category], check=True)
+          PY
+          python3 tools/i18n/check_hardcoded_strings.py verify --bootstrap
       - name: List available SDK platforms
         run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --list | grep -E "platforms;android-3[67]"'
       - name: Install Android SDK

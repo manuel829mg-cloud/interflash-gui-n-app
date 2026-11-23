@@ -1,0 +1,58 @@
+name: Inspect VOD-only player routing from stable source
+on:
+  push:
+    branches: ['feature/vlc-vod-stable-update']
+    paths: ['.github/workflows/inspect-vlc-vod.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Recover stable Android source and inspect VOD entry points
+        run: |
+          cat native-v057/source.part*.b64 | base64 -d > /tmp/native.tar.xz
+          mkdir -p native-source
+          tar -xJf /tmp/native.tar.xz -C native-source
+          mkdir -p docs
+          python3 - <<'PY' > docs/vlc-vod-inspection.txt
+          from pathlib import Path
+          import re
+          root=Path('native-source/InterFlashTV-OwnTV/app/src/main/java/tv/own/owntv')
+          patterns=re.compile(r'playMovie|playEpisode|playSeries|playCatalogue|playExternal|playVod|playMedia|onPlay|onFullscreen|externalPlayerOn|playback|PlayerActivity|VodPlayer|WatchNow|playSelected',re.I)
+          scopes=[root/'features/movies',root/'features/series',root/'features/player',root/'features/shell']
+          for scope in scopes:
+              if not scope.exists():continue
+              print('=== FILES:',scope.relative_to(root),'===')
+              print('\n'.join(str(p.relative_to(root)) for p in list(scope.rglob('*.kt'))[:100]))
+          for scope in [root/'features/movies',root/'features/series',root/'features/player']:
+              for p in scope.rglob('*.kt') if scope.exists() else []:
+                  rows=p.read_text(errors='replace').splitlines()
+                  matches=[i for i,x in enumerate(rows) if patterns.search(x)]
+                  if not matches:continue
+                  print('\n====',p.relative_to(root),'total',len(rows),'====')
+                  keep=set()
+                  for i in matches:
+                      for j in range(max(0,i-5),min(len(rows),i+9)):keep.add(j)
+                  if len(keep)>850:keep=set(sorted(keep)[:850])
+                  last=-2
+                  for i in sorted(keep):
+                      if i>last+1:print('---')
+                      print(f'{i+1:4d} {rows[i]}')
+                      last=i
+          for rel in ['features/movies/MoviesViewModel.kt','features/series/SeriesViewModel.kt','features/player/PlayerScreen.kt','features/player/PlayerViewModel.kt']:
+              p=root/rel
+              if p.exists():
+                  rows=p.read_text(errors='replace').splitlines()
+                  print('\n====',rel,'FUNCTIONS====')
+                  for i,s in enumerate(rows):
+                      if re.match(r'^\s*(suspend\s+)?(private\s+|internal\s+|override\s+)?fun\s+',s): print(i+1,s.strip())
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/vlc-vod-inspection.txt
+          git commit -m 'Inspect stable VOD playback routes' || true
+          git push

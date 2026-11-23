@@ -282,5 +282,10 @@ series_screen = src / "series/SeriesScreen.kt"
 replace_once(series_screen, 
     'val goFullscreen: () -> Unit = { if (!externalPlayerOn) onFullscreen() }',
     'val goFullscreen: () -> Unit = { if (!externalPlayerOn && !vm.vlcVodSelected) onFullscreen() }')
+# Catalogue mode previously called onFullscreen directly, bypassing goFullscreen.
+# Do not mount MPV when the just-selected episode uses the VLC VOD activity.
+replace_once(series_screen,
+    'if (!vm.externalPlayerOn.value) onFullscreen()',
+    'if (!vm.externalPlayerOn.value && !vm.vlcVodSelected) onFullscreen()')
 
 print("Prepared production-ID VOD-only VLC, live TV untouched")

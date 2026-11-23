@@ -1,8 +1,8 @@
-name: Inter Flash TV 0.66 VLC PREVIEW TEST APK
+name: Inter Flash TV 0.67 Media3 EXOPLAYER PREVIEW TEST APK
 on:
   push:
-    branches: ['experiment/libvlc-preview-v066']
-    paths: ['experiments/libvlc-v065/**', '.github/workflows/interflash-v057.yml']
+    branches: ['experiment/media3-exoplayer-v067']
+    paths: ['experiments/media3-v067/**', '.github/workflows/interflash-v057.yml']
   workflow_dispatch:
 permissions:
   contents: write
@@ -495,25 +495,15 @@ jobs:
               subprocess.run(['python3', 'tools/i18n/check_hardcoded_strings.py', 'classify-safe', '--path', base + path, '--text', text, '--category', category], check=True)
           PY
           python3 tools/i18n/check_hardcoded_strings.py verify --bootstrap
-      - name: Route live channels directly to LibVLC (isolated test)
-        run: python3 experiments/libvlc-v065/apply.py
-      - name: Embed VLC in preview window before fullscreen
-        run: python3 experiments/libvlc-v065/preview_patch.py
-      - name: Classify VLC technical literals for i18n verification
-        working-directory: native-source/InterFlashTV-OwnTV
+      - name: Enable embedded Media3 ExoPlayer live preview for client mode
+        run: python3 experiments/media3-v067/apply.py
+      - name: Verify native test build has no LibVLC additions
         run: |
-          python3 - <<'PY'
-          import subprocess
-          base = 'app/src/main/java/tv/own/owntv/features/live/'
-          for name, value, category in [
-              ('LiveScreen.kt', 'vlc_trial', 'technical'),
-              ('LiveViewModel.kt', '', 'empty'),
-              ('LiveViewModel.kt', 'http://', 'url'),
-              ('LiveViewModel.kt', 'https://', 'url'),
-          ]:
-              subprocess.run(['python3','tools/i18n/check_hardcoded_strings.py','classify-safe',
-                              '--path',base + name,'--text',value,'--category',category], check=True)
-          PY
+          test ! -f native-source/InterFlashTV-OwnTV/app/src/main/java/tv/own/owntv/features/live/VlcEmbeddedSurface.kt
+          test ! -f native-source/InterFlashTV-OwnTV/app/src/main/java/tv/own/owntv/features/live/VlcTrialActivity.java
+          grep -q 'exopreviewtest' native-source/InterFlashTV-OwnTV/app/build.gradle.kts
+          grep -q 'ExoPreviewSurface' native-source/InterFlashTV-OwnTV/app/src/main/java/tv/own/owntv/features/live/LiveStage.kt
+          cd native-source/InterFlashTV-OwnTV
           python3 tools/i18n/check_hardcoded_strings.py verify --bootstrap
       - name: List available SDK platforms
         run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --list | grep -E "platforms;android-3[67]"'
@@ -521,28 +511,28 @@ jobs:
         run: |
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --version
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --channel=3 "platforms;android-37.0" "build-tools;36.0.0"
-      - name: Compile isolated 0.66 VLC preview debug APK
+      - name: Compile isolated 0.67 Media3 ExoPlayer preview debug APK
         working-directory: native-source/InterFlashTV-OwnTV
         env:
-          VERSION_CODE: '66'
-          VERSION_NAME: '0.66-vlc-vista-previa'
+          VERSION_CODE: '67'
+          VERSION_NAME: '0.67-media3-vista-previa'
         run: |
           chmod +x gradlew
           ./gradlew :app:assembleStandardDebug -Powntv.corePath=../OwnTV_Core-main -Pkotlin.compiler.execution.strategy=in-process --no-daemon --max-workers=2 -Dorg.gradle.jvmargs="-Xmx4g -XX:ActiveProcessorCount=2"
       - uses: actions/upload-artifact@v4
         with:
-          name: InterFlashTV-v0.66-VLC-PREVIA-PRUEBA
+          name: InterFlashTV-v0.67-MEDIA3-PREVIA-PRUEBA
           path: native-source/InterFlashTV-OwnTV/app/build/outputs/apk/standard/debug/*.apk
           if-no-files-found: error
 
-      - name: Record 0.66 build outcome
+      - name: Record 0.67 build outcome
         if: always()
         run: |
-          mkdir -p experiments/v066
-          printf 'run_id=%s\\njob_status=%s\\ncommit=%s\\n' '${{ github.run_id }}' '${{ job.status }}' '${{ github.sha }}' > experiments/v066/build_status.txt
+          mkdir -p experiments/v067
+          printf 'run_id=%s\\njob_status=%s\\ncommit=%s\\n' '${{ github.run_id }}' '${{ job.status }}' '${{ github.sha }}' > experiments/v067/build_status.txt
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add experiments/v066/build_status.txt
-          git commit -m 'Record VLC 0.66 preview build outcome' || true
+          git add experiments/v067/build_status.txt
+          git commit -m 'Record Media3 0.67 ExoPlayer preview build outcome' || true
           git pull --rebase || true
           git push || true

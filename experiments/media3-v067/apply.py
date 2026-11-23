@@ -57,7 +57,6 @@ s = s[:start] + '''onClick = {
         if (clientExoPreviewId == channel.id && previewChannel?.id == channel.id) {
             // Second OK: promote the selected live stream to the full-screen player.
             vm.watchFullscreen(channel, channels.itemSnapshotList.items.filterNotNull())
-            onBrowseTune?.invoke()
             onFullscreen()
         } else {
             // First OK: ExoPlayer video inside the EXISTING small stage rectangle.

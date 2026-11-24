@@ -285,4 +285,19 @@ replace_once(series_screen,
 # The stable build already replaces catalogue auto-play with openSeries in its
 # earlier layout patch. The EpisodeView goFullscreen guard above covers playback.
 
+# Protocol field names and empty default values are technical literals, not UI copy.
+# Register them after generating the VOD source files so the Gradle translation
+# audit does not reject the build.
+import subprocess
+for relative_path, literal, category in [
+    ("movies/MovieViewModel.kt", "referer", "json"),
+    ("series/SeriesViewModel.kt", "referer", "json"),
+    ("vod/VlcVodLauncher.kt", "", "empty"),
+]:
+    subprocess.run([
+        "python3", "tools/i18n/check_hardcoded_strings.py", "classify-safe",
+        "--path", "app/src/main/java/tv/own/owntv/features/" + relative_path,
+        "--text", literal, "--category", category
+    ], cwd=app, check=True)
+
 print("Prepared production-ID VOD-only VLC, live TV untouched")

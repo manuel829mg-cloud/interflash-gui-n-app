@@ -448,7 +448,7 @@ jobs:
       - name: Apply 0.61 catalogue and movie artwork
         run: python3 native-v057/catalogue-v061.py
 
-      - name: Enlarge Series covers and reclaim top space
+      - name: Match Movies and Series cover sizes and reclaim top space
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -459,11 +459,10 @@ jobs:
                   raise ValueError(f"Unexpected source in {path}: {old}")
               path.write_text(source.replace(old, new))
           rows = root / "shell/components/CinemaCategoryRows.kt"
-          replace(rows, "val edge = 16.mpx", "val edge = 16.mpx\n    val seriesLayout = placeholder == OwnTVIcon.SERIES")
-          replace(rows, "minOf(480.mpx, maxWidth)", "minOf(if (seriesLayout) 640.mpx else 480.mpx, maxWidth)")
-          replace(rows, "val posterWidth = 144.mpx", "val posterWidth = if (seriesLayout) 184.mpx else 144.mpx")
-          replace(rows, "minOf(152.mpx,", "minOf(if (seriesLayout) 192.mpx else 152.mpx,")
-          replace(rows, "if (selected) 270.mpx else 214.mpx", "if (selected) (if (seriesLayout) 360.mpx else 270.mpx) else (if (seriesLayout) 276.mpx else 214.mpx)")
+           replace(rows, "minOf(480.mpx, maxWidth)", "minOf(640.mpx, maxWidth)")
+           replace(rows, "val posterWidth = 144.mpx", "val posterWidth = 184.mpx")
+           replace(rows, "minOf(152.mpx,", "minOf(192.mpx,")
+           replace(rows, "if (selected) 270.mpx else 214.mpx", "if (selected) 360.mpx else 276.mpx")
           shell = root / "shell/OwnTVShell.kt"
           replace(shell, "top = if (classicVod) 94.mpx else if (clientMode) 112.mpx else 0.dp,", 
               "top = if (clientMode && selectedSection == MainSection.SERIES) 80.mpx else if (classicVod) 94.mpx else if (clientMode) 112.mpx else 0.dp,")

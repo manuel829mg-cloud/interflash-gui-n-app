@@ -459,10 +459,10 @@ jobs:
                   raise ValueError(f"Unexpected source in {path}: {old}")
               path.write_text(source.replace(old, new))
           rows = root / "shell/components/CinemaCategoryRows.kt"
-           replace(rows, "minOf(480.mpx, maxWidth)", "minOf(640.mpx, maxWidth)")
-           replace(rows, "val posterWidth = 144.mpx", "val posterWidth = 184.mpx")
-           replace(rows, "minOf(152.mpx,", "minOf(192.mpx,")
-           replace(rows, "if (selected) 270.mpx else 214.mpx", "if (selected) 360.mpx else 276.mpx")
+          replace(rows, "minOf(480.mpx, maxWidth)", "minOf(640.mpx, maxWidth)")
+          replace(rows, "val posterWidth = 144.mpx", "val posterWidth = 184.mpx")
+          replace(rows, "minOf(152.mpx,", "minOf(192.mpx,")
+          replace(rows, "if (selected) 270.mpx else 214.mpx", "if (selected) 360.mpx else 276.mpx")
           shell = root / "shell/OwnTVShell.kt"
           replace(shell, "top = if (classicVod) 94.mpx else if (clientMode) 112.mpx else 0.dp,", 
               "top = if (clientMode && selectedSection == MainSection.SERIES) 80.mpx else if (classicVod) 94.mpx else if (clientMode) 112.mpx else 0.dp,")

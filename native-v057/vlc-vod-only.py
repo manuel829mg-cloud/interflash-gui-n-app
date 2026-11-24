@@ -232,8 +232,10 @@ replace_once(movievm,
 '''            if (movie.drmConfig == null) {
                 val url = resolvedUrlOrNull(movie) ?: return@launch
                 val source = sourceDao.getById(movie.sourceId)
-                val referer = SourceOverrides.headersWithReferer(movie.httpHeaders, source)
-                    .entries.firstOrNull { it.key.equals("referer", true) }?.value
+                val referer = runCatching {
+                    val json = org.json.JSONObject(SourceOverrides.headersWithReferer(movie.httpHeaders, source).orEmpty())
+                    json.keys().asSequence().firstOrNull { it.equals("referer", true) }?.let { json.optString(it) }
+                }.getOrNull()
                 tv.own.owntv.features.vod.VlcVodLauncher.start(
                     url, movie.name, source?.userAgent, referer, startPositionMs
                 )
@@ -265,8 +267,10 @@ replace_once(seriesvm,
 '''            if (episode.drmConfig == null) {
                 val url = resolvedEpisodeUrlOrNull(episode) ?: return@launch
                 val source = sourceDao.getById(show.sourceId)
-                val referer = tv.own.owntv.core.settings.SourceOverrides.headersWithReferer(episode.httpHeaders, source)
-                    .entries.firstOrNull { it.key.equals("referer", true) }?.value
+                val referer = runCatching {
+                    val json = org.json.JSONObject(tv.own.owntv.core.settings.SourceOverrides.headersWithReferer(episode.httpHeaders, source).orEmpty())
+                    json.keys().asSequence().firstOrNull { it.equals("referer", true) }?.let { json.optString(it) }
+                }.getOrNull()
                 tv.own.owntv.features.vod.VlcVodLauncher.start(
                     url, episode.name.ifBlank { show.name }, source?.userAgent, referer, startPositionMs
                 )

@@ -61,13 +61,14 @@ import org.koin.core.context.GlobalContext
 
 /** Internal (NOT external VLC) VOD-only playback. TV en vivo never calls this. */
 object VlcVodLauncher {
-    fun start(url: String, title: String, userAgent: String?, referer: String?, startPositionMs: Long) {
+    fun start(url: String, title: String, userAgent: String?, referer: String?, cookie: String?, startPositionMs: Long) {
         val context: Context = GlobalContext.get().get()
         val intent = Intent(context, VlcVodActivity::class.java)
             .putExtra(VlcVodActivity.EXTRA_URL, url)
             .putExtra(VlcVodActivity.EXTRA_TITLE, title)
             .putExtra(VlcVodActivity.EXTRA_USER_AGENT, userAgent ?: "")
             .putExtra(VlcVodActivity.EXTRA_REFERER, referer ?: "")
+            .putExtra(VlcVodActivity.EXTRA_COOKIE, cookie ?: "")
             .putExtra(VlcVodActivity.EXTRA_START, startPositionMs.coerceAtLeast(0))
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         context.startActivity(intent)
@@ -81,6 +82,9 @@ import android.app.Activity;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.ViewGroup;
@@ -99,6 +103,7 @@ public final class VlcVodActivity extends Activity {
     public static final String EXTRA_TITLE = "ifvod.title";
     public static final String EXTRA_USER_AGENT = "ifvod.user_agent";
     public static final String EXTRA_REFERER = "ifvod.referer";
+    public static final String EXTRA_COOKIE = "ifvod.cookie";
     public static final String EXTRA_START = "ifvod.start";
 
     private LibVLC libVlc;
@@ -107,6 +112,10 @@ public final class VlcVodActivity extends Activity {
     private TextView label;
     private String url;
     private boolean firstSeekApplied;
+    private boolean hasVideoOutput;
+    private boolean softwareRetry;
+    private volatile int session;
+    private final Handler ui = new Handler(Looper.getMainLooper());
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -129,57 +138,181 @@ public final class VlcVodActivity extends Activity {
         label.setPadding(24, 18, 24, 18);
         label.setBackgroundColor(0xA9000000);
         String title = getIntent().getStringExtra(EXTRA_TITLE);
-        label.setText((title == null ? "" : title) + "   ·   OK pausa   ·   ◀ ▶ adelanta   ·   Atrás regresa");
+        label.setText((title == null ? "" : title) + "   ·   Cargando VLC...   ·   Atrás regresa");
         root.addView(label, new FrameLayout.LayoutParams(-1, -2, Gravity.TOP));
         setContentView(root);
     }
 
+    // Native LibVLC initialization can block. Never run it on Android's UI thread.
     @Override protected void onStart() {
         super.onStart();
-        if (url == null || layout == null || player != null) return;
+        if (url == null || layout == null || libVlc != null) return;
+        final int token = ++session;
+        hasVideoOutput = false;
+        softwareRetry = false;
+        firstSeekApplied = false;
+        showStatus("Iniciando VLC... Pulsa Atrás para regresar.");
+
+        Thread init = new Thread(() -> {
+            LibVLC instance = null;
+            try {
+                ArrayList<String> args = new ArrayList<>();
+                args.add("--no-video-title-show");
+                args.add("--http-reconnect");
+                instance = new LibVLC(getApplicationContext(), args);
+                final LibVLC ready = instance;
+                runOnUiThread(() -> {
+                    if (token != session || isFinishing()) {
+                        releaseAsync(null, ready);
+                        return;
+                    }
+                    libVlc = ready;
+                    startMedia(token, false);
+                });
+            } catch (Throwable e) {
+                Log.e("InterFlashVLC", "LibVLC initialization failed", e);
+                if (instance != null) releaseAsync(null, instance);
+                runOnUiThread(() -> {
+                    if (token == session) showStatus("Error al iniciar VLC (" +
+                        e.getClass().getSimpleName() + "). Atrás para regresar.");
+                });
+            }
+        }, "interflash-vlc-init");
+        init.setDaemon(true);
+        init.start();
+
+        // If native initialization hangs, the TV UI and BACK must remain responsive.
+        ui.postDelayed(() -> {
+            if (token == session && !hasVideoOutput) {
+                if (libVlc == null) {
+                    showStatus("VLC no responde al iniciar. Pulsa Atrás para regresar.");
+                } else {
+                    retryWithSoftware(token);
+                }
+            }
+        }, 16000);
+    }
+
+    private void showStatus(String message) {
+        if (label != null) {
+            label.setText(message);
+            label.setVisibility(TextView.VISIBLE);
+        }
+    }
+
+    private void retryWithSoftware(int token) {
+        if (token != session || hasVideoOutput || softwareRetry || isFinishing()) return;
+        softwareRetry = true;
+        showStatus("Reintentando reproducción con decodificación compatible...");
+        Log.w("InterFlashVLC", "No video output - retrying with software decoder");
+        startMedia(token, true);
+        ui.postDelayed(() -> {
+            if (token == session && !hasVideoOutput) {
+                showStatus("VLC no pudo mostrar el video. Pulsa Atrás para regresar.");
+                Log.e("InterFlashVLC", "Video output unavailable after software fallback");
+            }
+        }, 18000);
+    }
+
+    private void startMedia(int token, boolean software) {
+        if (libVlc == null || token != session || isFinishing()) return;
+        detachAndReleasePlayer();
+        firstSeekApplied = false;
+        hasVideoOutput = false;
         try {
-            ArrayList<String> args = new ArrayList<>();
-            args.add("--no-video-title-show");
-            libVlc = new LibVLC(this, args);
-            player = new MediaPlayer(libVlc);
-            player.attachViews(layout, null, false, false);
-            player.setEventListener(event -> {
-                if (event.type == MediaPlayer.Event.Playing) {
+            final MediaPlayer next = new MediaPlayer(libVlc);
+            player = next;
+            next.attachViews(layout, null, false, false);
+            next.setEventListener(event -> {
+                if (event.type == MediaPlayer.Event.Vout) {
                     runOnUiThread(() -> {
-                        if (player == null) return;
+                        if (token != session || player != next) return;
+                        if (next.getVoutCount() > 0) {
+                            hasVideoOutput = true;
+                            if (label != null) {
+                                label.postDelayed(() -> {
+                                    if (token == session && hasVideoOutput)
+                                        label.setVisibility(TextView.GONE);
+                                }, 2400);
+                            }
+                        }
+                    });
+                } else if (event.type == MediaPlayer.Event.Playing) {
+                    runOnUiThread(() -> {
+                        if (token != session || player != next) return;
                         if (!firstSeekApplied) {
                             firstSeekApplied = true;
-                            long start = getIntent().getLongExtra(EXTRA_START, 0L);
-                            if (start > 0) player.setTime(start);
+                            long position = getIntent().getLongExtra(EXTRA_START, 0L);
+                            if (position > 0 && next.isSeekable()) next.setTime(position);
                         }
-                        if (label != null) label.postDelayed(() -> label.setVisibility(TextView.GONE), 2500);
                     });
                 } else if (event.type == MediaPlayer.Event.EncounteredError) {
+                    Log.e("InterFlashVLC", "Playback error; software=" + software);
                     runOnUiThread(() -> {
-                        if (label != null) {
-                            label.setVisibility(TextView.VISIBLE);
-                            label.setText("VLC no pudo abrir este video. Pulsa Atrás para volver.");
-                        }
+                        if (token != session || player != next) return;
+                        if (!softwareRetry) retryWithSoftware(token);
+                        else showStatus("VLC no pudo reproducir este enlace. Atrás para regresar.");
                     });
                 }
             });
             Media media = new Media(libVlc, Uri.parse(url));
-            media.setHWDecoderEnabled(true, false);
-            media.addOption(":network-caching=1200");
-            String ua = getIntent().getStringExtra(EXTRA_USER_AGENT);
-            if (ua != null && !ua.isEmpty()) media.addOption(":http-user-agent=" + ua);
-            String referer = getIntent().getStringExtra(EXTRA_REFERER);
-            if (referer != null && !referer.isEmpty()) media.addOption(":http-referrer=" + referer);
-            player.setMedia(media);
-            media.release();
-            player.play();
-        } catch (Exception | LinkageError e) {
-            if (label != null) label.setText("No se pudo iniciar VLC. Pulsa Atrás para volver.");
-            releasePlayer();
+            try {
+                media.setHWDecoderEnabled(!software, false);
+                media.addOption(":network-caching=" + (software ? "2000" : "1200"));
+                media.addOption(":http-reconnect");
+                String ua = getIntent().getStringExtra(EXTRA_USER_AGENT);
+                if (ua != null && !ua.isEmpty()) media.addOption(":http-user-agent=" + ua);
+                String referer = getIntent().getStringExtra(EXTRA_REFERER);
+                if (referer != null && !referer.isEmpty()) media.addOption(":http-referrer=" + referer);
+                String cookie = getIntent().getStringExtra(EXTRA_COOKIE);
+                if (cookie != null && !cookie.isEmpty()) media.addOption(":http-cookie=" + cookie);
+                next.setMedia(media);
+            } finally {
+                media.release();
+            }
+            next.play();
+        } catch (Throwable e) {
+            Log.e("InterFlashVLC", "VLC playback setup error", e);
+            if (!softwareRetry) retryWithSoftware(token);
+            else showStatus("Error de reproducción (" +
+                e.getClass().getSimpleName() + "). Pulsa Atrás.");
         }
     }
 
+    private void detachAndReleasePlayer() {
+        final MediaPlayer old = player;
+        player = null;
+        if (old != null) {
+            try { old.detachViews(); } catch (Throwable ignored) { }
+            releaseAsync(old, null);
+        }
+    }
+
+    private static void releaseAsync(MediaPlayer old, LibVLC instance) {
+        Thread cleanup = new Thread(() -> {
+            try {
+                if (old != null) {
+                    old.stop();
+                    old.release();
+                }
+            } catch (Throwable e) {
+                Log.w("InterFlashVLC", "Player cleanup error", e);
+            }
+            try {
+                if (instance != null) instance.release();
+            } catch (Throwable e) {
+                Log.w("InterFlashVLC", "Engine cleanup error", e);
+            }
+        }, "interflash-vlc-cleanup");
+        cleanup.setDaemon(true);
+        cleanup.start();
+    }
+
     @Override public boolean onKeyDown(int keyCode, KeyEvent event) {
+        if (keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_ESCAPE) {
+            finish();
+            return true;
+        }
         if (player != null) {
             if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER
                     || keyCode == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) {
@@ -198,21 +331,16 @@ public final class VlcVodActivity extends Activity {
         return super.onKeyDown(keyCode, event);
     }
 
-    @Override protected void onStop() {
-        releasePlayer();
-        super.onStop();
+    @Override public void onBackPressed() {
+        finish();
     }
-    private void releasePlayer() {
-        if (player != null) {
-            player.stop();
-            player.detachViews();
-            player.release();
-            player = null;
-        }
-        if (libVlc != null) {
-            libVlc.release();
-            libVlc = null;
-        }
+    @Override protected void onStop() {
+        ++session;  // Invalidate in-flight background engine initialization.
+        detachAndReleasePlayer();
+        LibVLC old = libVlc;
+        libVlc = null;
+        if (old != null) releaseAsync(null, old);
+        super.onStop();
     }
 }
 ''')
@@ -236,8 +364,12 @@ replace_once(movievm,
                     val json = org.json.JSONObject(SourceOverrides.headersWithReferer(movie.httpHeaders, source).orEmpty())
                     json.keys().asSequence().firstOrNull { it.equals("referer", true) }?.let { json.optString(it) }
                 }.getOrNull()
+                val cookie = runCatching {
+                    val json = org.json.JSONObject(SourceOverrides.headersWithReferer(movie.httpHeaders, source).orEmpty())
+                    json.keys().asSequence().firstOrNull { it.equals("cookie", true) }?.let { json.optString(it) }
+                }.getOrNull()
                 tv.own.owntv.features.vod.VlcVodLauncher.start(
-                    url, movie.name, source?.userAgent, referer, startPositionMs
+                    url, movie.name, source?.userAgent, referer, cookie, startPositionMs
                 )
                 if (pid != null) runCatching {
                     historyDao.record(WatchHistoryEntity(profileId = pid, mediaType = MediaType.MOVIE, itemId = movie.id))
@@ -271,8 +403,12 @@ replace_once(seriesvm,
                     val json = org.json.JSONObject(tv.own.owntv.core.settings.SourceOverrides.headersWithReferer(episode.httpHeaders, source).orEmpty())
                     json.keys().asSequence().firstOrNull { it.equals("referer", true) }?.let { json.optString(it) }
                 }.getOrNull()
+                val cookie = runCatching {
+                    val json = org.json.JSONObject(tv.own.owntv.core.settings.SourceOverrides.headersWithReferer(episode.httpHeaders, source).orEmpty())
+                    json.keys().asSequence().firstOrNull { it.equals("cookie", true) }?.let { json.optString(it) }
+                }.getOrNull()
                 tv.own.owntv.features.vod.VlcVodLauncher.start(
-                    url, episode.name.ifBlank { show.name }, source?.userAgent, referer, startPositionMs
+                    url, episode.name.ifBlank { show.name }, source?.userAgent, referer, cookie, startPositionMs
                 )
                 if (pid != null) {
                     runCatching { historyDao.record(WatchHistoryEntity(profileId = pid, mediaType = MediaType.EPISODE, itemId = episode.id)) }

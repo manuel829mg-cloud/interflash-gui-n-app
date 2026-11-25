@@ -1,0 +1,32 @@
+name: Export Android APK signing tools (no private keys)
+on:
+  push:
+    branches:
+      - feature/vlc-vod-stable-update
+    paths:
+      - .github/workflows/export-apksigner-tools.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  tools:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Install Android Build Tools 36
+        run: |
+          set -euo pipefail
+          SDK="$ANDROID_HOME/build-tools/36.0.0"
+          if [ ! -f "$SDK/lib/apksigner.jar" ] || [ ! -x "$SDK/zipalign" ]; then
+            "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;36.0.0"
+          fi
+          mkdir -p out
+          cp "$SDK/lib/apksigner.jar" out/
+          cp "$SDK/zipalign" out/
+          chmod +x out/zipalign
+          ls -lh out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: interflash-android-signing-tools-public
+          path: out/
+          if-no-files-found: error

@@ -1,7 +1,7 @@
-name: Inter Flash TV 0.68 - VLC Peliculas y Series
+name: Inter Flash TV 0.69 - VLC reparado
 on:
   push:
-    branches: ['feature/vlc-vod-stable-update']
+    branches: ['fix/libvlc-vod-black-screen-v069']
     paths: ['native-v057/vlc-vod-only.py', '.github/workflows/interflash-v057.yml']
   workflow_dispatch:
 permissions:
@@ -497,13 +497,13 @@ jobs:
       - name: Compile stable-package VOD VLC update
         working-directory: native-source/InterFlashTV-OwnTV
         env:
-          VERSION_CODE: '68'
-          VERSION_NAME: '0.68'
+          VERSION_CODE: '69'
+          VERSION_NAME: '0.69'
         run: |
           chmod +x gradlew
           ./gradlew :app:assembleStandardRelease -Powntv.corePath=../OwnTV_Core-main -Pkotlin.compiler.execution.strategy=in-process --no-daemon --max-workers=2 -Dorg.gradle.jvmargs="-Xmx4g -XX:ActiveProcessorCount=2"
       - uses: actions/upload-artifact@v4
         with:
-          name: InterFlashTV-v0.68-VLC-VOD-UNSIGNED
+          name: InterFlashTV-v0.69-VLC-REPARADO-UNSIGNED
           path: native-source/InterFlashTV-OwnTV/app/build/outputs/apk/standard/release/*.apk
           if-no-files-found: error

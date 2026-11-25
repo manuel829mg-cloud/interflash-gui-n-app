@@ -279,13 +279,18 @@ public final class VlcVodActivity extends Activity {
         }
     }
 
-    private void detachAndReleasePlayer() {
+    private MediaPlayer detachPlayer() {
         final MediaPlayer old = player;
         player = null;
         if (old != null) {
             try { old.detachViews(); } catch (Throwable ignored) { }
-            releaseAsync(old, null);
         }
+        return old;
+    }
+
+    private void detachAndReleasePlayer() {
+        MediaPlayer old = detachPlayer();
+        if (old != null) releaseAsync(old, null);
     }
 
     private static void releaseAsync(MediaPlayer old, LibVLC instance) {
@@ -336,10 +341,11 @@ public final class VlcVodActivity extends Activity {
     }
     @Override protected void onStop() {
         ++session;  // Invalidate in-flight background engine initialization.
-        detachAndReleasePlayer();
-        LibVLC old = libVlc;
+        MediaPlayer oldPlayer = detachPlayer();
+        LibVLC oldEngine = libVlc;
         libVlc = null;
-        if (old != null) releaseAsync(null, old);
+        // Release player BEFORE its LibVLC engine, in one cleanup worker.
+        if (oldPlayer != null || oldEngine != null) releaseAsync(oldPlayer, oldEngine);
         super.onStop();
     }
 }

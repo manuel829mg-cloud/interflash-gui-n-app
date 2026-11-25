@@ -1,7 +1,7 @@
-name: Inter Flash TV 0.69 - Reproductor VOD estable
+name: Inter Flash TV 0.70 - Reproductor anterior restaurado
 on:
   push:
-    branches: ['feature/vlc-vod-stable-update']
+    branches: ['fix/restore-native-vod-v069-20261124']
     paths: ['native-v057/vlc-vod-only.py', '.github/workflows/interflash-v057.yml']
   workflow_dispatch:
 permissions:
@@ -497,13 +497,13 @@ jobs:
       - name: Compile stable-package update with original VOD player
         working-directory: native-source/InterFlashTV-OwnTV
         env:
-          VERSION_CODE: '69'
-          VERSION_NAME: '0.69'
+          VERSION_CODE: '70'
+          VERSION_NAME: '0.70'
         run: |
           chmod +x gradlew
           ./gradlew :app:assembleStandardRelease -Powntv.corePath=../OwnTV_Core-main -Pkotlin.compiler.execution.strategy=in-process --no-daemon --max-workers=2 -Dorg.gradle.jvmargs="-Xmx4g -XX:ActiveProcessorCount=2"
       - uses: actions/upload-artifact@v4
         with:
-          name: InterFlashTV-v0.69-VOD-ORIGINAL-UNSIGNED
+          name: InterFlashTV-v0.70-REPRODUCTOR-ANTERIOR-UNSIGNED
           path: native-source/InterFlashTV-OwnTV/app/build/outputs/apk/standard/release/*.apk
           if-no-files-found: error

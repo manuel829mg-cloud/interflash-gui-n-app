@@ -227,7 +227,7 @@ public final class VlcVodActivity extends Activity {
                 if (event.type == MediaPlayer.Event.Vout) {
                     runOnUiThread(() -> {
                         if (token != session || player != next) return;
-                        if (next.getVoutCount() > 0) {
+                        if (event.getVoutCount() > 0) {
                             hasVideoOutput = true;
                             if (label != null) {
                                 label.postDelayed(() -> {

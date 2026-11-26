@@ -1,4 +1,4 @@
-name: Inter Flash Inicio Seguro - Android TV Launcher
+name: Inter Flash Inicio Seguro - Inicio directo sin espera
 on:
   push:
     branches:
@@ -49,8 +49,8 @@ jobs:
                   applicationId 'com.interflash.home'
                   minSdk 23
                   targetSdk 32
-                  versionCode 4
-                  versionName '1.3'
+                  versionCode 5
+                  versionName '1.4'
               }
           }
           EOF
@@ -96,7 +96,6 @@ jobs:
           import android.os.Bundle;
           import android.os.Handler;
           import android.os.Looper;
-          import android.os.SystemClock;
                     import android.graphics.Color;
           import android.graphics.Typeface;
           import android.view.View;
@@ -106,20 +105,15 @@ jobs:
 
           /**
            * Optional Android TV HOME replacement: starts the existing installed
-           * Inter Flash TV from the foreground, after waiting for validated internet.
+           * Inter Flash TV as soon as internet is validated, without a countdown.
            * Does not disable any other launcher, modify user data, or lock the device.
            */
           public final class MainActivity extends Activity {
               private static final String TARGET = "com.interflash.tv.player";
-              private static final long INITIAL_DELAY_MS = 2_000L;
-              private static final long NETWORK_STABLE_MS = 0L;
-              private static final long NETWORK_WAIT_LIMIT_MS = 120_000L;
-              private final Handler handler = new Handler(Looper.getMainLooper());
+                            private final Handler handler = new Handler(Looper.getMainLooper());
               private final Runnable update = new Runnable() {
                   @Override public void run() { tick(); }
               };
-              private long since;
-              private long networkReadySince;
               private boolean started;
               private TextView status;
 
@@ -165,8 +159,6 @@ jobs:
 
               @Override protected void onResume() {
                   super.onResume();
-                  since = SystemClock.elapsedRealtime();
-                  networkReadySince = 0;
                   started = false;
                   handler.removeCallbacks(update);
                   handler.post(update);
@@ -192,27 +184,16 @@ jobs:
 
               private void tick() {
                   if (started || isFinishing()) return;
-                  long now = SystemClock.elapsedRealtime();
-                  long waited = now - since;
-                  if (waited < INITIAL_DELAY_MS) {
-                      long seconds = (INITIAL_DELAY_MS - waited + 999) / 1000;
-                      status.setText("Preparando Android... " + seconds + " s");
-                  } else if (readyInternet()) {
-                      if (networkReadySince == 0) networkReadySince = now;
-                      if (now - networkReadySince >= NETWORK_STABLE_MS) {
-                          openTV();
-                          return;
-                      }
-                      status.setText("Internet detectado. Comprobando estabilidad...");
-                  } else {
-                      networkReadySince = 0;
-                      if (waited >= NETWORK_WAIT_LIMIT_MS) {
-                          status.setText("Internet aún no está listo. Pulsa Abrir Inter Flash TV cuando funcione.");
-                          return;
-                      }
-                      status.setText("Esperando conexión a Internet...");
+                  // Abrir de inmediato en cuanto Android valide la conexión:
+                  // sin cuenta regresiva ni temporizador de arranque.
+                  if (readyInternet()) {
+                      openTV();
+                      return;
                   }
-                  handler.postDelayed(update, 1000L);
+                  status.setText("Esperando conexión a Internet...");
+                  // Reintentar mientras la ZTE siga encendida, incluso si el
+                  // proveedor tarda en recuperar Internet.
+                  handler.postDelayed(update, 350L);
               }
 
               private void openTV() {
@@ -404,6 +385,6 @@ jobs:
         run: gradle :app:assembleDebug --no-daemon --max-workers=2
       - uses: actions/upload-artifact@v4
         with:
-          name: InterFlash-Inicio-2s-PIN8888-APK
+          name: InterFlash-Inicio-Sin-Espera-PIN8888-APK
           path: delayed-home/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error

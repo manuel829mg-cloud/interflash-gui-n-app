@@ -25,5 +25,10 @@ jobs:
           grep -n -C 8 -Ei 'channelList|PlayerOk|BackHandler|Key.Back|DirectionUp|DirectionDown|DirectionLeft|DirectionRight' "$p/player/PlayerHud.kt" | head -n 600
           echo "=== MAIN ACTIVITY SHELL ==="
           grep -n -C 8 'OwnTVShell(' "$p/MainActivity.kt"
+          echo "=== PLAYER CALLBACKS ==="
+          sed -n '1670,1910p' "$p/features/shell/OwnTVShell.kt"
+          echo "=== LIVE VM METHODS ==="
+          find "$p" -iname "*LiveViewModel*"
+          grep -n -Ei "fun .*channel|val .*channel|paging" "$p/features/live/LiveViewModel.kt" | head -n 200
           echo "=== ADMIN ==="
           grep -Rnl -E 'DeviceAdminReceiver|startLockTask|setLockTaskPackages' "$p" || true

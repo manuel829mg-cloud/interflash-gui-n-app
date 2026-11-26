@@ -1,0 +1,247 @@
+name: Inter Flash Inicio Seguro - Android TV Launcher
+on:
+  push:
+    branches:
+      - feature/interflash-home-delay30
+    paths:
+      - .github/workflows/interflash-home-delay30.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Install Android SDK 35
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --channel=0 "platforms;android-35" "build-tools;35.0.0"
+      - name: Generate isolated startup launcher project
+        run: |
+          mkdir -p delayed-home/app/src/main/java/com/interflash/home
+          cat > delayed-home/settings.gradle <<'EOF'
+          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+          dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }
+          rootProject.name = 'InterFlashInicioSeguro'
+          include ':app'
+          EOF
+          cat > delayed-home/build.gradle <<'EOF'
+          plugins { id 'com.android.application' version '8.7.3' apply false }
+          EOF
+          cat > delayed-home/gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx2g -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          EOF
+          cat > delayed-home/app/build.gradle <<'EOF'
+          plugins { id 'com.android.application' }
+          android {
+              namespace 'com.interflash.home'
+              compileSdk 35
+              defaultConfig {
+                  applicationId 'com.interflash.home'
+                  minSdk 23
+                  targetSdk 32
+                  versionCode 1
+                  versionName '1.0'
+              }
+          }
+          EOF
+          cat > delayed-home/app/src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+              <uses-feature android:name="android.software.leanback" android:required="false" />
+              <queries><package android:name="com.interflash.tv.player" /></queries>
+              <application android:allowBackup="false" android:label="Inter Flash Inicio Seguro"
+                  android:theme="@android:style/Theme.Material.NoActionBar">
+                  <activity android:name=".MainActivity" android:exported="true"
+                      android:launchMode="singleTask" android:excludeFromRecents="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.HOME"/>
+                          <category android:name="android.intent.category.DEFAULT"/>
+                      </intent-filter>
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LEANBACK_LAUNCHER"/>
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+          cat > delayed-home/app/src/main/java/com/interflash/home/MainActivity.java <<'EOF'
+          package com.interflash.home;
+
+          import android.app.Activity;
+          import android.content.Intent;
+          import android.net.ConnectivityManager;
+          import android.net.Network;
+          import android.net.NetworkCapabilities;
+          import android.os.Bundle;
+          import android.os.Handler;
+          import android.os.Looper;
+          import android.os.SystemClock;
+          import android.provider.Settings;
+          import android.graphics.Color;
+          import android.graphics.Typeface;
+          import android.view.View;
+          import android.widget.Button;
+          import android.widget.LinearLayout;
+          import android.widget.TextView;
+
+          /**
+           * Optional Android TV HOME replacement: starts the existing installed
+           * Inter Flash TV from the foreground, after waiting for validated internet.
+           * Does not disable any other launcher, modify user data, or lock the device.
+           */
+          public final class MainActivity extends Activity {
+              private static final String TARGET = "com.interflash.tv.player";
+              private static final long INITIAL_DELAY_MS = 30_000L;
+              private static final long NETWORK_STABLE_MS = 6_000L;
+              private static final long NETWORK_WAIT_LIMIT_MS = 120_000L;
+              private final Handler handler = new Handler(Looper.getMainLooper());
+              private final Runnable update = new Runnable() {
+                  @Override public void run() { tick(); }
+              };
+              private long since;
+              private long networkReadySince;
+              private boolean started;
+              private TextView status;
+
+              @Override public void onCreate(Bundle state) {
+                  super.onCreate(state);
+                  LinearLayout layout = new LinearLayout(this);
+                  layout.setOrientation(LinearLayout.VERTICAL);
+                  layout.setGravity(android.view.Gravity.CENTER);
+                  layout.setPadding(60, 36, 60, 36);
+                  layout.setBackgroundColor(Color.rgb(11, 19, 30));
+
+                  TextView title = new TextView(this);
+                  title.setText("INTER FLASH TV");
+                  title.setTextSize(32);
+                  title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+                  title.setGravity(android.view.Gravity.CENTER);
+                  title.setTextColor(Color.WHITE);
+                  layout.addView(title, new LinearLayout.LayoutParams(-1, -2));
+
+                  status = new TextView(this);
+                  status.setTextColor(Color.LTGRAY);
+                  status.setTextSize(19);
+                  status.setGravity(android.view.Gravity.CENTER);
+                  status.setPadding(0, 28, 0, 28);
+                  layout.addView(status, new LinearLayout.LayoutParams(-1, -2));
+
+                  Button open = new Button(this);
+                  open.setText("Abrir Inter Flash TV ahora");
+                  open.setOnClickListener(v -> openTV());
+                  layout.addView(open, new LinearLayout.LayoutParams(430, -2));
+
+                  Button settings = new Button(this);
+                  settings.setText("Recuperar ajustes de Android");
+                  settings.setOnClickListener(v -> {
+                      try {
+                          startActivity(new Intent(Settings.ACTION_HOME_SETTINGS));
+                      } catch (Exception ignored) {
+                          startActivity(new Intent(Settings.ACTION_SETTINGS));
+                      }
+                  });
+                  layout.addView(settings, new LinearLayout.LayoutParams(430, -2));
+
+                  TextView hint = new TextView(this);
+                  hint.setText("Inicio seguro de prueba. No bloquea otras aplicaciones.");
+                  hint.setTextColor(Color.GRAY);
+                  hint.setTextSize(14);
+                  hint.setGravity(android.view.Gravity.CENTER);
+                  hint.setPadding(0, 22, 0, 0);
+                  layout.addView(hint, new LinearLayout.LayoutParams(-1, -2));
+
+                  setContentView(layout);
+                  open.requestFocus();
+              }
+
+              @Override protected void onResume() {
+                  super.onResume();
+                  since = SystemClock.elapsedRealtime();
+                  networkReadySince = 0;
+                  started = false;
+                  handler.removeCallbacks(update);
+                  handler.post(update);
+              }
+
+              @Override protected void onPause() {
+                  handler.removeCallbacks(update);
+                  super.onPause();
+              }
+
+              private boolean readyInternet() {
+                  try {
+                      ConnectivityManager manager =
+                          (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+                      Network active = manager.getActiveNetwork();
+                      if (active == null) return false;
+                      NetworkCapabilities caps = manager.getNetworkCapabilities(active);
+                      return caps != null &&
+                          caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                          caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
+                  } catch (Exception ignored) { return false; }
+              }
+
+              private void tick() {
+                  if (started || isFinishing()) return;
+                  long now = SystemClock.elapsedRealtime();
+                  long waited = now - since;
+                  if (waited < INITIAL_DELAY_MS) {
+                      long seconds = (INITIAL_DELAY_MS - waited + 999) / 1000;
+                      status.setText("Preparando Android... " + seconds + " s");
+                  } else if (readyInternet()) {
+                      if (networkReadySince == 0) networkReadySince = now;
+                      if (now - networkReadySince >= NETWORK_STABLE_MS) {
+                          openTV();
+                          return;
+                      }
+                      status.setText("Internet detectado. Comprobando estabilidad...");
+                  } else {
+                      networkReadySince = 0;
+                      if (waited >= NETWORK_WAIT_LIMIT_MS) {
+                          status.setText("Internet aún no está listo. Pulsa Abrir Inter Flash TV cuando funcione.");
+                          return;
+                      }
+                      status.setText("Esperando conexión a Internet...");
+                  }
+                  handler.postDelayed(update, 1000L);
+              }
+
+              private void openTV() {
+                  if (started) return;
+                  Intent intent = getPackageManager().getLaunchIntentForPackage(TARGET);
+                  if (intent == null) {
+                      status.setText("Inter Flash TV no está instalada. Pulsa Ajustes.");
+                      return;
+                  }
+                  try {
+                      started = true;
+                      intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+                      startActivity(intent);
+                  } catch (Exception e) {
+                      started = false;
+                      status.setText("No se pudo abrir Inter Flash TV. Pulsa Abrir para reintentar.");
+                  }
+              }
+          }
+          EOF
+      - name: Build installer
+        working-directory: delayed-home
+        run: gradle :app:assembleDebug --no-daemon --max-workers=2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: InterFlash-Inicio-Seguro-30s-APK
+          path: delayed-home/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

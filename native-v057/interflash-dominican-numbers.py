@@ -32,14 +32,14 @@ internal object DominicanChannelNumbers {
             .trim()
 
     private val aliases = linkedMapOf(
-        2 to listOf("teleantillas", "tele antillas"),
+        2 to listOf("megavision", "mega vision", "megavision 43", "megavision 90"),
         4 to listOf("rtvd canal 4", "canal 4 rd", "certv", "rtvd", "canal 4"),
         5 to listOf("telemicro"),
         6 to listOf("el seis"),
         7 to listOf("antena 7", "antena latina"),
         8 to listOf("telemedios dominicana", "telemedios"),
         9 to listOf("color vision", "colorvision"),
-        10 to listOf("microvision"),
+        10 to listOf("teleantillas", "tele antillas", "teleantillas 2", "tele antillas 2"),
         11 to listOf("telesistema"),
         12 to listOf("teleunion"),
         13 to listOf("telecentro"),
@@ -52,7 +52,7 @@ internal object DominicanChannelNumbers {
         20 to listOf("teleradio america", "tele radio america"),
         21 to listOf("antena 21"),
         23 to listOf("telefuturo"),
-        26 to listOf("canal del sol"),
+        65 to listOf("canal del sol", "canal del sol 6"),
         27 to listOf("rnn", "rnn canal 27"),
         28 to listOf("telecanal 28", "galaxia teve"),
         29 to listOf("teleuniverso", "tele universo"),

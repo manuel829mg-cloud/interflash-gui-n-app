@@ -356,7 +356,8 @@ jobs:
               private void showPin() {
                   StringBuilder stars = new StringBuilder();
                   for (int i = 0; i < typed.length(); i++) stars.append("● ");
-                  for (int i = typed.length(); i < 4; i++) stars.append("○ ");\n                  pinDisplay.setText(stars.toString());
+                  for (int i = typed.length(); i < 4; i++) stars.append("○ ");
+                  pinDisplay.setText(stars.toString());
                   message.setText("Introduce el PIN del técnico.");
               }
 

@@ -1,8 +1,8 @@
-name: Inter Flash TV 0.70 - Reproductor anterior restaurado
+name: Inter Flash TV 0.72 - Solo canales
 on:
   push:
-    branches: ['feature/interflash-tv-tech-ok10-20261126']
-    paths: ['native-v057/interflash-tech-ok10.py', '.github/workflows/interflash-v057.yml']
+    branches: ['feature/interflash-tv-kiosk-live-20261126']
+    paths: ['native-v057/interflash-tech-ok10.py', 'native-v057/interflash-kiosk-live.py', '.github/workflows/interflash-v057.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -490,6 +490,8 @@ jobs:
       # Do NOT apply native-v057/vlc-vod-only.py: it caused black-screen reports in 0.68.
       - name: Add hidden technician PIN on 10-second OK hold
         run: python3 native-v057/interflash-tech-ok10.py
+      - name: Apply fullscreen-only client and managed kiosk
+        run: python3 native-v057/interflash-kiosk-live.py
       - name: List available SDK platforms
         run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --list | grep -E "platforms;android-3[67]"'
       - name: Install Android SDK
@@ -499,8 +501,8 @@ jobs:
       - name: Compile stable-package update with original VOD player
         working-directory: native-source/InterFlashTV-OwnTV
         env:
-          VERSION_CODE: '71'
-          VERSION_NAME: '0.71'
+          VERSION_CODE: '72'
+          VERSION_NAME: '0.72'
         run: |
           chmod +x gradlew
           ./gradlew :app:assembleStandardRelease -Powntv.corePath=../OwnTV_Core-main -Pkotlin.compiler.execution.strategy=in-process --no-daemon --max-workers=2 -Dorg.gradle.jvmargs="-Xmx4g -XX:ActiveProcessorCount=2"
@@ -532,11 +534,11 @@ jobs:
           fi
           SDK_BUILD_TOOLS="$ANDROID_HOME/build-tools/36.0.0"
           "$SDK_BUILD_TOOLS/zipalign" -f -p 4 "$APK" /tmp/interflash-signing/aligned.apk
-          "$SDK_BUILD_TOOLS/apksigner" sign --ks "$STORE" --ks-key-alias "$ALIAS" --ks-pass "pass:$STORE_PASS" --key-pass "pass:$PASS" --out "$APK_DIR/InterFlashTV-v0.71-INSTALABLE.apk" /tmp/interflash-signing/aligned.apk
-          "$SDK_BUILD_TOOLS/apksigner" verify --verbose "$APK_DIR/InterFlashTV-v0.71-INSTALABLE.apk"
+          "$SDK_BUILD_TOOLS/apksigner" sign --ks "$STORE" --ks-key-alias "$ALIAS" --ks-pass "pass:$STORE_PASS" --key-pass "pass:$PASS" --out "$APK_DIR/InterFlashTV-v0.72-INSTALABLE.apk" /tmp/interflash-signing/aligned.apk
+          "$SDK_BUILD_TOOLS/apksigner" verify --verbose "$APK_DIR/InterFlashTV-v0.72-INSTALABLE.apk"
           rm -f "$APK"
       - uses: actions/upload-artifact@v4
         with:
-          name: InterFlashTV-v0.71-INSTALABLE-PIN8888-OK10s
-          path: native-source/InterFlashTV-OwnTV/app/build/outputs/apk/standard/release/InterFlashTV-v0.71-INSTALABLE.apk
+          name: InterFlashTV-v0.72-INSTALABLE-SOLO-CANALES
+          path: native-source/InterFlashTV-OwnTV/app/build/outputs/apk/standard/release/InterFlashTV-v0.72-INSTALABLE.apk
           if-no-files-found: error

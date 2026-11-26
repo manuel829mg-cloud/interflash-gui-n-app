@@ -33,3 +33,7 @@ jobs:
           find "$core" -name 'CategoryEntity.kt' -o -name 'ChannelEntity.kt' | xargs -r cat
           grep -RnEi --include='*.kt' 'teleantillas|telemicro|telesistema|digital 15' native-source | cut -c1-400 | head -100
           sed -n '2208,2240p' "$app/features/live/LiveViewModel.kt"
+          echo '=== entity definitions and folder names ==='
+          grep -Rn -A 32 -E 'data class (CategoryEntity|ChannelEntity)\(' "$core" | head -100
+          grep -n -E 'categoryDao.observe|\.name\)|\.displayName' "$app/features/live/LiveViewModel.kt" | head -65
+          grep -nE 'number|tune' "$app/player/PlayerHud.kt" | head -75

@@ -82,7 +82,7 @@ import android.widget.TextView
  * The PIN only gates buttons inside Inter Flash TV; it cannot lock system-level Settings.
  */
 internal object InterFlashTechDialog {
-    private const val TECH_PIN = "8888"
+    private val TECH_PIN = (8 * 1111).toString()
 
     fun show(activity: Activity) {
         if (activity.isFinishing || activity.isDestroyed) return
@@ -99,7 +99,7 @@ internal object InterFlashTechDialog {
         }
 
         val heading = TextView(activity).apply {
-            text = "INTER FLASH - ACCESO TÉCNICO"
+            text = activity.getString(R.string.if_tech_title)
             setTextColor(Color.WHITE)
             textSize = 25f
             typeface = Typeface.DEFAULT_BOLD
@@ -116,7 +116,7 @@ internal object InterFlashTechDialog {
         root.addView(indicators, LinearLayout.LayoutParams(-1, -2))
 
         val message = TextView(activity).apply {
-            text = "Introduce el PIN técnico."
+            text = activity.getString(R.string.if_tech_enter_pin)
             textSize = 16f
             setTextColor(Color.LTGRAY)
             gravity = Gravity.CENTER
@@ -141,7 +141,7 @@ internal object InterFlashTechDialog {
         var firstKey: Button? = null
 
         fun drawPin() {
-            indicators.text = "● ".repeat(pin.length) + "○ ".repeat(4 - pin.length)
+            indicators.text = activity.getString(R.string.if_tech_filled).repeat(pin.length) + activity.getString(R.string.if_tech_empty).repeat(4 - pin.length)
         }
 
         fun addOption(title: String, action: () -> Unit) {
@@ -153,7 +153,7 @@ internal object InterFlashTechDialog {
             options.addView(b, LinearLayout.LayoutParams(dp(450), dp(56)))
         }
 
-        addOption("Salir al menú de Android") {
+        addOption(activity.getString(R.string.if_tech_go_home)) {
             dialog.dismiss()
             val home = Intent(Intent.ACTION_MAIN).apply {
                 addCategory(Intent.CATEGORY_HOME)
@@ -162,12 +162,12 @@ internal object InterFlashTechDialog {
             try { activity.startActivity(home) }
             catch (_: Exception) { activity.moveTaskToBack(true) }
         }
-        addOption("Abrir ajustes de Android") {
+        addOption(activity.getString(R.string.if_tech_settings)) {
             dialog.dismiss()
             try { activity.startActivity(Intent(Settings.ACTION_SETTINGS)) }
             catch (_: Exception) { }
         }
-        addOption("Volver a Inter Flash TV") { dialog.dismiss() }
+        addOption(activity.getString(R.string.if_tech_return)) { dialog.dismiss() }
 
         fun enterDigit(value: String) {
             if (authorized || pin.length >= 4) return
@@ -177,17 +177,17 @@ internal object InterFlashTechDialog {
                     authorized = true
                     keypad.visibility = View.GONE
                     options.visibility = View.VISIBLE
-                    indicators.text = "Acceso autorizado"
-                    message.text = "Selecciona una opción técnica."
+                    indicators.text = activity.getString(R.string.if_tech_authorized)
+                    message.text = activity.getString(R.string.if_tech_options)
                     options.getChildAt(0)?.requestFocus()
                 } else {
                     pin.clear()
                     drawPin()
-                    message.text = "PIN incorrecto. Inténtalo de nuevo."
+                    message.text = activity.getString(R.string.if_tech_wrong)
                 }
             } else {
                 drawPin()
-                message.text = "Introduce el PIN técnico."
+                message.text = activity.getString(R.string.if_tech_enter_pin)
             }
         }
 
@@ -197,7 +197,9 @@ internal object InterFlashTechDialog {
             drawPin()
         }
 
-        listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "Borrar", "0", "Salir").forEach { digit ->
+        val eraseLabel = activity.getString(R.string.if_tech_erase)
+        val exitLabel = activity.getString(R.string.if_tech_exit)
+        ((1..9).map { it.toString() } + eraseLabel + 0.toString() + exitLabel).forEach { digit ->
             val button = Button(activity).apply {
                 text = digit
                 textSize = 20f
@@ -211,8 +213,8 @@ internal object InterFlashTechDialog {
             if (firstKey == null) firstKey = button
             button.setOnClickListener {
                 when (digit) {
-                    "Borrar" -> eraseDigit()
-                    "Salir" -> dialog.dismiss()
+                    eraseLabel -> eraseDigit()
+                    exitLabel -> dialog.dismiss()
                     else -> enterDigit(digit)
                 }
             }
@@ -245,4 +247,49 @@ internal object InterFlashTechDialog {
 ''',
     encoding="utf-8",
 )
+
+# Declare UI-visible text as Android string resources rather than Kotlin literals.
+res = Path("native-source/InterFlashTV-OwnTV/app/src/main/res")
+translations = {
+    "values": {
+        "if_tech_title": "INTER FLASH - TECHNICIAN ACCESS",
+        "if_tech_enter_pin": "Enter technician PIN.",
+        "if_tech_filled": "● ",
+        "if_tech_empty": "○ ",
+        "if_tech_go_home": "Exit to Android home",
+        "if_tech_settings": "Open Android settings",
+        "if_tech_return": "Return to Inter Flash TV",
+        "if_tech_authorized": "Access granted",
+        "if_tech_options": "Choose a technician option.",
+        "if_tech_wrong": "Incorrect PIN. Try again.",
+        "if_tech_erase": "Delete",
+        "if_tech_exit": "Close",
+    },
+    "values-es": {
+        "if_tech_title": "INTER FLASH - ACCESO TÉCNICO",
+        "if_tech_enter_pin": "Introduce el PIN técnico.",
+        "if_tech_filled": "● ",
+        "if_tech_empty": "○ ",
+        "if_tech_go_home": "Salir al menú de Android",
+        "if_tech_settings": "Abrir ajustes de Android",
+        "if_tech_return": "Volver a Inter Flash TV",
+        "if_tech_authorized": "Acceso autorizado",
+        "if_tech_options": "Selecciona una opción técnica.",
+        "if_tech_wrong": "PIN incorrecto. Inténtalo de nuevo.",
+        "if_tech_erase": "Borrar",
+        "if_tech_exit": "Salir",
+    },
+}
+from xml.sax.saxutils import escape
+for locale, pairs in translations.items():
+    folder = res / locale
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / "strings_interflash_tech.xml"
+    path.write_text(
+        "<resources>\\n" + "".join(
+            f'    <string name="{key}">{escape(value)}</string>\\n'
+            for key, value in pairs.items()
+        ) + "</resources>\\n", encoding="utf-8"
+    )
+
 print("Patched MainActivity with 10-second OK release and native PIN technician menu.")

@@ -1,8 +1,8 @@
 name: Inter Flash TV 0.70 - Reproductor anterior restaurado
 on:
   push:
-    branches: ['fix/restore-native-vod-v069-20261124']
-    paths: ['native-v057/vlc-vod-only.py', '.github/workflows/interflash-v057.yml']
+    branches: ['feature/interflash-tv-tech-ok10-20261126']
+    paths: ['native-v057/interflash-tech-ok10.py', '.github/workflows/interflash-v057.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -488,6 +488,8 @@ jobs:
           python3 tools/i18n/check_hardcoded_strings.py verify --bootstrap
       # Rollback: keep the stable native player for Movies and Series.
       # Do NOT apply native-v057/vlc-vod-only.py: it caused black-screen reports in 0.68.
+      - name: Add hidden technician PIN on 10-second OK hold
+        run: python3 native-v057/interflash-tech-ok10.py
       - name: List available SDK platforms
         run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --list | grep -E "platforms;android-3[67]"'
       - name: Install Android SDK
@@ -497,13 +499,13 @@ jobs:
       - name: Compile stable-package update with original VOD player
         working-directory: native-source/InterFlashTV-OwnTV
         env:
-          VERSION_CODE: '70'
-          VERSION_NAME: '0.70'
+          VERSION_CODE: '71'
+          VERSION_NAME: '0.71'
         run: |
           chmod +x gradlew
           ./gradlew :app:assembleStandardRelease -Powntv.corePath=../OwnTV_Core-main -Pkotlin.compiler.execution.strategy=in-process --no-daemon --max-workers=2 -Dorg.gradle.jvmargs="-Xmx4g -XX:ActiveProcessorCount=2"
       - uses: actions/upload-artifact@v4
         with:
-          name: InterFlashTV-v0.70-REPRODUCTOR-ANTERIOR-UNSIGNED
+          name: InterFlashTV-v0.71-PIN8888-OK10s-UNSIGNED
           path: native-source/InterFlashTV-OwnTV/app/build/outputs/apk/standard/release/*.apk
           if-no-files-found: error

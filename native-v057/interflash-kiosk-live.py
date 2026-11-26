@@ -36,8 +36,7 @@ edit(vm,[('    suspend fun lastWatchedLiveChannel(): ChannelEntity? {','    susp
 hud=app/"player/PlayerHud.kt"
 edit(hud,[('            // ---- Direct-tune digit capture (before the existing KeyDown guard) ----',
 '''            // Live-only client: ordinary OK or horizontal arrow opens the channel overlay.
-            if (!tv.own.owntv.features.shell.InterFlashClientMode.administrator &&
-                onOpenChannelList != null && !inert && !controlsVisible && !digitsActive &&
+            if (onOpenChannelList != null && !inert && !controlsVisible && !digitsActive &&
                 dialog == HudDialog.NONE && (isPlayerOkKey(e.key) ||
                 e.key == Key.DirectionLeft || e.key == Key.DirectionRight)) {
                 if (e.type == KeyEventType.KeyUp && !e.nativeKeyEvent.isCanceled) onOpenChannelList()
@@ -50,7 +49,7 @@ main=app/"MainActivity.kt"
 edit(main,[('    override fun onStart() {','''    override fun onResume() {
         super.onResume()
         runCatching {
-            val dpm = getSystemService(android.app.admin.DevicePolicyManager::class.java)
+            val dpm = getSystemService(android.app.admin.DevicePolicyManager::class.java) ?: return@runCatching
             if (dpm.isDeviceOwnerApp(packageName)) {
                 dpm.setLockTaskPackages(android.content.ComponentName(this, InterFlashDeviceAdmin::class.java), arrayOf(packageName))
             }

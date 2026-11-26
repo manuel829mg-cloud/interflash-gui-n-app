@@ -1,0 +1,236 @@
+name: Inter Flash Soporte Tecnico - APK independiente
+on:
+  push:
+    branches:
+      - feature/interflash-home-delay30
+    paths:
+      - .github/workflows/interflash-soporte-independiente.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Install Android SDK
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --channel=0 "platforms;android-35" "build-tools;35.0.0"
+      - name: Make dedicated support app
+        run: |
+          mkdir -p soporte/app/src/main/java/com/interflash/tecnico
+          cat > soporte/settings.gradle <<'EOF'
+          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+          dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }
+          rootProject.name = 'InterFlashSoporteTecnico'
+          include ':app'
+          EOF
+          cat > soporte/build.gradle <<'EOF'
+          plugins { id 'com.android.application' version '8.7.3' apply false }
+          EOF
+          cat > soporte/gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx2g -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          EOF
+          cat > soporte/app/build.gradle <<'EOF'
+          plugins { id 'com.android.application' }
+          android {
+              namespace 'com.interflash.tecnico'
+              compileSdk 35
+              defaultConfig {
+                  applicationId 'com.interflash.tecnico'
+                  minSdk 23
+                  targetSdk 32
+                  versionCode 1
+                  versionName '1.0'
+              }
+          }
+          EOF
+          cat > soporte/app/src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-feature android:name="android.software.leanback" android:required="false"/>
+              <application android:allowBackup="false" android:label="Inter Flash Técnico PIN"
+                  android:theme="@android:style/Theme.Material.NoActionBar">
+                  <activity android:name=".TechActivity" android:exported="true"
+                      android:screenOrientation="landscape">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LEANBACK_LAUNCHER"/>
+                      </intent-filter>
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+          cat > soporte/app/src/main/java/com/interflash/tecnico/TechActivity.java <<'EOF'
+          package com.interflash.tecnico;
+
+          import android.app.Activity;
+          import android.content.Intent;
+          import android.graphics.Color;
+          import android.graphics.Typeface;
+          import android.os.Bundle;
+          import android.provider.Settings;
+          import android.view.Gravity;
+          import android.view.KeyEvent;
+          import android.view.View;
+          import android.widget.Button;
+          import android.widget.GridLayout;
+          import android.widget.LinearLayout;
+          import android.widget.TextView;
+
+          public final class TechActivity extends Activity {
+              private final StringBuilder typed = new StringBuilder();
+              private TextView pinDisplay;
+              private TextView status;
+              private GridLayout keypad;
+              private LinearLayout authorizedView;
+              private boolean unlocked = false;
+
+              @Override public void onCreate(Bundle state) {
+                  super.onCreate(state);
+                  LinearLayout root = new LinearLayout(this);
+                  root.setOrientation(LinearLayout.VERTICAL);
+                  root.setGravity(Gravity.CENTER);
+                  root.setPadding(50, 24, 50, 24);
+                  root.setBackgroundColor(Color.rgb(12, 24, 38));
+                  TextView title = new TextView(this);
+                  title.setText("INTER FLASH - SOPORTE TÉCNICO");
+                  title.setTextColor(Color.WHITE);
+                  title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+                  title.setTextSize(27);
+                  title.setGravity(Gravity.CENTER);
+                  root.addView(title, new LinearLayout.LayoutParams(-1, -2));
+
+                  pinDisplay = new TextView(this);
+                  pinDisplay.setTextSize(32);
+                  pinDisplay.setGravity(Gravity.CENTER);
+                  pinDisplay.setPadding(0, 12, 0, 3);
+                  pinDisplay.setTextColor(Color.WHITE);
+                  root.addView(pinDisplay, new LinearLayout.LayoutParams(-1, -2));
+
+                  status = new TextView(this);
+                  status.setGravity(Gravity.CENTER);
+                  status.setTextSize(16);
+                  status.setTextColor(Color.LTGRAY);
+                  status.setPadding(0, 2, 0, 8);
+                  root.addView(status, new LinearLayout.LayoutParams(-1, -2));
+
+                  keypad = new GridLayout(this);
+                  keypad.setColumnCount(3);
+                  Button first = null;
+                  String[] digits = {"1","2","3","4","5","6","7","8","9","Borrar","0","Salir"};
+                  for (String value : digits) {
+                      Button b = new Button(this);
+                      b.setText(value);
+                      b.setTextSize(19);
+                      GridLayout.LayoutParams lp = new GridLayout.LayoutParams();
+                      lp.width = 168;
+                      lp.height = 66;
+                      lp.setMargins(3,3,3,3);
+                      keypad.addView(b,lp);
+                      if (first == null) first = b;
+                      if ("Borrar".equals(value)) b.setOnClickListener(v -> erase());
+                      else if ("Salir".equals(value)) b.setOnClickListener(v -> finish());
+                      else b.setOnClickListener(v -> digit(value));
+                  }
+                  root.addView(keypad);
+
+                  authorizedView = new LinearLayout(this);
+                  authorizedView.setOrientation(LinearLayout.VERTICAL);
+                  authorizedView.setGravity(Gravity.CENTER);
+                  authorizedView.setVisibility(View.GONE);
+                  Button settings = new Button(this);
+                  settings.setText("Abrir ajustes de Android");
+                  settings.setOnClickListener(v -> launchSettings(new Intent(Settings.ACTION_SETTINGS)));
+                  authorizedView.addView(settings, new LinearLayout.LayoutParams(480, -2));
+                  Button homeChoice = new Button(this);
+                  homeChoice.setText("Elegir pantalla de inicio");
+                  homeChoice.setOnClickListener(v -> launchSettings(new Intent(Settings.ACTION_HOME_SETTINGS)));
+                  authorizedView.addView(homeChoice, new LinearLayout.LayoutParams(480, -2));
+                  Button exit = new Button(this);
+                  exit.setText("Salir");
+                  exit.setOnClickListener(v -> finish());
+                  authorizedView.addView(exit, new LinearLayout.LayoutParams(480, -2));
+                  root.addView(authorizedView);
+                  setContentView(root);
+                  showPin();
+                  first.requestFocus();
+              }
+
+              private void showPin() {
+                  StringBuilder stars = new StringBuilder();
+                  for (int i=0;i<typed.length();i++) stars.append("● ");
+                  for (int i=typed.length();i<4;i++) stars.append("○ ");
+                  pinDisplay.setText(stars.toString());
+                  status.setText("Introduce el PIN técnico.");
+              }
+
+              private void digit(String val) {
+                  if (unlocked || typed.length() == 4) return;
+                  typed.append(val);
+                  if (typed.length() == 4) {
+                      if ("8888".contentEquals(typed)) {
+                          unlocked = true;
+                          keypad.setVisibility(View.GONE);
+                          authorizedView.setVisibility(View.VISIBLE);
+                          pinDisplay.setText("Acceso técnico autorizado");
+                          status.setText("Selecciona una opción.");
+                          authorizedView.getChildAt(0).requestFocus();
+                      } else {
+                          typed.setLength(0);
+                          showPin();
+                          status.setText("PIN incorrecto.");
+                      }
+                  } else showPin();
+              }
+
+              private void erase() {
+                  if (unlocked) return;
+                  if (typed.length()>0) typed.deleteCharAt(typed.length()-1);
+                  showPin();
+              }
+
+              private void launchSettings(Intent intent) {
+                  if (!unlocked) return;
+                  try { startActivity(intent); }
+                  catch (Exception e) {
+                      try { startActivity(new Intent(Settings.ACTION_SETTINGS)); }
+                      catch (Exception ignored) { status.setText("Ajustes bloqueados por el equipo."); }
+                  }
+              }
+
+              @Override public boolean onKeyDown(int keyCode, KeyEvent event) {
+                  if (!unlocked && keyCode>=KeyEvent.KEYCODE_0 && keyCode<=KeyEvent.KEYCODE_9) {
+                      digit(String.valueOf(keyCode - KeyEvent.KEYCODE_0));
+                      return true;
+                  }
+                  if (!unlocked && keyCode>=KeyEvent.KEYCODE_NUMPAD_0 && keyCode<=KeyEvent.KEYCODE_NUMPAD_9) {
+                      digit(String.valueOf(keyCode - KeyEvent.KEYCODE_NUMPAD_0));
+                      return true;
+                  }
+                  if (!unlocked && keyCode==KeyEvent.KEYCODE_DEL) { erase(); return true; }
+                  return super.onKeyDown(keyCode,event);
+              }
+          }
+          EOF
+      - name: Compile technical support APK
+        working-directory: soporte
+        run: gradle :app:assembleDebug --no-daemon --max-workers=2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: InterFlash-Soporte-Tecnico-PIN8888
+          path: soporte/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

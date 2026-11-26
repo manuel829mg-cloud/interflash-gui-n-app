@@ -6,8 +6,9 @@ app=root/"java/tv/own/owntv"
 def edit(p, pairs):
     s=p.read_text()
     for old,new in pairs:
-        assert s.count(old)==1, f"{p}: expected one anchor {old!r}, found {s.count(old)}"
-        s=s.replace(old,new,1)
+        expected = 2 if old.startswith("onPickAvatar = {") else 1
+        assert s.count(old)==expected, f"{p}: expected {expected} anchor(s) {old!r}, found {s.count(old)}"
+        s=s.replace(old,new)
     p.write_text(s)
 shell=app/"features/shell/OwnTVShell.kt"
 edit(shell, [

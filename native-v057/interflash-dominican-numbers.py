@@ -43,7 +43,7 @@ internal object DominicanChannelNumbers {
         11 to listOf("telesistema"),
         12 to listOf("teleunion"),
         13 to listOf("telecentro"),
-        14 to listOf("catorce tv"),
+        14 to listOf("atv", "atv 14"),
         15 to listOf("digital 15", "digital quince", "telemicro digital 15"),
         16 to listOf("noticias 16"),
         17 to listOf("rtvd 17", "quisqueya television", "qtv 17"),
@@ -54,22 +54,27 @@ internal object DominicanChannelNumbers {
         23 to listOf("telefuturo"),
         26 to listOf("canal del sol"),
         27 to listOf("rnn", "rnn canal 27"),
-        28 to listOf("telecanal 28"),
+        28 to listOf("telecanal 28", "galaxia teve"),
         29 to listOf("teleuniverso", "tele universo"),
         32 to listOf("vtv", "vtv television"),
         33 to listOf("supercanal", "super canal"),
         35 to listOf("telecontacto"),
-        36 to listOf("cdn deportes", "cdn sports"),
+        25 to listOf("cdn deportes", "cdn sports"),
         37 to listOf("cdn", "cdn 37"),
         39 to listOf("coral 39", "coral tv"),
         41 to listOf("televida"),
-        42 to listOf("galaxia teve"),
+        42 to listOf("romana tv"),
         44 to listOf("tele ola"),
         53 to listOf("la voz de maria"),
         55 to listOf("super tv 55", "super tv"),
         57 to listOf("ecos 57", "ecos tv"),
         63 to listOf("digital vision"),
-        77 to listOf("hilando fino tv")
+        70 to listOf("carivision", "cari vision"),
+        72 to listOf("entelevision", "en television"),
+        75 to listOf("catorce tv"),
+        77 to listOf("hilando fino tv"),
+        90 to listOf("biz tv"),
+        99 to listOf("nexxo tv")
     )
 
     fun known(name: String): Int? {
@@ -79,8 +84,8 @@ internal object DominicanChannelNumbers {
             .trim()
         val withoutLabel = cleaned.replace(Regex(" (?:canal )?[0-9]{1,3}$"), "")
         // Prefer exact aliases (e.g. RTVD 17, CDN Deportes, not RTVD or CDN).
-        return aliases.entries.firstOrNull { (_, names) -> cleaned in names }?.key
-            ?: aliases.entries.firstOrNull { (_, names) -> withoutLabel in names }?.key
+        return aliases.entries.firstOrNull { (_, names) -> names.any { Regex(it).matches(cleaned) } }?.key
+            ?: aliases.entries.firstOrNull { (_, names) -> names.any { Regex(it).matches(withoutLabel) } }?.key
     }
 
     /** Unknown channels need an explicit on-air number in their title, not the stream ID. */
@@ -135,3 +140,22 @@ vm.write_text(s, encoding="utf-8")
 
 # Preserve the existing number-entry timer, playback and technician shortcut.
 print("Dominican numeric routing patched; ambiguous regional labels fail safely.")
+
+
+# Explicitly classify technical matching patterns, never UI strings.
+import re
+import json
+import subprocess
+app_root = root / "InterFlashTV-OwnTV"
+core_root = root / "OwnTV_Core-main"
+app_path = "app/src/main/java/tv/own/owntv/interflash/DominicanChannelNumbers.kt"
+core_path = "core/src/main/java/tv/own/owntv/core/database/dao/ChannelDao.kt"
+def classify(base, relpath, value, category):
+    subprocess.run(["python3", "tools/i18n/check_hardcoded_strings.py",
+                    "classify-safe", "--path", relpath, "--text", value,
+                    "--category", category], cwd=base, check=True)
+
+strings = set(json.loads(m.group()) for m in re.finditer(r'"(?:\\.|[^"\\])*"', mapping.read_text(encoding="utf-8")))
+for value in sorted(strings):
+    classify(app_root, app_path, value, "empty" if not value.strip() else "regex")
+classify(core_root, core_path, "SELECT * FROM channels WHERE categoryId IN (:categoryIds) ORDER BY sourceId, sortOrder, id", "sql")

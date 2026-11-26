@@ -49,8 +49,8 @@ jobs:
                   applicationId 'com.interflash.home'
                   minSdk 23
                   targetSdk 32
-                  versionCode 5
-                  versionName '1.4'
+                  versionCode 6
+                  versionName '1.5'
               }
           }
           EOF
@@ -63,7 +63,8 @@ jobs:
               <application android:allowBackup="false" android:label="Inter Flash Inicio Seguro"
                   android:theme="@android:style/Theme.Material.NoActionBar">
                   <activity android:name=".MainActivity" android:exported="true"
-                      android:launchMode="singleTask" android:excludeFromRecents="true">
+                      android:launchMode="singleTask" android:excludeFromRecents="true"
+                      android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen">
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN"/>
                           <category android:name="android.intent.category.HOME"/>
@@ -119,42 +120,17 @@ jobs:
 
               @Override public void onCreate(Bundle state) {
                   super.onCreate(state);
-                  LinearLayout layout = new LinearLayout(this);
-                  layout.setOrientation(LinearLayout.VERTICAL);
-                  layout.setGravity(android.view.Gravity.CENTER);
-                  layout.setPadding(60, 36, 60, 36);
-                  layout.setBackgroundColor(Color.rgb(11, 19, 30));
-
-                  TextView title = new TextView(this);
-                  title.setText("INTER FLASH TV");
-                  title.setTextSize(32);
-                  title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-                  title.setGravity(android.view.Gravity.CENTER);
-                  title.setTextColor(Color.WHITE);
-                  layout.addView(title, new LinearLayout.LayoutParams(-1, -2));
-
+                  getWindow().getDecorView().setSystemUiVisibility(
+                      View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
+                      View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+                  android.widget.FrameLayout root = new android.widget.FrameLayout(this);
+                  root.setBackgroundColor(Color.BLACK);
                   status = new TextView(this);
                   status.setTextColor(Color.LTGRAY);
-                  status.setTextSize(19);
                   status.setGravity(android.view.Gravity.CENTER);
-                  status.setPadding(0, 28, 0, 28);
-                  layout.addView(status, new LinearLayout.LayoutParams(-1, -2));
-
-                  Button open = new Button(this);
-                  open.setText("Abrir Inter Flash TV ahora");
-                  open.setOnClickListener(v -> openTV());
-                  layout.addView(open, new LinearLayout.LayoutParams(430, -2));
-
-                  TextView hint = new TextView(this);
-                  hint.setText("Inter Flash, siempre conectado contigo.");
-                  hint.setTextColor(Color.GRAY);
-                  hint.setTextSize(14);
-                  hint.setGravity(android.view.Gravity.CENTER);
-                  hint.setPadding(0, 22, 0, 0);
-                  layout.addView(hint, new LinearLayout.LayoutParams(-1, -2));
-
-                  setContentView(layout);
-                  open.requestFocus();
+                  status.setVisibility(View.GONE);
+                  root.addView(status, new android.widget.FrameLayout.LayoutParams(-1, -1));
+                  setContentView(root);
               }
 
               @Override protected void onResume() {
@@ -190,7 +166,7 @@ jobs:
                       openTV();
                       return;
                   }
-                  status.setText("Esperando conexión a Internet...");
+                  // No intermediate screen or countdown during connectivity recovery.
                   // Reintentar mientras la ZTE siga encendida, incluso si el
                   // proveedor tarda en recuperar Internet.
                   handler.postDelayed(update, 350L);
@@ -201,6 +177,7 @@ jobs:
                   Intent intent = getPackageManager().getLaunchIntentForPackage(TARGET);
                   if (intent == null) {
                       status.setText("Inter Flash TV no está instalada. Instálala para continuar.");
+                      status.setVisibility(View.VISIBLE);
                       return;
                   }
                   try {
@@ -209,7 +186,8 @@ jobs:
                       startActivity(intent);
                   } catch (Exception e) {
                       started = false;
-                      status.setText("No se pudo abrir Inter Flash TV. Pulsa Abrir para reintentar.");
+                      status.setVisibility(View.GONE);
+                      handler.postDelayed(update, 350L);
                   }
               }
           }
@@ -385,6 +363,6 @@ jobs:
         run: gradle :app:assembleDebug --no-daemon --max-workers=2
       - uses: actions/upload-artifact@v4
         with:
-          name: InterFlash-Inicio-Sin-Espera-PIN8888-APK
+          name: InterFlash-Inicio-Directo-v1.5-APK
           path: delayed-home/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error

@@ -286,10 +286,10 @@ for locale, pairs in translations.items():
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / "strings_interflash_tech.xml"
     path.write_text(
-        "<resources>\\n" + "".join(
-            f'    <string name="{key}">{escape(value)}</string>\\n'
+        "<resources>\n" + "".join(
+            f'    <string name="{key}">{escape(value)}</string>\n'
             for key, value in pairs.items()
-        ) + "</resources>\\n", encoding="utf-8"
+        ) + "</resources>\n", encoding="utf-8"
     )
 
 print("Patched MainActivity with 10-second OK release and native PIN technician menu.")

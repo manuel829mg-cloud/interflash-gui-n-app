@@ -49,8 +49,8 @@ jobs:
                   applicationId 'com.interflash.home'
                   minSdk 23
                   targetSdk 32
-                  versionCode 2
-                  versionName '1.1'
+                  versionCode 3
+                  versionName '1.2'
               }
           }
           EOF
@@ -89,8 +89,7 @@ jobs:
           import android.os.Handler;
           import android.os.Looper;
           import android.os.SystemClock;
-          import android.provider.Settings;
-          import android.graphics.Color;
+                    import android.graphics.Color;
           import android.graphics.Typeface;
           import android.view.View;
           import android.widget.Button;
@@ -144,19 +143,8 @@ jobs:
                   open.setOnClickListener(v -> openTV());
                   layout.addView(open, new LinearLayout.LayoutParams(430, -2));
 
-                  Button settings = new Button(this);
-                  settings.setText("Recuperar ajustes de Android");
-                  settings.setOnClickListener(v -> {
-                      try {
-                          startActivity(new Intent(Settings.ACTION_HOME_SETTINGS));
-                      } catch (Exception ignored) {
-                          startActivity(new Intent(Settings.ACTION_SETTINGS));
-                      }
-                  });
-                  layout.addView(settings, new LinearLayout.LayoutParams(430, -2));
-
                   TextView hint = new TextView(this);
-                  hint.setText("Inicio seguro de prueba. No bloquea otras aplicaciones.");
+                  hint.setText("Inter Flash, siempre conectado contigo.");
                   hint.setTextColor(Color.GRAY);
                   hint.setTextSize(14);
                   hint.setGravity(android.view.Gravity.CENTER);
@@ -242,6 +230,6 @@ jobs:
         run: gradle :app:assembleDebug --no-daemon --max-workers=2
       - uses: actions/upload-artifact@v4
         with:
-          name: InterFlash-Inicio-2-Segundos-APK
+          name: InterFlash-Inicio-2s-Sin-Ajustes-APK
           path: delayed-home/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error

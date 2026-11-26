@@ -168,6 +168,53 @@ internal object InterFlashTechDialog {
             catch (_: Exception) { }
         }
         addOption(activity.getString(R.string.if_tech_return)) { dialog.dismiss() }
+        addOption(activity.getString(R.string.if_tech_safe_start)) {
+            // Show a technician-only launch menu with the two Android shortcuts.
+            // This is an in-app equivalent, not the device's separate boot screen.
+            val safeDialog = Dialog(activity)
+            val safeRoot = LinearLayout(activity).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                setPadding(dp(28), dp(28), dp(28), dp(28))
+                setBackgroundColor(Color.rgb(72, 130, 171))
+            }
+            val safeTitle = TextView(activity).apply {
+                text = activity.getString(R.string.if_tech_safe_title)
+                setTextColor(Color.WHITE)
+                textSize = 26f
+                typeface = Typeface.DEFAULT_BOLD
+                gravity = Gravity.CENTER
+            }
+            safeRoot.addView(safeTitle, LinearLayout.LayoutParams(dp(480), dp(70)))
+            fun safeButton(label: String, action: () -> Unit) {
+                val button = Button(activity).apply {
+                    text = label
+                    textSize = 18f
+                    setOnClickListener {
+                        safeDialog.dismiss()
+                        dialog.dismiss()
+                        action()
+                    }
+                }
+                safeRoot.addView(button, LinearLayout.LayoutParams(dp(450), dp(64)))
+            }
+            safeButton(activity.getString(R.string.if_tech_go_home)) {
+                val home = Intent(Intent.ACTION_MAIN).apply {
+                    addCategory(Intent.CATEGORY_HOME)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                try { activity.startActivity(home) }
+                catch (_: Exception) { activity.moveTaskToBack(true) }
+            }
+            safeButton(activity.getString(R.string.if_tech_settings)) {
+                try { activity.startActivity(Intent(Settings.ACTION_SETTINGS)) }
+                catch (_: Exception) { }
+            }
+            safeButton(activity.getString(R.string.if_tech_return)) { }
+            safeDialog.setContentView(safeRoot)
+            safeDialog.show()
+            safeDialog.window?.setLayout(dp(540), ViewGroup.LayoutParams.WRAP_CONTENT)
+        }
 
         fun enterDigit(value: String) {
             if (authorized || pin.length >= 4) return
@@ -252,6 +299,8 @@ internal object InterFlashTechDialog {
 res = Path("native-source/InterFlashTV-OwnTV/app/src/main/res")
 translations = {
     "values": {
+        "if_tech_safe_start": "Safe Android start menu",
+        "if_tech_safe_title": "INTER FLASH TV",
         "if_tech_title": "INTER FLASH - TECHNICIAN ACCESS",
         "if_tech_enter_pin": "Enter technician PIN.",
         "if_tech_filled": "● ",
@@ -266,6 +315,8 @@ translations = {
         "if_tech_exit": "Close",
     },
     "values-es": {
+        "if_tech_safe_start": "Menú de inicio seguro",
+        "if_tech_safe_title": "INTER FLASH TV",
         "if_tech_title": "INTER FLASH - ACCESO TÉCNICO",
         "if_tech_enter_pin": "Introduce el PIN técnico.",
         "if_tech_filled": "● ",

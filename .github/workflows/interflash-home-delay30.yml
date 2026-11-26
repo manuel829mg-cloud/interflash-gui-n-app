@@ -49,8 +49,8 @@ jobs:
                   applicationId 'com.interflash.home'
                   minSdk 23
                   targetSdk 32
-                  versionCode 1
-                  versionName '1.0'
+                  versionCode 2
+                  versionName '1.1'
               }
           }
           EOF
@@ -104,7 +104,7 @@ jobs:
            */
           public final class MainActivity extends Activity {
               private static final String TARGET = "com.interflash.tv.player";
-              private static final long INITIAL_DELAY_MS = 0L;
+              private static final long INITIAL_DELAY_MS = 2_000L;
               private static final long NETWORK_STABLE_MS = 0L;
               private static final long NETWORK_WAIT_LIMIT_MS = 120_000L;
               private final Handler handler = new Handler(Looper.getMainLooper());
@@ -242,6 +242,6 @@ jobs:
         run: gradle :app:assembleDebug --no-daemon --max-workers=2
       - uses: actions/upload-artifact@v4
         with:
-          name: InterFlash-Inicio-Sin-Espera-APK
+          name: InterFlash-Inicio-2-Segundos-APK
           path: delayed-home/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error

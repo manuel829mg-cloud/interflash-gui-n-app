@@ -504,8 +504,39 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew :app:assembleStandardRelease -Powntv.corePath=../OwnTV_Core-main -Pkotlin.compiler.execution.strategy=in-process --no-daemon --max-workers=2 -Dorg.gradle.jvmargs="-Xmx4g -XX:ActiveProcessorCount=2"
+      - name: Sign installable APK for testing
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.INTERFLASH_KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.INTERFLASH_KEY_PASSWORD }}
+          KEYSTORE_BASE64: ${{ secrets.INTERFLASH_KEYSTORE_BASE64 }}
+          KEY_ALIAS: ${{ secrets.INTERFLASH_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          APK_DIR="native-source/InterFlashTV-OwnTV/app/build/outputs/apk/standard/release"
+          APK=$(find "$APK_DIR" -maxdepth 1 -name '*.apk' -print -quit)
+          test -n "$APK"
+          mkdir -p /tmp/interflash-signing
+          if [ -n "$KEYSTORE_BASE64" ] && [ -n "$KEYSTORE_PASSWORD" ] && [ -n "$KEY_PASSWORD" ] && [ -n "$KEY_ALIAS" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > /tmp/interflash-signing/release.jks
+            STORE=/tmp/interflash-signing/release.jks
+            STORE_PASS="$KEYSTORE_PASSWORD"
+            PASS="$KEY_PASSWORD"
+            ALIAS="$KEY_ALIAS"
+          else
+            echo "::warning::No persistent signing secrets configured. Generating a temporary test key; reinstall may be required for future updates."
+            STORE=/tmp/interflash-signing/test.jks
+            STORE_PASS="testonly123456"
+            PASS="testonly123456"
+            ALIAS="interflash-test"
+            keytool -genkeypair -keystore "$STORE" -storepass "$STORE_PASS" -keypass "$PASS" -alias "$ALIAS" -keyalg RSA -keysize 3072 -validity 3650 -dname "CN=Inter Flash TV Test, O=Inter Flash, C=DO" -noprompt
+          fi
+          SDK_BUILD_TOOLS="$ANDROID_HOME/build-tools/36.0.0"
+          "$SDK_BUILD_TOOLS/zipalign" -f -p 4 "$APK" /tmp/interflash-signing/aligned.apk
+          "$SDK_BUILD_TOOLS/apksigner" sign --ks "$STORE" --ks-key-alias "$ALIAS" --ks-pass "pass:$STORE_PASS" --key-pass "pass:$PASS" --out "$APK_DIR/InterFlashTV-v0.71-INSTALABLE.apk" /tmp/interflash-signing/aligned.apk
+          "$SDK_BUILD_TOOLS/apksigner" verify --verbose "$APK_DIR/InterFlashTV-v0.71-INSTALABLE.apk"
+          rm -f "$APK"
       - uses: actions/upload-artifact@v4
         with:
-          name: InterFlashTV-v0.71-PIN8888-OK10s-UNSIGNED
-          path: native-source/InterFlashTV-OwnTV/app/build/outputs/apk/standard/release/*.apk
+          name: InterFlashTV-v0.71-INSTALABLE-PIN8888-OK10s
+          path: native-source/InterFlashTV-OwnTV/app/build/outputs/apk/standard/release/InterFlashTV-v0.71-INSTALABLE.apk
           if-no-files-found: error

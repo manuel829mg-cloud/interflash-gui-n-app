@@ -198,19 +198,12 @@ internal object InterFlashTechDialog {
                 }
                 safeRoot.addView(button, LinearLayout.LayoutParams(dp(450), dp(64)))
             }
-            safeButton(activity.getString(R.string.if_tech_go_home)) {
-                val home = Intent(Intent.ACTION_MAIN).apply {
-                    addCategory(Intent.CATEGORY_HOME)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                try { activity.startActivity(home) }
-                catch (_: Exception) { activity.moveTaskToBack(true) }
-            }
+            // Restore the two choices shown in the earlier safe-start screen.
             safeButton(activity.getString(R.string.if_tech_settings)) {
                 try { activity.startActivity(Intent(Settings.ACTION_SETTINGS)) }
                 catch (_: Exception) { }
             }
-            safeButton(activity.getString(R.string.if_tech_return)) { }
+            safeButton(activity.getString(R.string.if_tech_continue_tv)) { }
             safeDialog.setContentView(safeRoot)
             safeDialog.show()
             safeDialog.window?.setLayout(dp(540), ViewGroup.LayoutParams.WRAP_CONTENT)
@@ -301,6 +294,7 @@ translations = {
     "values": {
         "if_tech_safe_start": "Safe Android start menu",
         "if_tech_safe_title": "INTER FLASH TV",
+        "if_tech_continue_tv": "Continuar Inter Flash TV",
         "if_tech_title": "INTER FLASH - TECHNICIAN ACCESS",
         "if_tech_enter_pin": "Enter technician PIN.",
         "if_tech_filled": "● ",
@@ -317,6 +311,7 @@ translations = {
     "values-es": {
         "if_tech_safe_start": "Menú de inicio seguro",
         "if_tech_safe_title": "INTER FLASH TV",
+        "if_tech_continue_tv": "Continuar Inter Flash TV",
         "if_tech_title": "INTER FLASH - ACCESO TÉCNICO",
         "if_tech_enter_pin": "Introduce el PIN técnico.",
         "if_tech_filled": "● ",

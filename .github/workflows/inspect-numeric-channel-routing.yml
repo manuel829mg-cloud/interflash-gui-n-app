@@ -21,3 +21,9 @@ jobs:
           grep -RnEi 'dominican|dominicano|channelNumber|tuneByNumber|channelByNumber|KEYCODE_[0-9]|Key\.NumPad|Key\.Zero' "$app" | cut -c1-400 | head -200 || true
           find "$app" -name '*Live*ViewModel.kt' -exec sh -c 'echo "$1"; grep -nE "fun |val .*Flow|val .*State" "$1" | head -180' sh {} \;
           grep -nE 'liveVm|MainSection.LIVE_TV|onFullscreen|fun OwnTVShell' "$app/features/shell/OwnTVShell.kt" | head -150 || true
+          echo '=== tune implementation ==='
+          sed -n '1350,1485p' "$app/features/live/LiveViewModel.kt"
+          cat "$app/player/DirectTune.kt"
+          cat "$app/player/PlayerChannelKeys.kt"
+          echo '=== channel number assignment and settings ==='
+          grep -RnEi --include='*.kt' 'isDominicanFolder|dominicanChannel|dominicanNumber|numberKeysTune|directTune.*(default|false|true)|fun .*ChannelNumber' native-source | cut -c1-420 | head -180 || true

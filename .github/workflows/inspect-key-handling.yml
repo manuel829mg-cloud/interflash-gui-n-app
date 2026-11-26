@@ -24,4 +24,14 @@ jobs:
           echo "=== GLOBAL KEY HANDLERS ==="
           grep -Rnl -E 'dispatchKeyEvent|onKeyDown|onKeyUp|onKeyLongPress|KEYCODE_DPAD_CENTER|KEYCODE_ENTER|Key\.Enter|Key\.DirectionCenter' native-source/InterFlashTV-OwnTV/app/src/main/java | head -100
           echo "=== MAINACTIVITY HEAD ==="
-          find native-source/InterFlashTV-OwnTV/app/src/main/java -name '*MainActivity*.kt' -exec sh -c 'for f; do echo ===$f; sed -n "1,260p" "$f"; done' sh {} + | head -500
+          m=native-source/InterFlashTV-OwnTV/app/src/main/java/tv/own/owntv/MainActivity.kt
+          echo '=== MAINACTIVITY METHODS ==='
+          grep -nE 'override fun (onCreate|onResume|onPause|onDestroy|dispatchKeyEvent|onKeyDown|onKeyUp)|fun .*launch|class MainActivity' "$m" | head -70
+          echo '=== MAINACTIVITY 90-360 ==='
+          sed -n '90,360p' "$m"
+          echo '=== PLAYER OK PRESS ==='
+          cat native-source/InterFlashTV-OwnTV/app/src/main/java/tv/own/owntv/player/PlayerOkPress.kt
+          echo '=== PLAYER HUD OK references ==='
+          grep -n -C 12 -E 'KEYCODE_DPAD_CENTER|Key.DirectionCenter|Key.Enter|onKeyEvent|dispatchKeyEvent|detectTapGestures|longPress' native-source/InterFlashTV-OwnTV/app/src/main/java/tv/own/owntv/player/PlayerHud.kt | head -250
+          echo '=== SHELL OK references ==='
+          grep -n -C 7 -E 'Key.DirectionCenter|Key.Enter|onKeyEvent|KEYCODE_DPAD_CENTER|longPress' native-source/InterFlashTV-OwnTV/app/src/main/java/tv/own/owntv/features/shell/OwnTVShell.kt | head -190

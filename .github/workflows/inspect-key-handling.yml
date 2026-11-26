@@ -1,0 +1,27 @@
+name: Inspect Native Android TV Key Handling
+on:
+  push:
+    branches: [feature/interflash-tv-tech-ok10-20261126]
+    paths: [.github/workflows/inspect-key-handling.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Locate main activity and key handling
+        shell: bash
+        run: |
+          cat native-v057/source.part*.b64 | base64 -d > /tmp/native.tar.xz
+          mkdir -p native-source
+          tar -xJf /tmp/native.tar.xz -C native-source
+          echo "=== ACTIVITY FILES ==="
+          find native-source/InterFlashTV-OwnTV/app/src/main -iname '*Activity*' | head -60
+          echo "=== ANDROID MANIFEST ==="
+          grep -nE 'activity|MAIN|LAUNCHER|android:name=' native-source/InterFlashTV-OwnTV/app/src/main/AndroidManifest.xml | head -100
+          echo "=== GLOBAL KEY HANDLERS ==="
+          grep -Rnl -E 'dispatchKeyEvent|onKeyDown|onKeyUp|onKeyLongPress|KEYCODE_DPAD_CENTER|KEYCODE_ENTER|Key\.Enter|Key\.DirectionCenter' native-source/InterFlashTV-OwnTV/app/src/main/java | head -100
+          echo "=== MAINACTIVITY HEAD ==="
+          find native-source/InterFlashTV-OwnTV/app/src/main/java -name '*MainActivity*.kt' -exec sh -c 'for f; do echo ===$f; sed -n "1,260p" "$f"; done' sh {} + | head -500

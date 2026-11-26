@@ -27,3 +27,9 @@ jobs:
           cat "$app/player/PlayerChannelKeys.kt"
           echo '=== channel number assignment and settings ==='
           grep -RnEi --include='*.kt' 'isDominicanFolder|dominicanChannel|dominicanNumber|numberKeysTune|directTune.*(default|false|true)|fun .*ChannelNumber' native-source | cut -c1-420 | head -180 || true
+          echo '=== dao and entities ==='
+          core=native-source/OwnTV_Core-main/core/src/main/java/tv/own/owntv/core
+          cat "$core/database/dao/ChannelDao.kt" | head -280
+          find "$core" -name 'CategoryEntity.kt' -o -name 'ChannelEntity.kt' | xargs -r cat
+          grep -RnEi --include='*.kt' 'teleantillas|telemicro|telesistema|digital 15' native-source | cut -c1-400 | head -100
+          sed -n '2208,2240p' "$app/features/live/LiveViewModel.kt"

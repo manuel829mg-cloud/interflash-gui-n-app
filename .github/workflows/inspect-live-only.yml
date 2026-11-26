@@ -1,0 +1,25 @@
+name: Inspect live-only TV navigation
+on:
+  push:
+    branches: ['feature/interflash-tv-live-only-20261126']
+    paths: ['.github/workflows/inspect-live-only.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect exact player navigation
+        run: |
+          cat native-v057/source.part*.b64 | base64 -d > /tmp/native.tar.xz
+          mkdir native-source
+          tar -xJf /tmp/native.tar.xz -C native-source
+          app=native-source/InterFlashTV-OwnTV/app/src/main/java/tv/own/owntv
+          shell="$app/features/shell/OwnTVShell.kt"
+          grep -nE 'BackHandler|onBack|onExit|startupMode|lastWatched|PlayerMode|MainSection.LIVE_TV|onFullscreen' "$shell" | head -200
+          sed -n '380,560p' "$shell"
+          grep -RnE --include='*.kt' 'Key.Back|KEYCODE_BACK|BackHandler|onExitFullscreen|onCollapse' "$app/player" | head -120
+          grep -nE 'fun .*Channel|fun .*Folder|fun .*Play' "$app/features/live/LiveViewModel.kt" | head -140
+          grep -nE 'dispatchKeyEvent|onBackPressed|setContent|OwnTVShell' "$app/MainActivity.kt"

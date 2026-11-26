@@ -6,7 +6,7 @@ app=root/"java/tv/own/owntv"
 def edit(p, pairs):
     s=p.read_text()
     for old,new in pairs:
-        expected = 2 if old.startswith("onPickAvatar = {") else 1
+        expected = 2 if old.startswith("onPickAvatar = {") or old == "onAudioMode = toAudioMode," else 1
         assert s.count(old)==expected, f"{p}: expected {expected} anchor(s) {old!r}, found {s.count(old)}"
         s=s.replace(old,new)
     p.write_text(s)

@@ -59,9 +59,9 @@ import android.widget.LinearLayout
 
 /** Only captures keys which Android actually delivers to the foreground application. */
 internal object InterFlashRemoteShortcuts {
-    private enum class Slot { LIVE, MOVIES, SERIES }
+    private enum class Slot { LIVE, MOVIES, SERIES, MENU }
     private val slots = Slot.values()
-    private val labels = intArrayOf(R.string.if_remote_live, R.string.if_remote_movies, R.string.if_remote_series)
+    private val labels = intArrayOf(R.string.if_remote_live, R.string.if_remote_movies, R.string.if_remote_series, R.string.if_remote_menu)
     var onSection: ((Int) -> Unit)? = null
     var clientMenuEnabled = false
     private val menuLabels = intArrayOf(R.string.if_menu_live, R.string.if_menu_movies, R.string.if_menu_series)
@@ -98,7 +98,7 @@ internal object InterFlashRemoteShortcuts {
             button.nextFocusRightId = buttons[(index + 1) % buttons.size].id
         }
         dialog.setOnKeyListener { _, code, event ->
-            if (code == KeyEvent.KEYCODE_MENU) {
+            if (isMenuKey(activity, event)) {
                 if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) dialog.dismiss()
                 true
             } else false
@@ -116,11 +116,18 @@ internal object InterFlashRemoteShortcuts {
         Slot.LIVE -> KeyEvent.KEYCODE_PROG_RED
         Slot.MOVIES -> 0
         Slot.SERIES -> KeyEvent.KEYCODE_PROG_BLUE
+        Slot.MENU -> KeyEvent.KEYCODE_MENU
     }
 
     private fun key(context: Context, slot: Slot) = prefs(context).getInt(slot.name, defaultKey(slot))
     private fun identity(event: KeyEvent): Int =
         if (event.keyCode != KeyEvent.KEYCODE_UNKNOWN) event.keyCode else -event.scanCode
+
+    private fun standardMenu(code: Int): Boolean = code == KeyEvent.KEYCODE_MENU ||
+        code == KeyEvent.KEYCODE_TV_CONTENTS_MENU || code == KeyEvent.KEYCODE_TV_MEDIA_CONTEXT_MENU
+
+    private fun isMenuKey(context: Context, event: KeyEvent): Boolean =
+        standardMenu(event.keyCode) || (identity(event) != 0 && key(context, Slot.MENU) == identity(event))
 
     private fun eligible(event: KeyEvent): Boolean {
         val code = event.keyCode
@@ -132,17 +139,18 @@ internal object InterFlashRemoteShortcuts {
                 KeyEvent.KEYCODE_VOLUME_UP, KeyEvent.KEYCODE_VOLUME_DOWN,
                 KeyEvent.KEYCODE_VOLUME_MUTE, KeyEvent.KEYCODE_MUTE, KeyEvent.KEYCODE_MENU,
                 KeyEvent.KEYCODE_CHANNEL_UP, KeyEvent.KEYCODE_CHANNEL_DOWN,
-                KeyEvent.KEYCODE_DEL, KeyEvent.KEYCODE_ESCAPE)
+                KeyEvent.KEYCODE_DEL, KeyEvent.KEYCODE_ESCAPE,
+                KeyEvent.KEYCODE_TV_CONTENTS_MENU, KeyEvent.KEYCODE_TV_MEDIA_CONTEXT_MENU)
     }
 
     fun handle(activity: Activity, event: KeyEvent): Boolean {
         val callback = onSection ?: return false
-        if (clientMenuEnabled && event.keyCode == KeyEvent.KEYCODE_MENU) {
+        if (clientMenuEnabled && isMenuKey(activity, event)) {
             if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) openMenu(activity)
             return true
         }
         if (!eligible(event)) return false
-        val slot = slots.firstOrNull { key(activity, it) == identity(event) } ?: return false
+        val slot = slots.firstOrNull { it != Slot.MENU && key(activity, it) == identity(event) } ?: return false
         if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) callback(slot.ordinal)
         return true
     }
@@ -165,7 +173,7 @@ internal object InterFlashRemoteShortcuts {
             .setNegativeButton(android.R.string.cancel, null)
             .create()
         dialog.setOnKeyListener { _, _, event ->
-            if (!eligible(event)) false
+            if (!(eligible(event) || (slot == Slot.MENU && standardMenu(event.keyCode)))) false
             else {
                 if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) {
                     val captured = identity(event)
@@ -187,11 +195,11 @@ internal object InterFlashRemoteShortcuts {
 res = Path("native-source/InterFlashTV-OwnTV/app/src/main/res")
 for locale, strings in {
     "values": ["Configure remote buttons", "Red button - Live TV", "Netflix button - Movies",
-               "Prime button - Series", "Press the desired remote button once. If nothing happens or another app opens, Android did not deliver that button.", "Reset buttons", "INTER FLASH TV", "TV en vivo", "Películas", "Series"],
+               "Prime button - Series", "Press the desired remote button once. If nothing happens or another app opens, Android did not deliver that button.", "Reset buttons", "INTER FLASH TV", "TV en vivo", "Películas", "Series", "Menu button - Sections"],
     "values-es": ["Configurar botones del control", "Botón rojo - Canales", "Botón Netflix - Películas",
-                  "Botón Prime - Series", "Pulsa una vez el botón del control. Si no ocurre nada o se abre otra aplicación, Android no entregó esa tecla.", "Restablecer botones", "INTER FLASH TV", "TV en vivo", "Películas", "Series"]
+                  "Botón Prime - Series", "Pulsa una vez el botón del control. Si no ocurre nada o se abre otra aplicación, Android no entregó esa tecla.", "Restablecer botones", "INTER FLASH TV", "TV en vivo", "Películas", "Series", "Botón de tres rayas - Menú"]
 }.items():
-    names = ["if_tech_remote_setup", "if_remote_live", "if_remote_movies", "if_remote_series", "if_remote_press", "if_remote_reset", "if_menu_title", "if_menu_live", "if_menu_movies", "if_menu_series"]
+    names = ["if_tech_remote_setup", "if_remote_live", "if_remote_movies", "if_remote_series", "if_remote_press", "if_remote_reset", "if_menu_title", "if_menu_live", "if_menu_movies", "if_menu_series", "if_remote_menu"]
     path = res / locale / "strings_interflash_remote.xml"
     path.write_text("<resources>\n" + "".join(f'    <string name="{k}">{escape(v)}</string>\n' for k,v in zip(names,strings)) + "</resources>\n", encoding="utf-8")
 print("ZTE remote shortcuts added; branded buttons require real-device learning.")
@@ -257,3 +265,8 @@ edit(shell, '                    onBack = { if (clientMode) { if (zapSource == M
     '                    onBack = { if (clientMode && zapSource == MainSection.LIVE_TV) Unit else if (clientMode) { exitPlayer(); onSelectSection(zapSource ?: MainSection.LIVE_TV) } else exitPlayer() },')
 edit(shell, '                                playerMode = PlayerMode.MINI\n                            },\n                            onPreviewVideoBoundsChanged',
     '                                playerMode = if (clientMode) PlayerMode.FULLSCREEN else PlayerMode.MINI\n                            },\n                            onPreviewVideoBoundsChanged')
+
+# Keep only the current client section in the top rail; retain its search and
+# catalogue controls and the normal administration navigation.
+edit(shell, 'visibleSections = visibleSections,',
+    'visibleSections = if (clientMode && selectedSection in listOf(MainSection.MOVIES, MainSection.SERIES)) setOf(selectedSection) else visibleSections,')

@@ -1,8 +1,8 @@
-name: Inter Flash TV 0.80 - Fondo fijo de cine
+name: Inter Flash TV 0.81 - Catalogo de peliculas premium
 on:
   push:
     branches: ['feature/interflash-tv-zte-shortcuts-20261126']
-    paths: ['native-v057/interflash-fixed-cinema.py', 'native-v057/interflash-no-downloads-hd.py', 'native-v057/interflash-zte-shortcuts.py', 'native-v057/interflash-dominican-numbers.py', 'native-v057/interflash-tech-ok10.py', '.github/workflows/interflash-v057.yml']
+    paths: ['native-v057/interflash-elegant-movies.py', 'native-v057/interflash-fixed-cinema.py', 'native-v057/interflash-no-downloads-hd.py', 'native-v057/interflash-zte-shortcuts.py', 'native-v057/interflash-dominican-numbers.py', 'native-v057/interflash-tech-ok10.py', '.github/workflows/interflash-v057.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -498,6 +498,8 @@ jobs:
         run: python3 native-v057/interflash-no-downloads-hd.py
       - name: Apply fixed cinema artwork and compact Movies header
         run: python3 native-v057/interflash-fixed-cinema.py
+      - name: Apply approved elegant movie catalogue design
+        run: python3 native-v057/interflash-elegant-movies.py
       - name: List available SDK platforms
         run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --list | grep -E "platforms;android-3[67]"'
       - name: Install Android SDK
@@ -507,8 +509,8 @@ jobs:
       - name: Compile stable-package update with original VOD player
         working-directory: native-source/InterFlashTV-OwnTV
         env:
-          VERSION_CODE: '80'
-          VERSION_NAME: '0.80'
+          VERSION_CODE: '81'
+          VERSION_NAME: '0.81'
         run: |
           chmod +x gradlew
           ./gradlew :app:assembleStandardRelease -Powntv.corePath=../OwnTV_Core-main -Pkotlin.compiler.execution.strategy=in-process --no-daemon --max-workers=2 -Dorg.gradle.jvmargs="-Xmx4g -XX:ActiveProcessorCount=2"
@@ -540,11 +542,11 @@ jobs:
           fi
           SDK_BUILD_TOOLS="$ANDROID_HOME/build-tools/36.0.0"
           "$SDK_BUILD_TOOLS/zipalign" -f -p 4 "$APK" /tmp/interflash-signing/aligned.apk
-          "$SDK_BUILD_TOOLS/apksigner" sign --ks "$STORE" --ks-key-alias "$ALIAS" --ks-pass "pass:$STORE_PASS" --key-pass "pass:$PASS" --out "$APK_DIR/InterFlashTV-v0.80-INSTALABLE.apk" /tmp/interflash-signing/aligned.apk
-          "$SDK_BUILD_TOOLS/apksigner" verify --verbose "$APK_DIR/InterFlashTV-v0.80-INSTALABLE.apk"
+          "$SDK_BUILD_TOOLS/apksigner" sign --ks "$STORE" --ks-key-alias "$ALIAS" --ks-pass "pass:$STORE_PASS" --key-pass "pass:$PASS" --out "$APK_DIR/InterFlashTV-v0.81-INSTALABLE.apk" /tmp/interflash-signing/aligned.apk
+          "$SDK_BUILD_TOOLS/apksigner" verify --verbose "$APK_DIR/InterFlashTV-v0.81-INSTALABLE.apk"
           rm -f "$APK"
       - uses: actions/upload-artifact@v4
         with:
-          name: InterFlashTV-v0.80-INSTALABLE-MENU
-          path: native-source/InterFlashTV-OwnTV/app/build/outputs/apk/standard/release/InterFlashTV-v0.80-INSTALABLE.apk
+          name: InterFlashTV-v0.81-INSTALABLE-MENU
+          path: native-source/InterFlashTV-OwnTV/app/build/outputs/apk/standard/release/InterFlashTV-v0.81-INSTALABLE.apk
           if-no-files-found: error

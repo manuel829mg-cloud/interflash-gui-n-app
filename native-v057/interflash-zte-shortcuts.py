@@ -266,7 +266,8 @@ edit(shell, '                    onBack = { if (clientMode) { if (zapSource == M
 edit(shell, '                                playerMode = PlayerMode.MINI\n                            },\n                            onPreviewVideoBoundsChanged',
     '                                playerMode = if (clientMode) PlayerMode.FULLSCREEN else PlayerMode.MINI\n                            },\n                            onPreviewVideoBoundsChanged')
 
-# Keep only the current client section in the top rail; retain its search and
-# catalogue controls and the normal administration navigation.
-edit(shell, 'visibleSections = visibleSections,',
-    'visibleSections = if (clientMode && selectedSection in listOf(MainSection.MOVIES, MainSection.SERIES)) setOf(selectedSection) else visibleSections,')
+# The client-mode StageRail builds its own fixed navigation list, ignoring
+# visibleSections. Filter that actual list so each VOD screen is independent.
+edit(app / "features/shell/components/StageRail.kt",
+    'val items = if (clientMode) listOf(MainSection.LIVE_TV, MainSection.MOVIES, MainSection.SERIES)',
+    'val items = if (classicVod) listOf(selected) else if (clientMode) listOf(MainSection.LIVE_TV, MainSection.MOVIES, MainSection.SERIES)')

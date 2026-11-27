@@ -2,6 +2,7 @@
 """Remove media download entry points and enable sharp movie catalogue art."""
 from pathlib import Path
 import re
+import subprocess
 
 root = Path("native-source")
 app = root / "InterFlashTV-OwnTV/app/src/main/java/tv/own/owntv"
@@ -65,3 +66,19 @@ edit(vod, '''                AsyncImage(model = u, contentDescription = null, co
                 AsyncImage(model = request, contentDescription = null, contentScale = ContentScale.Crop, alignment = focus,
                     filterQuality = androidx.compose.ui.graphics.FilterQuality.High, modifier = Modifier.fillMaxSize())''')
 print("Media download UI removed; movie catalogue backgrounds enabled in HD.")
+
+# Refresh the strict translation inventory after removing obsolete technical
+# action keys and changing the TMDB image-size and episode focus identifiers.
+app_root = root / "InterFlashTV-OwnTV"
+core_root = root / "OwnTV_Core-main"
+checker = "tools/i18n/check_hardcoded_strings.py"
+for module in (app_root, core_root):
+    subprocess.run(["python3", checker, "prune-safe"], cwd=module, check=True)
+for path, value, category in (
+    ("app/src/main/java/tv/own/owntv/features/movies/MoviesScreen.kt", "original", "uri"),
+    ("app/src/main/java/tv/own/owntv/features/series/SeriesScreen.kt", "play_start", "technical"),
+):
+    subprocess.run(["python3", checker, "classify-safe", "--path", path,
+                    "--text", value, "--category", category], cwd=app_root, check=True)
+for module in (app_root, core_root):
+    subprocess.run(["python3", checker, "verify", "--bootstrap"], cwd=module, check=True)

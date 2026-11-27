@@ -1,4 +1,4 @@
-name: Inter Flash TV 0.73 - Control ZTE
+name: Inter Flash TV 0.74 - Control ZTE y pantalla completa
 on:
   push:
     branches: ['feature/interflash-tv-zte-shortcuts-20261126']
@@ -503,8 +503,8 @@ jobs:
       - name: Compile stable-package update with original VOD player
         working-directory: native-source/InterFlashTV-OwnTV
         env:
-          VERSION_CODE: '73'
-          VERSION_NAME: '0.73'
+          VERSION_CODE: '74'
+          VERSION_NAME: '0.74'
         run: |
           chmod +x gradlew
           ./gradlew :app:assembleStandardRelease -Powntv.corePath=../OwnTV_Core-main -Pkotlin.compiler.execution.strategy=in-process --no-daemon --max-workers=2 -Dorg.gradle.jvmargs="-Xmx4g -XX:ActiveProcessorCount=2"
@@ -536,11 +536,11 @@ jobs:
           fi
           SDK_BUILD_TOOLS="$ANDROID_HOME/build-tools/36.0.0"
           "$SDK_BUILD_TOOLS/zipalign" -f -p 4 "$APK" /tmp/interflash-signing/aligned.apk
-          "$SDK_BUILD_TOOLS/apksigner" sign --ks "$STORE" --ks-key-alias "$ALIAS" --ks-pass "pass:$STORE_PASS" --key-pass "pass:$PASS" --out "$APK_DIR/InterFlashTV-v0.73-INSTALABLE.apk" /tmp/interflash-signing/aligned.apk
-          "$SDK_BUILD_TOOLS/apksigner" verify --verbose "$APK_DIR/InterFlashTV-v0.73-INSTALABLE.apk"
+          "$SDK_BUILD_TOOLS/apksigner" sign --ks "$STORE" --ks-key-alias "$ALIAS" --ks-pass "pass:$STORE_PASS" --key-pass "pass:$PASS" --out "$APK_DIR/InterFlashTV-v0.74-INSTALABLE.apk" /tmp/interflash-signing/aligned.apk
+          "$SDK_BUILD_TOOLS/apksigner" verify --verbose "$APK_DIR/InterFlashTV-v0.74-INSTALABLE.apk"
           rm -f "$APK"
       - uses: actions/upload-artifact@v4
         with:
-          name: InterFlashTV-v0.73-INSTALABLE-PIN8888-OK10s-CONTROL-ZTE
-          path: native-source/InterFlashTV-OwnTV/app/build/outputs/apk/standard/release/InterFlashTV-v0.73-INSTALABLE.apk
+          name: InterFlashTV-v0.74-INSTALABLE-CONTROL-ZTE
+          path: native-source/InterFlashTV-OwnTV/app/build/outputs/apk/standard/release/InterFlashTV-v0.74-INSTALABLE.apk
           if-no-files-found: error

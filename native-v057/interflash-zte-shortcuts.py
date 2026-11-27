@@ -132,3 +132,65 @@ for locale, strings in {
     path = res / locale / "strings_interflash_remote.xml"
     path.write_text("<resources>\n" + "".join(f'    <string name="{k}">{escape(v)}</string>\n' for k,v in zip(names,strings)) + "</resources>\n", encoding="utf-8")
 print("ZTE remote shortcuts added; branded buttons require real-device learning.")
+
+# Decoder-style live playback. Explicit section shortcuts are the only way
+# to leave live video for the VOD catalog; ordinary Back never docks it.
+shell = app / "features/shell/OwnTVShell.kt"
+edit(shell, 'val channel = liveVm.lastWatchedLiveChannel()?.takeIf { liveVm.isVisibleToActiveProfile(it) }',
+    'val channel = liveVm.lastWatchedLiveChannel()?.takeIf { liveVm.isVisibleToActiveProfile(it) } ?: liveVm.interFlashFirstChannel()')
+edit(app / "features/live/LiveViewModel.kt", '    suspend fun lastWatchedLiveChannel(): ChannelEntity? {',
+    '    suspend fun interFlashFirstChannel(): ChannelEntity? = channelsInRail(LiveKey.All).firstOrNull { isVisibleToActiveProfile(it) }\n\n    suspend fun lastWatchedLiveChannel(): ChannelEntity? {')
+edit(shell, '    val dockPlayer = {\n        resumeVideo()\n        playerMode = PlayerMode.MINI\n        restoreFocus = true\n        focusRail()\n        Unit\n    }',
+    '''    val dockPlayer = {
+        if (!(clientMode && zapSource == MainSection.LIVE_TV)) {
+            resumeVideo()
+            playerMode = PlayerMode.MINI
+            restoreFocus = true
+            focusRail()
+        }
+        Unit
+    }''')
+edit(shell, '    val toAudioMode = {\n        (if (liveOnExo) liveVm.previewEngine else mpvEngine).enterAudioOnly()\n        playerMode = PlayerMode.AUDIO\n        restoreFocus = true\n        focusRail()\n        Unit\n    }',
+    '''    val toAudioMode = {
+        if (!(clientMode && zapSource == MainSection.LIVE_TV)) {
+            (if (liveOnExo) liveVm.previewEngine else mpvEngine).enterAudioOnly()
+            playerMode = PlayerMode.AUDIO
+            restoreFocus = true
+            focusRail()
+        }
+        Unit
+    }''')
+edit(shell, '        if (playerMode == PlayerMode.FULLSCREEN) dockPlayer()\n        if (section == MainSection.SEARCH)',
+    '''        if (clientMode) {
+            liveShortcutJob?.cancel()
+            if (section == MainSection.LIVE_TV) {
+                if (zapSource == MainSection.LIVE_TV && playerMode == PlayerMode.FULLSCREEN) return@openSection
+                if (playerMode != PlayerMode.NONE) exitPlayer()
+                onSelectSection(MainSection.LIVE_TV)
+                liveVm.select(tv.own.owntv.core.live.LiveKey.All)
+                liveShortcutJob = scope.launch {
+                    val channel = liveVm.lastWatchedLiveChannel()?.takeIf { liveVm.isVisibleToActiveProfile(it) }
+                        ?: liveVm.interFlashFirstChannel()
+                    if (channel != null) {
+                        zapSource = MainSection.LIVE_TV
+                        liveVm.watchFullscreen(channel, emptyList())
+                        playerMode = PlayerMode.FULLSCREEN
+                    }
+                }
+                return@openSection
+            }
+            if (playerMode != PlayerMode.NONE) exitPlayer()
+            liveVm.stopPreview()
+            homeVm.stopPreview()
+            if (section == MainSection.MOVIES) movieVm.select(tv.own.owntv.core.live.LiveKey.All)
+            if (section == MainSection.SERIES) seriesVm.select(tv.own.owntv.core.live.LiveKey.All)
+        } else if (playerMode == PlayerMode.FULLSCREEN) dockPlayer()
+        if (section == MainSection.SEARCH)''')
+edit(shell, '    val openShortcutSection: (MainSection) -> Unit = openSection@{ section ->',
+    '    var liveShortcutJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }\n    val openShortcutSection: (MainSection) -> Unit = openSection@{ section ->')
+edit(shell, '            clientMode && playerMode == PlayerMode.FULLSCREEN -> {',
+    '            clientMode && playerMode == PlayerMode.FULLSCREEN && zapSource == MainSection.LIVE_TV -> Unit\n            clientMode && playerMode == PlayerMode.FULLSCREEN -> {')
+edit(shell, '                    onBack = { if (clientMode) { if (zapSource == MainSection.MOVIES || zapSource == MainSection.SERIES) exitPlayer() else dockPlayer(); onSelectSection(zapSource ?: MainSection.LIVE_TV) } else exitPlayer() },',
+    '                    onBack = { if (clientMode && zapSource == MainSection.LIVE_TV) Unit else if (clientMode) { exitPlayer(); onSelectSection(zapSource ?: MainSection.LIVE_TV) } else exitPlayer() },')
+edit(shell, '                                playerMode = PlayerMode.MINI\n                            },\n                            onPreviewVideoBoundsChanged',
+    '                                playerMode = if (clientMode) PlayerMode.FULLSCREEN else PlayerMode.MINI\n                            },\n                            onPreviewVideoBoundsChanged')

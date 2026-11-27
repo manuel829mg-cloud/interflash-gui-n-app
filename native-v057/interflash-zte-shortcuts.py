@@ -12,6 +12,13 @@ edit(app / "MainActivity.kt",
     "    override fun dispatchKeyEvent(event: KeyEvent): Boolean {",
     """    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (InterFlashRemoteShortcuts.handle(this, event)) return true""")
+edit(app / "MainActivity.kt",
+    "                        InterFlashTechDialog.show(this)\n                        return true\n                    }",
+    """                        InterFlashTechDialog.show(this)
+                        return true
+                    }
+                    if (started >= 0L && !event.isCanceled && event.eventTime - started >= 2_000L &&
+                        InterFlashRemoteShortcuts.openMenu(this)) return true""")
 edit(app / "InterFlashTechDialog.kt",
     "        addOption(activity.getString(R.string.if_tech_return)) { dialog.dismiss() }",
     """        addOption(activity.getString(R.string.if_tech_remote_setup)) {
@@ -22,9 +29,13 @@ edit(app / "InterFlashTechDialog.kt",
 edit(app / "features/shell/OwnTVShell.kt",
     "    val interFlashLiveBackground = selectedSection == MainSection.LIVE_TV",
     """    androidx.compose.runtime.DisposableEffect(Unit) {
-        onDispose { tv.own.owntv.InterFlashRemoteShortcuts.onSection = null }
+        onDispose {
+            tv.own.owntv.InterFlashRemoteShortcuts.onSection = null
+            tv.own.owntv.InterFlashRemoteShortcuts.clientMenuEnabled = false
+        }
     }
     androidx.compose.runtime.SideEffect {
+        tv.own.owntv.InterFlashRemoteShortcuts.clientMenuEnabled = clientMode
         tv.own.owntv.InterFlashRemoteShortcuts.onSection = { slot ->
             when (slot) {
                 0 -> openShortcutSection(MainSection.LIVE_TV)
@@ -42,6 +53,9 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
 import android.view.KeyEvent
+import android.view.View
+import android.widget.Button
+import android.widget.LinearLayout
 
 /** Only captures keys which Android actually delivers to the foreground application. */
 internal object InterFlashRemoteShortcuts {
@@ -49,6 +63,51 @@ internal object InterFlashRemoteShortcuts {
     private val slots = Slot.values()
     private val labels = intArrayOf(R.string.if_remote_live, R.string.if_remote_movies, R.string.if_remote_series)
     var onSection: ((Int) -> Unit)? = null
+    var clientMenuEnabled = false
+    private val menuLabels = intArrayOf(R.string.if_menu_live, R.string.if_menu_movies, R.string.if_menu_series)
+
+    fun openMenu(activity: Activity): Boolean {
+        if (!clientMenuEnabled || onSection == null || activity.isFinishing || activity.isDestroyed) return false
+        val density = activity.resources.displayMetrics.density
+        fun dp(value: Int) = (value * density + 0.5f).toInt()
+        val row = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(dp(16), dp(12), dp(16), dp(20))
+        }
+        val dialog = AlertDialog.Builder(activity)
+            .setTitle(R.string.if_menu_title)
+            .setView(row)
+            .create()
+        val buttons = menuLabels.mapIndexed { index, label ->
+            Button(activity).apply {
+                id = View.generateViewId()
+                setText(label)
+                textSize = 20f
+                isFocusable = true
+                setOnClickListener {
+                    dialog.dismiss()
+                    onSection?.invoke(index)
+                }
+                row.addView(this, LinearLayout.LayoutParams(0, dp(76), 1f).apply {
+                    setMargins(dp(6), 0, dp(6), 0)
+                })
+            }
+        }
+        buttons.forEachIndexed { index, button ->
+            button.nextFocusLeftId = buttons[(index + buttons.size - 1) % buttons.size].id
+            button.nextFocusRightId = buttons[(index + 1) % buttons.size].id
+        }
+        dialog.setOnKeyListener { _, code, event ->
+            if (code == KeyEvent.KEYCODE_MENU) {
+                if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) dialog.dismiss()
+                true
+            } else false
+        }
+        dialog.show()
+        dialog.window?.setLayout((activity.resources.displayMetrics.widthPixels * 0.88f).toInt(), -2)
+        buttons.first().requestFocus()
+        return true
+    }
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(InterFlashRemoteShortcuts::class.java.simpleName, Context.MODE_PRIVATE)
@@ -78,6 +137,10 @@ internal object InterFlashRemoteShortcuts {
 
     fun handle(activity: Activity, event: KeyEvent): Boolean {
         val callback = onSection ?: return false
+        if (clientMenuEnabled && event.keyCode == KeyEvent.KEYCODE_MENU) {
+            if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) openMenu(activity)
+            return true
+        }
         if (!eligible(event)) return false
         val slot = slots.firstOrNull { key(activity, it) == identity(event) } ?: return false
         if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) callback(slot.ordinal)
@@ -124,11 +187,11 @@ internal object InterFlashRemoteShortcuts {
 res = Path("native-source/InterFlashTV-OwnTV/app/src/main/res")
 for locale, strings in {
     "values": ["Configure remote buttons", "Red button - Live TV", "Netflix button - Movies",
-               "Prime button - Series", "Press the desired remote button once. If nothing happens or another app opens, Android did not deliver that button.", "Reset buttons"],
+               "Prime button - Series", "Press the desired remote button once. If nothing happens or another app opens, Android did not deliver that button.", "Reset buttons", "INTER FLASH TV", "TV en vivo", "Películas", "Series"],
     "values-es": ["Configurar botones del control", "Botón rojo - Canales", "Botón Netflix - Películas",
-                  "Botón Prime - Series", "Pulsa una vez el botón del control. Si no ocurre nada o se abre otra aplicación, Android no entregó esa tecla.", "Restablecer botones"]
+                  "Botón Prime - Series", "Pulsa una vez el botón del control. Si no ocurre nada o se abre otra aplicación, Android no entregó esa tecla.", "Restablecer botones", "INTER FLASH TV", "TV en vivo", "Películas", "Series"]
 }.items():
-    names = ["if_tech_remote_setup", "if_remote_live", "if_remote_movies", "if_remote_series", "if_remote_press", "if_remote_reset"]
+    names = ["if_tech_remote_setup", "if_remote_live", "if_remote_movies", "if_remote_series", "if_remote_press", "if_remote_reset", "if_menu_title", "if_menu_live", "if_menu_movies", "if_menu_series"]
     path = res / locale / "strings_interflash_remote.xml"
     path.write_text("<resources>\n" + "".join(f'    <string name="{k}">{escape(v)}</string>\n' for k,v in zip(names,strings)) + "</resources>\n", encoding="utf-8")
 print("ZTE remote shortcuts added; branded buttons require real-device learning.")

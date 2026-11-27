@@ -56,6 +56,15 @@ import android.view.KeyEvent
 import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
+import android.app.Dialog
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.StateListDrawable
+import android.view.Gravity
+import android.view.Window
+import android.widget.TextView
 
 /** Only captures keys which Android actually delivers to the foreground application. */
 internal object InterFlashRemoteShortcuts {
@@ -70,29 +79,89 @@ internal object InterFlashRemoteShortcuts {
         if (!clientMenuEnabled || onSection == null || activity.isFinishing || activity.isDestroyed) return false
         val density = activity.resources.displayMetrics.density
         fun dp(value: Int) = (value * density + 0.5f).toInt()
+        fun gradient(top: Int, bottom: Int, radius: Int, stroke: Int, color: Int) =
+            GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(top, bottom)).apply {
+                cornerRadius = dp(radius).toFloat()
+                if (stroke > 0) setStroke(dp(stroke), color)
+            }
+        val panel = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(26), dp(20), dp(26), dp(22))
+            background = gradient(Color.argb(246, 12, 32, 51), Color.argb(242, 5, 15, 29),
+                22, 1, Color.rgb(49, 90, 121))
+        }
+        val heading = TextView(activity).apply {
+            setText(R.string.if_menu_title)
+            textSize = 25f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+        }
+        panel.addView(heading, LinearLayout.LayoutParams(-1, -2).apply {
+            bottomMargin = dp(16)
+        })
         val row = LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(dp(16), dp(12), dp(16), dp(20))
+            gravity = Gravity.CENTER
         }
-        val dialog = AlertDialog.Builder(activity)
-            .setTitle(R.string.if_menu_title)
-            .setView(row)
-            .create()
+        panel.addView(row, LinearLayout.LayoutParams(-1, -2))
+        val dialog = Dialog(activity)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dialog.setContentView(panel)
+        val icons = intArrayOf(R.drawable.if_menu_icon_tv, R.drawable.if_menu_icon_movies, R.drawable.if_menu_icon_series)
+        val accent = intArrayOf(Color.rgb(73, 220, 246), Color.rgb(193, 150, 255), Color.rgb(255, 197, 100))
+        val topColors = intArrayOf(Color.rgb(19, 75, 97), Color.rgb(63, 42, 105), Color.rgb(91, 64, 33))
         val buttons = menuLabels.mapIndexed { index, label ->
             Button(activity).apply {
                 id = View.generateViewId()
                 setText(label)
+                isAllCaps = false
                 textSize = 20f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(Color.WHITE)
+                gravity = Gravity.CENTER
                 isFocusable = true
+                minWidth = 0
+                minimumWidth = 0
+                minHeight = 0
+                minimumHeight = 0
+                setPadding(dp(8), dp(16), dp(8), dp(13))
+                val icon = activity.getDrawable(icons[index])?.mutate()
+                icon?.setTint(accent[index])
+                setCompoundDrawablesWithIntrinsicBounds(null, icon, null, null)
+                compoundDrawablePadding = dp(9)
+                backgroundTintList = null
+                background = StateListDrawable().apply {
+                    addState(intArrayOf(android.R.attr.state_focused),
+                        gradient(topColors[index], Color.rgb(11, 31, 48), 16, 3, accent[index]))
+                    addState(intArrayOf(android.R.attr.state_pressed),
+                        gradient(topColors[index], Color.rgb(11, 31, 48), 16, 3, accent[index]))
+                    addState(intArrayOf(),
+                        gradient(topColors[index], Color.rgb(15, 24, 38), 16, 1, Color.rgb(57, 75, 98)))
+                }
+                elevation = dp(2).toFloat()
+                setOnFocusChangeListener { view, focused ->
+                    view.animate().scaleX(if (focused) 1.035f else 1f)
+                        .scaleY(if (focused) 1.035f else 1f).setDuration(130).start()
+                }
                 setOnClickListener {
                     dialog.dismiss()
                     onSection?.invoke(index)
                 }
-                row.addView(this, LinearLayout.LayoutParams(0, dp(76), 1f).apply {
-                    setMargins(dp(6), 0, dp(6), 0)
+                row.addView(this, LinearLayout.LayoutParams(0, dp(142), 1f).apply {
+                    setMargins(dp(7), dp(4), dp(7), dp(4))
                 })
             }
         }
+        val hint = TextView(activity).apply {
+            setText(R.string.if_menu_hint)
+            textSize = 13f
+            setTextColor(Color.rgb(159, 190, 211))
+            gravity = Gravity.CENTER
+        }
+        panel.addView(hint, LinearLayout.LayoutParams(-1, -2).apply {
+            topMargin = dp(14)
+        })
         buttons.forEachIndexed { index, button ->
             button.nextFocusLeftId = buttons[(index + buttons.size - 1) % buttons.size].id
             button.nextFocusRightId = buttons[(index + 1) % buttons.size].id
@@ -104,7 +173,11 @@ internal object InterFlashRemoteShortcuts {
             } else false
         }
         dialog.show()
-        dialog.window?.setLayout((activity.resources.displayMetrics.widthPixels * 0.88f).toInt(), -2)
+        dialog.window?.apply {
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            setDimAmount(0.36f)
+            setLayout((activity.resources.displayMetrics.widthPixels * 0.88f).toInt(), -2)
+        }
         buttons.first().requestFocus()
         return true
     }
@@ -195,13 +268,26 @@ internal object InterFlashRemoteShortcuts {
 res = Path("native-source/InterFlashTV-OwnTV/app/src/main/res")
 for locale, strings in {
     "values": ["Configure remote buttons", "Red button - Live TV", "Netflix button - Movies",
-               "Prime button - Series", "Press the desired remote button once. If nothing happens or another app opens, Android did not deliver that button.", "Reset buttons", "INTER FLASH TV", "TV en vivo", "Películas", "Series", "Menu button - Sections"],
+               "Prime button - Series", "Press the desired remote button once. If nothing happens or another app opens, Android did not deliver that button.", "Reset buttons", "INTER FLASH TV", "TV en vivo", "Películas", "Series", "Menu button - Sections", "◀  ▶  Elegir     •     OK  Entrar     •     Atrás  Cerrar"],
     "values-es": ["Configurar botones del control", "Botón rojo - Canales", "Botón Netflix - Películas",
-                  "Botón Prime - Series", "Pulsa una vez el botón del control. Si no ocurre nada o se abre otra aplicación, Android no entregó esa tecla.", "Restablecer botones", "INTER FLASH TV", "TV en vivo", "Películas", "Series", "Botón de tres rayas - Menú"]
+                  "Botón Prime - Series", "Pulsa una vez el botón del control. Si no ocurre nada o se abre otra aplicación, Android no entregó esa tecla.", "Restablecer botones", "INTER FLASH TV", "TV en vivo", "Películas", "Series", "Botón de tres rayas - Menú", "◀  ▶  Elegir     •     OK  Entrar     •     Atrás  Cerrar"]
 }.items():
-    names = ["if_tech_remote_setup", "if_remote_live", "if_remote_movies", "if_remote_series", "if_remote_press", "if_remote_reset", "if_menu_title", "if_menu_live", "if_menu_movies", "if_menu_series", "if_remote_menu"]
+    names = ["if_tech_remote_setup", "if_remote_live", "if_remote_movies", "if_remote_series", "if_remote_press", "if_remote_reset", "if_menu_title", "if_menu_live", "if_menu_movies", "if_menu_series", "if_remote_menu", "if_menu_hint"]
     path = res / locale / "strings_interflash_remote.xml"
     path.write_text("<resources>\n" + "".join(f'    <string name="{k}">{escape(v)}</string>\n' for k,v in zip(names,strings)) + "</resources>\n", encoding="utf-8")
+# Native vector artwork stays sharp at every TV resolution; no downloaded images.
+icons = {
+    "if_menu_icon_tv": "M5,8 L43,8 Q45,8 45,10 L45,34 Q45,36 43,36 L5,36 Q3,36 3,34 L3,10 Q3,8 5,8 M24,36 L24,42 M14,42 L34,42 M17,2 L24,8 L31,2",
+    "if_menu_icon_movies": "M6,20 L42,20 L42,41 L6,41 Z M6,20 L3,11 L39,2 L42,11 L6,20 M12,9 L19,17 M24,6 L31,14 M18,25 L31,31 L18,37 Z",
+    "if_menu_icon_series": "M10,5 L42,5 L42,31 M6,10 L38,10 L38,36 M3,15 L34,15 Q36,15 36,17 L36,41 Q36,43 34,43 L3,43 Q1,43 1,41 L1,17 Q1,15 3,15 M14,22 L26,29 L14,36 Z",
+}
+drawable = res / "drawable"
+drawable.mkdir(exist_ok=True)
+for name, path_data in icons.items():
+    (drawable / (name + ".xml")).write_text(
+        '<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="54dp" android:height="54dp" android:viewportWidth="48" android:viewportHeight="48">\n'
+        '    <path android:fillColor="#00000000" android:strokeColor="#FFFFFF" android:strokeWidth="2.5" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="' + path_data + '"/>\n'
+        '</vector>\n', encoding="utf-8")
 print("ZTE remote shortcuts added; branded buttons require real-device learning.")
 
 # Decoder-style live playback. Explicit section shortcuts are the only way

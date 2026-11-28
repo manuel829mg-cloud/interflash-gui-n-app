@@ -1,4 +1,4 @@
-name: Inter Flash TV 0.83 - Dominican channels and programme progress
+name: Inter Flash TV 0.84 - Manual catalogue playback
 on:
   push:
     branches: ['feature/interflash-tv-fixed-channels-osd-20261127']
@@ -445,6 +445,44 @@ jobs:
                                }
                            }
           PATCH
+      - name: Require explicit catalogue playback
+        run: |
+          git apply <<'PATCH'
+          --- a/native-source/InterFlashTV-OwnTV/app/src/main/java/tv/own/owntv/features/shell/components/CinemaCategoryRows.kt
+          +++ b/native-source/InterFlashTV-OwnTV/app/src/main/java/tv/own/owntv/features/shell/components/CinemaCategoryRows.kt
+          @@ -166,17 +166,2 @@
+                                           }
+          -                                // A title must retain actual focus, in the foreground, for the whole interval.
+          -                                LaunchedEffect(itemId(item), selected, cardFocused, previewEnabled, autoOpenCurrent != null, lifecycle) {
+          -                                    val autoOpen = autoOpenCurrent
+          -                                    if (selected && cardFocused && previewEnabled && autoOpen != null) {
+          -                                        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+          -                                            delay(50_000)
+          -                                            if (!opening) {
+          -                                                opening = true
+          -                                                // Remove/release the preview before acquiring the main player.
+          -                                                withFrameNanos { }
+          -                                                autoOpen(item)
+          -                                            }
+          -                                        }
+          -                                    }
+          -                                }
+                                           Box(
+          @@ -248,5 +233,2 @@
+                                               } else VodPosterArt(null, placeholder)
+          -                                    if (selected && cardFocused && previewEnabled && !opening) {
+          -                                        VodFragmentPreview(itemId(item), { resolvePreview(item) }, Modifier.fillMaxSize())
+          -                                    }
+                                               if (!selected) Text(title(item), style = stageText(24, 700), color = Color.White, maxLines = 1,
+          --- a/native-source/InterFlashTV-OwnTV/app/src/main/java/tv/own/owntv/features/shell/components/VodStage.kt
+          +++ b/native-source/InterFlashTV-OwnTV/app/src/main/java/tv/own/owntv/features/shell/components/VodStage.kt
+          @@ -214,5 +214,2 @@
+                   }
+          -        if (previewEnabled && previewKey != null) {
+          -            VodFragmentPreview(previewKey, resolvePreview, Modifier.fillMaxSize())
+          -        }
+                   // A gentle dim keeps the selected artwork visible behind the customer catalogue.
+          PATCH
       - name: Apply 0.61 catalogue and movie artwork
         run: python3 native-v057/catalogue-v061.py
 
@@ -513,8 +551,8 @@ jobs:
       - name: Compile stable-package update with original VOD player
         working-directory: native-source/InterFlashTV-OwnTV
         env:
-          VERSION_CODE: '83'
-          VERSION_NAME: '0.83'
+          VERSION_CODE: '84'
+          VERSION_NAME: '0.84'
         run: |
           chmod +x gradlew
           ./gradlew :app:assembleStandardRelease -Powntv.corePath=../OwnTV_Core-main -Pkotlin.compiler.execution.strategy=in-process --no-daemon --max-workers=2 -Dorg.gradle.jvmargs="-Xmx4g -XX:ActiveProcessorCount=2"
@@ -546,11 +584,11 @@ jobs:
           fi
           SDK_BUILD_TOOLS="$ANDROID_HOME/build-tools/36.0.0"
           "$SDK_BUILD_TOOLS/zipalign" -f -p 4 "$APK" /tmp/interflash-signing/aligned.apk
-          "$SDK_BUILD_TOOLS/apksigner" sign --ks "$STORE" --ks-key-alias "$ALIAS" --ks-pass "pass:$STORE_PASS" --key-pass "pass:$PASS" --out "$APK_DIR/InterFlashTV-v0.83-INSTALABLE.apk" /tmp/interflash-signing/aligned.apk
-          "$SDK_BUILD_TOOLS/apksigner" verify --verbose "$APK_DIR/InterFlashTV-v0.83-INSTALABLE.apk"
+          "$SDK_BUILD_TOOLS/apksigner" sign --ks "$STORE" --ks-key-alias "$ALIAS" --ks-pass "pass:$STORE_PASS" --key-pass "pass:$PASS" --out "$APK_DIR/InterFlashTV-v0.84-INSTALABLE.apk" /tmp/interflash-signing/aligned.apk
+          "$SDK_BUILD_TOOLS/apksigner" verify --verbose "$APK_DIR/InterFlashTV-v0.84-INSTALABLE.apk"
           rm -f "$APK"
       - uses: actions/upload-artifact@v4
         with:
-          name: InterFlashTV-v0.83-INSTALABLE-MENU
-          path: native-source/InterFlashTV-OwnTV/app/build/outputs/apk/standard/release/InterFlashTV-v0.83-INSTALABLE.apk
+          name: InterFlashTV-v0.84-INSTALABLE-MENU
+          path: native-source/InterFlashTV-OwnTV/app/build/outputs/apk/standard/release/InterFlashTV-v0.84-INSTALABLE.apk
           if-no-files-found: error
